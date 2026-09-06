@@ -149,11 +149,21 @@
           }}
       when: server_network | length > 0
 
-    - name: "DigitalOcean: Create a tag '{{ patroni_cluster_name | default('') }}'"
+    - name: "DigitalOcean: Build custom resource tags"
+      ansible.builtin.set_fact:
+        digital_ocean_resource_tags: "{{ [patroni_cluster_name] }}"
+
+    - name: "DigitalOcean: Convert custom tags to key:value strings"
+      ansible.builtin.set_fact:
+        digital_ocean_resource_tags: "{{ digital_ocean_resource_tags + [item.key ~ ':' ~ item.value] }}"
+      loop: "{{ cloud_provider_tags | dict2items }}"
+
+    - name: "DigitalOcean: Ensure custom resource tags exist"
       community.digitalocean.digital_ocean_tag:
         oauth_token: "{{ lookup('ansible.builtin.env', 'DO_API_TOKEN') }}"
-        name: "{{ patroni_cluster_name }}"
+        name: "{{ item }}"
         state: present
+      loop: "{{ digital_ocean_resource_tags }}"
 
     # Firewall
     # Note: digital_ocean_droplet module doesn't support disabling public IP,
@@ -445,13 +455,22 @@
         ssh_keys: "{{ ssh_key_fingerprint }}"
         vpc_uuid: "{{ vpc_id | default(omit) }}"
         wait_timeout: 500
-        tags:
-          - "{{ patroni_cluster_name }}"
+        tags: "{{ digital_ocean_resource_tags }}"
       loop: "{{ range(0, server_count | int) | list }}"
       loop_control:
         index_var: idx
         label: "{{ server_name | lower }}{{ '%02d' % (idx + 1) }}"
       register: droplet_result
+
+    - name: "DigitalOcean: Apply tags to Droplets"
+      community.digitalocean.digital_ocean_tag:
+        oauth_token: "{{ lookup('ansible.builtin.env', 'DO_API_TOKEN') }}"
+        name: "{{ item.1 }}"
+        resource_id: "{{ item.0.data.droplet.id }}"
+        state: present
+      loop: "{{ droplet_result.results | product(digital_ocean_resource_tags) | list }}"
+      loop_control:
+        label: "{{ item.0.data.droplet.name }}: {{ item.1 }}"
 
     - name: "DigitalOcean: Create or modify Block Storage"
       community.digitalocean.digital_ocean_block_storage:

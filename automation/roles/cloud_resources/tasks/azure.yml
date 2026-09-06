@@ -12,6 +12,8 @@
       azure.azcollection.azure_rm_resourcegroup:
         name: "{{ azure_resource_group | default('postgres-cluster-resource-group' ~ '-' ~ server_location) }}"
         location: "{{ server_location }}"
+        tags: "{{ cloud_provider_tags | combine({'Cluster': patroni_cluster_name}) }}"
+        append_tags: true
 
     # if server_network is not specified, create a network and subnet
     - block:
@@ -20,6 +22,8 @@
             resource_group: "{{ azure_resource_group | default('postgres-cluster-resource-group' ~ '-' ~ server_location) }}"
             name: "{{ azure_virtual_network | default('postgres-cluster-network') }}"
             address_prefixes_cidr: ["{{ azure_virtual_network_prefix | default('10.0.0.0/16') }}"]
+            tags: "{{ cloud_provider_tags | combine({'Cluster': patroni_cluster_name}) }}"
+            append_tags: true
 
         - name: "Azure: Create subnet"
           azure.azcollection.azure_rm_subnet:
@@ -41,6 +45,8 @@
         name: "{{ server_name | lower }}{{ '%02d' % (idx + 1) }}-public-ip"
         allocation_method: "Static"
         sku: "Standard"
+        tags: "{{ cloud_provider_tags | combine({'Cluster': patroni_cluster_name}) }}"
+        append_tags: true
       loop: "{{ range(0, server_count | int) | list }}"
       loop_control:
         index_var: idx
@@ -54,6 +60,8 @@
         resource_group: "{{ azure_resource_group | default('postgres-cluster-resource-group' ~ '-' ~ server_location) }}"
         name: "{{ patroni_cluster_name }}-security-group"
         rules: "{{ rules }}"
+        tags: "{{ cloud_provider_tags | combine({'Cluster': patroni_cluster_name}) }}"
+        append_tags: true
       vars:
         rules: >-
           {{
@@ -146,6 +154,8 @@
             public_ip_address_name: "{{ server_public_ip | bool | ternary(server_name | lower ~ '%02d' % (idx + 1) ~ '-public-ip', None) }}"
         dns_servers:
           - 8.8.8.8
+        tags: "{{ cloud_provider_tags | combine({'Cluster': patroni_cluster_name}) }}"
+        append_tags: true
       loop: "{{ range(0, server_count | int) | list }}"
       loop_control:
         index_var: idx
@@ -189,8 +199,8 @@
         data_disks: "{{ [] if use_local_disk | bool else [data_disk] }}"
         network_interface_names:
           - "{{ server_name | lower }}{{ '%02d' % (idx + 1) }}-network-interface"
-        tags:
-          Cluster: "{{ patroni_cluster_name }}"
+        tags: "{{ cloud_provider_tags | combine({'Cluster': patroni_cluster_name}) }}"
+        append_tags: true
       loop: "{{ range(0, server_count | int) | list }}"
       loop_control:
         index_var: idx
@@ -210,6 +220,8 @@
         location: "{{ server_location }}"
         disk_size_gb: "{{ volume_size | int }}"
         state: present
+        tags: "{{ cloud_provider_tags | combine({'Cluster': patroni_cluster_name}) }}"
+        append_tags: true
       loop: "{{ server_result.results | selectattr('ansible_facts.azure_vm', 'defined') | list }}"
       loop_control:
         label: "{{ item.ansible_facts.azure_vm.storage_profile.data_disks[0].name | default('data-disk') }}"
@@ -219,6 +231,17 @@
         - item.ansible_facts.azure_vm.storage_profile.data_disks | length > 0
         - item.ansible_facts.azure_vm.storage_profile.data_disks[0].managed_disk is defined
 
+    - name: "Azure: Update OS disk tags"
+      azure.azcollection.azure_rm_manageddisk:
+        resource_group: "{{ azure_resource_group | default('postgres-cluster-resource-group' ~ '-' ~ server_location) }}"
+        name: "{{ item.ansible_facts.azure_vm.storage_profile.os_disk.name }}"
+        state: present
+        tags: "{{ cloud_provider_tags | combine({'Cluster': patroni_cluster_name}) }}"
+        append_tags: true
+      loop: "{{ server_result.results | selectattr('ansible_facts.azure_vm', 'defined') | list }}"
+      loop_control:
+        label: "{{ item.ansible_facts.azure_vm.storage_profile.os_disk.name }}"
+
     # Load Balancer
     - name: "Azure: Create public IP address for Load Balancer"
       azure.azcollection.azure_rm_publicipaddress:
@@ -226,6 +249,8 @@
         name: "{{ patroni_cluster_name }}-{{ item }}-public-ip"
         allocation_method: "Static"
         sku: "Standard"
+        tags: "{{ cloud_provider_tags | combine({'Cluster': patroni_cluster_name}) }}"
+        append_tags: true
       loop:
         - "primary"
         - "replica"
@@ -268,6 +293,8 @@
             enable_floating_ip: false
             disable_outbound_snat: true
         sku: "Standard"
+        tags: "{{ cloud_provider_tags | combine({'Cluster': patroni_cluster_name}) }}"
+        append_tags: true
       loop:
         - "primary"
         - "replica"

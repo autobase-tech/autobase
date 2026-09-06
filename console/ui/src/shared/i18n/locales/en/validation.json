@@ -2,7 +2,7 @@
   "requiredField": "Required field",
   "onlyNumbers": "Values should be only numbers",
   "sshPortRange": "SSH port must be between 1 and 65535",
-  "clusterShouldHaveProperNaming": "Cluster name should have only letters, numbers, hyphens and have length equal or less than 24",
+  "clusterShouldHaveProperNaming": "Cluster name should have only letters, numbers, hyphens and have length equal or less than 21",
   "shouldBeACorrectV4Ip": "The value should be a valid IPv4 address",
   "invalidSshPublicKey": "Enter a valid SSH public key",
   "invalidSshPrivateKey": "Enter a valid SSH private key",

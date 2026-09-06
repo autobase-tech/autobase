@@ -94,6 +94,7 @@
         components: "main"
         enabled: true
         state: present
+      register: consul_apt_repository_status
       when: "ansible_os_family|lower == 'debian'"
 
     - name: Update apt cache
@@ -103,7 +104,9 @@
       until: apt_status is success
       delay: 5
       retries: 3
-      when: ansible_os_family == "Debian"
+      when:
+        - ansible_os_family == "Debian"
+        - consul_apt_repository_status is changed
 
   when: "ansible_os_family|lower in [ 'debian', 'redhat' ]"
   become: true

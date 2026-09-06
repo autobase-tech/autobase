@@ -29,6 +29,7 @@
         components: "main-{{ ansible_distribution_release }}"
         state: present
         enabled: true
+      register: pg_probackup_apt_repository_status
       when: ansible_os_family == "Debian"
 
     - name: Update apt cache
@@ -38,6 +39,7 @@
       until: apt_status is success
       delay: 5
       retries: 3
+      when: pg_probackup_apt_repository_status is changed
 
     - name: Install pg_probackup
       ansible.builtin.package:

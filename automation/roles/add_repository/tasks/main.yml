@@ -35,6 +35,7 @@
         enabled: "{{ item.enabled | default(true) }}"
         state: present
       loop: "{{ apt_repository }}"
+      register: apt_repository_status
       when: apt_repository | length > 0
 
     - name: Update apt cache
@@ -44,6 +45,7 @@
       until: apt_status is success
       delay: 5
       retries: 3
+      when: apt_repository_status is changed
   environment: "{{ proxy_env | default({}) }}"
   when: installation_method == "packages" and ansible_os_family == "Debian"
   tags: add_repo

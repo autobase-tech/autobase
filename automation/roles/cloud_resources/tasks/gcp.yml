@@ -265,10 +265,9 @@
         tags:
           items:
             - "{{ patroni_cluster_name }}"
-        labels:
-          cluster: "{{ patroni_cluster_name }}"
         status: "{{ gcp_instance_status | default('RUNNING') }}"
         state: present
+        labels: "{{ cloud_provider_tags | combine({'cluster': patroni_cluster_name}) }}"
       loop: "{{ range(0, server_count | int) | list }}"
       loop_control:
         index_var: idx
@@ -295,6 +294,22 @@
             disk_size_gb: "{{ volume_size | int }}"
             disk_type: "{{ volume_type | default('pd-ssd', true) }}"
 
+    - name: "GCP: Update system disk labels"
+      google.cloud.gcp_compute_disk:
+        auth_kind: serviceaccount
+        service_account_contents: "{{ gcp_service_account_contents }}"
+        project: "{{ gcp_project }}"
+        zone: "{{ server_location + '-b' if not server_location is match('.*-[a-z]$') else server_location }}"
+        name: "{{ server_name | lower }}{{ '%02d' % (idx + 1) }}-system"
+        size_gb: "{{ system_volume_size }}"
+        type: "{{ system_volume_type | default('pd-ssd', true) }}"
+        state: present
+        labels: "{{ cloud_provider_tags | combine({'cluster': patroni_cluster_name}) }}"
+      loop: "{{ range(0, server_count | int) | list }}"
+      loop_control:
+        index_var: idx
+        label: "{{ server_name | lower }}{{ '%02d' % (idx + 1) }}-system"
+
     # Required to allow data disk size to be changed after deployment.
     - name: "GCP: Ensure data disk size"
       google.cloud.gcp_compute_disk:
@@ -306,6 +321,7 @@
         size_gb: "{{ volume_size | int }}"
         type: "{{ volume_type | default('pd-ssd', true) }}"
         state: present
+        labels: "{{ cloud_provider_tags | combine({'cluster': patroni_cluster_name}) }}"
       loop: "{{ range(0, server_count | int) | list }}"
       loop_control:
         index_var: idx

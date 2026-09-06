@@ -24,6 +24,7 @@
         components: [main]
         state: present
         enabled: true
+      register: timescaledb_apt_repository_status
       when: ansible_os_family == "Debian"
 
     # RedHat based
@@ -52,6 +53,7 @@
         signed_by: "https://repos.citusdata.com/community/gpgkey"
         state: present
         enabled: true
+      register: citus_apt_repository_status
       when: ansible_os_family == "Debian" and ansible_architecture in ["x86_64", "amd64"]
 
     # RedHat based
@@ -78,5 +80,9 @@
   delay: 5
   retries: 3
   environment: "{{ proxy_env | default({}) }}"
-  when: ansible_os_family == "Debian"
+  when:
+    - ansible_os_family == "Debian"
+    - >-
+      (timescaledb_apt_repository_status | default({})) is changed or
+      (citus_apt_repository_status | default({})) is changed
   tags: add_repo, timescaledb, timescale, citus

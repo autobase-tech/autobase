@@ -2,6 +2,12 @@
 ---
 cloud_provider: "{{ provision | default('') }}" # Specifies the Cloud provider for server creation. Available options: 'aws', 'gcp', 'azure', 'digitalocean', 'hetzner'.
 cloud_backup_provider: "{{ cloud_provider }}" # Cloud provider for backup storage. Defaults to the server cloud provider.
+cloud_provider_tags: # Custom resource tags (dictionary of string keys and values).
+  managed-by: autobase
+#  environment: production
+#  project: myproject
+#  key: value
+cloud_backup_provider_tags: "{{ cloud_provider_tags }}" # Custom backup storage tags.
 state: present # Set to 'present' to create a server, 'absent' to delete.
 
 server_count: "{{ servers_count | default(3) }}" # Number of servers in the cluster.
@@ -62,8 +68,8 @@ azure_blob_storage_name: "{{ patroni_cluster_name }}-backup" # Name of a blob co
 azure_blob_storage_blob_type: "block" # Type of blob object. Values include: block, page.
 azure_blob_storage_account_name: "{{ patroni_cluster_name | lower | replace('-', '') | truncate(24, true, '') }}" # Storage account name must be between 3 and 24 characters in length and use numbers and lower-case letters only.
 azure_blob_storage_account_type: "Standard_RAGRS" # Type of storage account. Values include: Standard_LRS, Standard_GRS, Standard_RAGRS, Standard_ZRS, Standard_RAGZRS, Standard_GZRS, Premium_LRS, Premium_ZRS.
-azure_blob_storage_account_kind: "BlobStorage" # The kind of storage. Values include: Storage, StorageV2, BlobStorage, BlockBlobStorage, FileStorage.
-azure_blob_storage_account_access_tier: "Hot" # The access tier for this storage account. Required when kind=BlobStorage.
+azure_blob_storage_account_kind: "StorageV2" # The kind of storage. Values include: StorageV2, BlockBlobStorage, FileStorage.
+azure_blob_storage_account_access_tier: "Hot" # The access tier for blob data in this storage account.
 azure_blob_storage_account_public_network_access: "Enabled" # Allow public network access to Storage Account to create Blob Storage container.
 azure_blob_storage_account_allow_blob_public_access: false # Disallow public anonymous access.
 azure_blob_storage_absent: false # Allow to delete Azure Blob Storage when deleting a cluster servers using the 'state=absent' variable.

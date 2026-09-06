@@ -48,6 +48,7 @@
         storage_class: "{{ gcp_bucket_storage_class }}"
         predefined_default_object_acl: "{{ gcp_bucket_default_object_acl }}"
         state: present
+        labels: "{{ cloud_backup_provider_tags | combine({'cluster': patroni_cluster_name}) }}"
       when:
         - state == 'present'
         - gcp_bucket_create | bool
@@ -79,6 +80,8 @@
           block_public_acls: "{{ aws_s3_bucket_block_public_acls }}"
           ignore_public_acls: "{{ aws_s3_bucket_ignore_public_acls }}"
         state: present
+        tags: "{{ cloud_backup_provider_tags | combine({'Cluster': patroni_cluster_name}) }}"
+        purge_tags: false
       when:
         - state == 'present'
         - aws_s3_bucket_create | bool
@@ -108,6 +111,8 @@
           azure.azcollection.azure_rm_resourcegroup:
             name: "{{ azure_resource_group | default('postgres-cluster-resource-group' ~ '-' ~ azure_backup_location) }}"
             location: "{{ azure_backup_location }}"
+            tags: "{{ cloud_backup_provider_tags | combine({'Cluster': patroni_cluster_name}) }}"
+            append_tags: true
 
         - name: "Azure: Create Storage Account '{{ azure_blob_storage_account_name | default('') }}'"
           azure.azcollection.azure_rm_storageaccount:
@@ -119,6 +124,8 @@
             public_network_access: "{{ azure_blob_storage_account_public_network_access }}"
             allow_blob_public_access: "{{ azure_blob_storage_account_allow_blob_public_access }}"
             state: present
+            tags: "{{ cloud_backup_provider_tags | combine({'Cluster': patroni_cluster_name}) }}"
+            append_tags: true
 
         - name: "Azure: Create Blob Storage container '{{ azure_blob_storage_name | default('') }}'"
           azure.azcollection.azure_rm_storageblob:

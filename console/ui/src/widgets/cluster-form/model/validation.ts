@@ -203,7 +203,7 @@ export const ClusterFormSchema = (t: TFunction) => {
       [CLUSTER_FORM_FIELD_NAMES.CLUSTER_NAME]: yup
         .string()
         .test('clusters should have proper naming', t('clusterShouldHaveProperNaming', { ns: 'validation' }), (value) =>
-          value.match(/^[a-z0-9][a-z0-9-]{0,23}$/g),
+          value.match(/^[a-z0-9][a-z0-9-]{0,20}$/g),
         )
         .required(t('requiredField', { ns: 'validation' })),
       [CLUSTER_FORM_FIELD_NAMES.DESCRIPTION]: yup.string(),

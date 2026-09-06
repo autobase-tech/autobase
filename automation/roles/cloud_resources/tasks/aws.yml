@@ -1,4 +1,16 @@
 ---
+- name: "AWS: Validate cluster name length for NLB target groups"
+  ansible.builtin.assert:
+    that:
+      - patroni_cluster_name | length <= 21
+    fail_msg: >-
+      AWS NLB requires patroni_cluster_name to be 21 characters or fewer because
+      the generated target group name adds the '-tg-primary' suffix and cannot exceed 32 characters.
+  when:
+    - state == 'present'
+    - cloud_load_balancer | bool
+    - aws_load_balancer_type | lower == 'nlb'
+
 # SSH key
 - block:
     # Delete the temporary ssh key from the cloud (if exists)
@@ -23,6 +35,8 @@
         key_material: "{{ ssh_key_content }}"
         region: "{{ server_location }}"
         state: present
+        tags: "{{ cloud_provider_tags | combine({'Cluster': patroni_cluster_name}) }}"
+        purge_tags: false
       register: ssh_key_result
       when:
         - ssh_key_name | length > 0
@@ -85,6 +99,8 @@
         vpc_id: "{{ vpc_id }}"
         region: "{{ server_location }}"
         rules: "{{ rules }}"
+        tags: "{{ cloud_provider_tags | combine({'Cluster': patroni_cluster_name}) }}"
+        purge_tags: false
       vars:
         vpc_cidr_blocks: >-
           {{
@@ -232,9 +248,8 @@
                 assign_public_ip: "{{ server_public_ip | bool }}"
                 delete_on_termination: true
             volumes: "{{ [system_volume] + ([] if use_local_disk | bool else [data_volume]) }}"
-            tags:
-              Name: "{{ server_name | lower }}{{ '%02d' % (idx + 1) }}"
-              Cluster: "{{ patroni_cluster_name }}"
+            tags: "{{ cloud_provider_tags | combine({'Name': server_name | lower ~ '%02d' % (idx + 1), 'Cluster': patroni_cluster_name}) }}"
+            purge_tags: false
           loop: "{{ range(0, server_count | int) | list }}"
           loop_control:
             index_var: idx
@@ -298,9 +313,7 @@
                   delete_on_termination: true
                   device_index: 0
               block_device_mappings: "{{ [system_volume] + ([] if use_local_disk | bool else [data_volume]) }}"
-            tags:
-              Name: "{{ server_name | lower }}{{ '%02d' % (idx + 1) }}"
-              Cluster: "{{ patroni_cluster_name }}"
+            tags: "{{ cloud_provider_tags | combine({'Name': server_name | lower ~ '%02d' % (idx + 1), 'Cluster': patroni_cluster_name}) }}"
           loop: "{{ ec2_spot_instance_info.results }}"
           loop_control:
             index_var: idx
@@ -350,11 +363,10 @@
             secret_key: "{{ lookup('ansible.builtin.env', 'AWS_SECRET_ACCESS_KEY') }}"
             region: "{{ server_location }}"
             name: "{{ server_name | lower }}{{ '%02d' % (idx + 1) }}"
-            tags:
-              Name: "{{ server_name | lower }}{{ '%02d' % (idx + 1) }}"
-              Cluster: "{{ patroni_cluster_name }}"
             filters:
               spot-instance-request-id: "{{ item.spot_request.spot_instance_request_id }}"
+            tags: "{{ cloud_provider_tags | combine({'Name': server_name | lower ~ '%02d' % (idx + 1), 'Cluster': patroni_cluster_name}) }}"
+            purge_tags: false
           loop: "{{ ec2_spot_request_result.results }}"
           loop_control:
             index_var: idx
@@ -382,6 +394,34 @@
               | selectattr('instances', '!=', [])
               | list
             }}
+
+    - name: "AWS: Update instance tags"
+      amazon.aws.ec2_tag:
+        region: "{{ server_location }}"
+        resource: "{{ item.instances[0].instance_id }}"
+        state: present
+        tags: "{{ cloud_provider_tags | combine({'Name': item.instances[0].tags.Name, 'Cluster': patroni_cluster_name}) }}"
+        purge_tags: false
+      loop: "{{ server_result.results }}"
+      loop_control:
+        label: "{{ item.instances[0].instance_id }}"
+
+    - name: "AWS: Tag attached EBS volumes, network interfaces"
+      amazon.aws.ec2_tag:
+        region: "{{ server_location }}"
+        resource: "{{ item }}"
+        state: present
+        tags: "{{ cloud_provider_tags | combine({'Cluster': patroni_cluster_name}) }}"
+        purge_tags: false
+      loop: >-
+        {{
+          (server_result.results | map(attribute='instances') | flatten
+            | map(attribute='block_device_mappings') | flatten | map(attribute='ebs.volume_id') | list)
+          + (server_result.results | map(attribute='instances') | flatten
+            | map(attribute='network_interfaces') | flatten | map(attribute='network_interface_id') | list)
+          + (server_result.results | map(attribute='instances') | flatten
+            | selectattr('spot_instance_request_id', 'defined') | map(attribute='spot_instance_request_id') | list)
+        }}
 
     # Required to allow data volume parameters to be changed after deployment.
     - name: "AWS: Ensure EBS data volume parameters"
@@ -444,6 +484,8 @@
         idle_timeout: 600
         scheme: "{{ 'internet-facing' if database_public_access | bool else 'internal' }}"
         state: present
+        tags: "{{ cloud_provider_tags | combine({'Cluster': patroni_cluster_name}) }}"
+        purge_tags: false
       loop:
         - "primary"
         - "replica"
@@ -493,6 +535,8 @@
         modify_targets: true
         wait: false
         state: present
+        tags: "{{ cloud_provider_tags | combine({'Cluster': patroni_cluster_name}) }}"
+        purge_tags: false
       loop:
         - "primary"
         - "replica"
@@ -524,6 +568,8 @@
         scheme: "{{ 'internet-facing' if database_public_access | bool else 'internal' }}"
         wait: true
         state: present
+        tags: "{{ cloud_provider_tags | combine({'Cluster': patroni_cluster_name}) }}"
+        purge_tags: false
       loop:
         - "primary"
         - "replica"

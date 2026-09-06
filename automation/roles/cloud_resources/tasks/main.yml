@@ -1,4 +1,30 @@
 ---
+- name: Validate custom cloud tags
+  ansible.builtin.assert:
+    that:
+      - cloud_provider_tags is mapping
+      - cloud_backup_provider_tags is mapping
+    fail_msg: cloud_provider_tags and cloud_backup_provider_tags must be dictionaries of string keys and values.
+
+- name: Validate custom cloud tag keys and values
+  ansible.builtin.assert:
+    that:
+      - item.key is string
+      - item.key | length > 0
+      - item.value is string
+    fail_msg: Cloud tag keys must be non-empty strings and values must be strings.
+  loop: "{{ (cloud_provider_tags | dict2items) + (cloud_backup_provider_tags | dict2items) }}"
+  loop_control:
+    label: "{{ item.key }}"
+
+- name: "DigitalOcean: Validate custom tag keys"
+  ansible.builtin.assert:
+    that:
+      - "':' not in item"
+    fail_msg: DigitalOcean custom tag keys cannot contain ':' because tags use the key:value format.
+  loop: "{{ cloud_provider_tags.keys() | list }}"
+  when: cloud_provider | lower in ['digitalocean', 'do']
+
 - name: Ensure that required variables are specified
   ansible.builtin.fail:
     msg:

@@ -27,6 +27,8 @@ Provision the PostgreSQL cluster infrastructure in public clouds (AWS, GCP, Azur
 |---------|------|---------|-------------|
 | cloud_provider | string | "" | Specifies the Cloud provider for server creation. Available options: 'aws', 'gcp', 'azure', 'digitalocean', 'hetzner' |
 | cloud_backup_provider | string | cloud_provider | Specifies the Cloud provider for backup storage independently of the server provider. |
+| cloud_provider_tags | dict | managed-by: autobase | Custom resource tags (string keys and values). |
+| cloud_backup_provider_tags | dict | cloud_provider_tags | Custom backup storage tags. An explicit dictionary replaces the inherited custom tags. |
 | state | string | present | present to create, absent to delete |
 | server_count | int | 3 | Number of servers in the cluster |
 | server_name | string | {{ patroni_cluster_name }}-pgnode | Will be automatically named with suffixes 01, 02, 03, etc. |
@@ -70,8 +72,8 @@ Provision the PostgreSQL cluster infrastructure in public clouds (AWS, GCP, Azur
 | azure_blob_storage_blob_type | string | block | Type of blob object. Values include: block, page |
 | azure_blob_storage_account_name | string | {{ patroni_cluster_name }} | Storage account name. Must be between 3 and 24 characters in length and use numbers and lower-case letters only |
 | azure_blob_storage_account_type | string | Standard_RAGRS | Type of storage account. Values include: Standard_LRS, Standard_GRS, Standard_RAGRS, Standard_ZRS, Standard_RAGZRS, Standard_GZRS, Premium_LRS, Premium_ZRS |
-| azure_blob_storage_account_kind | string | BlobStorage | The kind of storage. Values include: Storage, StorageV2, BlobStorage, BlockBlobStorage, FileStorage |
-| azure_blob_storage_account_access_tier | string | Hot | The access tier for this storage account. Required when kind=BlobStorage |
+| azure_blob_storage_account_kind | string | StorageV2 | The kind of storage. Values include: StorageV2, BlockBlobStorage, FileStorage |
+| azure_blob_storage_account_access_tier | string | Hot | The access tier for blob data in this storage account |
 | azure_blob_storage_account_public_network_access | string | Enabled | Allow public network access to Storage Account to create Blob Storage container |
 | azure_blob_storage_account_allow_blob_public_access | bool | false | Allow anonymous blob access |
 | azure_blob_storage_absent | bool | false | Allow delete Azure Blob Storage on state=absent |
@@ -90,6 +92,40 @@ Provision the PostgreSQL cluster infrastructure in public clouds (AWS, GCP, Azur
 Set `cloud_backup_provider` when backup storage should be provisioned in a different cloud than the database servers.
 In that case, also provide the credentials and region-related variables required by the selected backup provider (for example, `azure_backup_location` for Azure).
 The `server_location` value continues to describe the server provider and is not translated between clouds.
+
+#### Custom resource tags
+
+```yaml
+cloud_provider_tags:
+  managed-by: autobase
+  environment: production
+  team: platform
+cloud_backup_provider_tags: # Optional; inherits cloud_provider_tags when omitted
+  managed-by: autobase
+  environment: production
+  team: platform
+  purpose: backup
+```
+
+Run `cloud_resources.yml` again with `state: present` and the same cluster variables to apply tags to existing resources.
+AWS and Azure add tags and update values without removing unrelated tags. GCP and Hetzner label dictionaries replace the existing labels on managed resources.
+DigitalOcean adds missing `key:value` tags to Droplets. Changing a value adds a new `key:value` tag without removing the previous value. Custom keys cannot contain `:`.
+Removing a key from the variables does not remove it on AWS, Azure or DigitalOcean.
+
+Autobase's `Name` (EC2 instances) and `Cluster`/`cluster` values take precedence over conflicting custom values.
+GCP requires label keys and values to use lowercase letters, numbers, underscores or hyphens. Keys must start with a lowercase letter.
+The DigitalOcean cluster tag and GCP network tags remain unchanged because firewalls and load balancers use them to select servers.
+Shared Azure resource groups and virtual networks, and shared Hetzner networks, receive the tags of the most recently processed cluster.
+Use strings for all keys and values (quote numeric values), and follow the selected provider's naming and count limits.
+When backup storage uses a different provider, inherited tags must also satisfy that provider's restrictions.
+
+| Provider | Resources tagged by this role | Exceptions |
+|----------|-------------------------------|------------|
+| AWS | SSH keys created by the role, security groups, EC2 instances, Spot requests, attached EBS system/data volumes, instance network interfaces, CLB/NLB, NLB target groups, S3 buckets | Existing VPCs/subnets are reused and not modified. Service-managed load balancer child resources are not managed separately. |
+| GCP | VM instances, system/data disks, GCS buckets | The Ansible modules used for global static load balancer IP addresses, forwarding rules, backend services, health checks, proxies, unmanaged instance groups and VPC firewall rules do not expose labels. Existing networks/subnets are not modified. |
+| Azure | Resource groups, VNets created by the role, public IPs, security groups, NICs, VMs, OS/data managed disks, load balancers, backup storage accounts | Subnets, load balancer child configurations and Blob containers do not support resource tags. Tags on a resource group are not inherited automatically. |
+| DigitalOcean | Droplets | The collection's tag module does not support data volumes. VPCs, SSH keys, firewalls, load balancers and Spaces buckets do not support resource tagging. Root disks and public IPs belong to the Droplet. |
+| Hetzner | SSH keys created by the role, networks created by the role, firewalls, servers, Primary IPv4 addresses, volumes and load balancers | Subnetworks and load balancer services/targets are child configurations without labels. Root disks belong to the server. Object Storage bucket tagging is unsupported. |
 
 ### Provider-specific (optional) variables referenced in tasks
 
