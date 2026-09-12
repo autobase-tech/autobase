@@ -7,28 +7,28 @@ require (
 	github.com/docker/go-connections v0.8.1
 	github.com/gdex-lab/go-render v1.0.1
 	github.com/go-openapi/errors v0.22.8
-	github.com/go-openapi/loads v0.25.2
-	github.com/go-openapi/runtime v0.33.1
+	github.com/go-openapi/loads v0.25.3
+	github.com/go-openapi/runtime v0.33.2
 	github.com/go-openapi/spec v0.22.11
-	github.com/go-openapi/strfmt v0.27.0
+	github.com/go-openapi/strfmt v0.27.2
 	github.com/go-openapi/swag/cmdutils v0.29.2
-	github.com/go-openapi/swag/conv v0.29.1
-	github.com/go-openapi/swag/jsonutils v0.29.1
+	github.com/go-openapi/swag/conv v0.29.2
+	github.com/go-openapi/swag/jsonutils v0.29.2
 	github.com/go-openapi/swag/netutils v0.29.2
-	github.com/go-openapi/swag/typeutils v0.29.1
-	github.com/go-openapi/validate v0.26.3
+	github.com/go-openapi/swag/typeutils v0.29.2
+	github.com/go-openapi/validate v0.26.5
 	github.com/google/uuid v1.6.0
 	github.com/goombaio/namegenerator v0.0.0-20181006234301-989e774b106e
-	github.com/jackc/pgx/v5 v5.10.0
+	github.com/jackc/pgx/v5 v5.11.0
 	github.com/jessevdk/go-flags v1.6.1
 	github.com/kelseyhightower/envconfig v1.4.0
 	github.com/mitchellh/mapstructure v1.5.0
-	github.com/pressly/goose/v3 v3.27.3
+	github.com/pressly/goose/v3 v3.28.0
 	github.com/rs/zerolog v1.35.1
 	github.com/segmentio/asm v1.2.1
 	go.openly.dev/pointy v1.3.0
-	golang.org/x/net v0.58.0
-	golang.org/x/sync v0.22.0
+	golang.org/x/net v0.59.0
+	golang.org/x/sync v0.23.0
 	gotest.tools/v3 v3.5.2
 )
 
