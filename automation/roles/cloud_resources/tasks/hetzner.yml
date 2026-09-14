@@ -521,12 +521,14 @@
         - "primary"
         - "replica"
         - "sync"
+        - "async"
       loop_control:
         label: "{{ patroni_cluster_name }}-{{ item }}"
       when: cloud_load_balancer | bool and
         (item == 'primary' or
-        (item == 'replica' and server_count | int > 1) or
-        (item in ['sync', 'async'] and server_count | int > 1 and synchronous_mode | bool))
+        (item == 'replica' and cloud_load_balancer_replica | bool and server_count | int > 1) or
+        (item == 'sync' and cloud_load_balancer_replica_sync | bool and server_count | int > 1 and synchronous_mode | bool) or
+        (item == 'async' and cloud_load_balancer_replica_async | bool and server_count | int > 1 and synchronous_mode | bool))
 
     - name: "Hetzner Cloud: Configure Load Balancer service"
       hetzner.hcloud.load_balancer_service:
@@ -551,14 +553,16 @@
         - "primary"
         - "replica"
         - "sync"
+        - "async"
       loop_control:
         label: "{{ patroni_cluster_name }}-{{ item }}"
       vars:
         database_port: "{{ pgbouncer_listen_port | default(6432) if pgbouncer_install | bool else postgresql_port | default(5432) }}"
       when: cloud_load_balancer | bool and
         (item == 'primary' or
-        (item == 'replica' and server_count | int > 1) or
-        (item in ['sync', 'async'] and server_count | int > 1 and synchronous_mode | bool))
+        (item == 'replica' and cloud_load_balancer_replica | bool and server_count | int > 1) or
+        (item == 'sync' and cloud_load_balancer_replica_sync | bool and server_count | int > 1 and synchronous_mode | bool) or
+        (item == 'async' and cloud_load_balancer_replica_async | bool and server_count | int > 1 and synchronous_mode | bool))
 
     - name: "Hetzner Cloud: Add Load Balancer to network '{{ server_network | default('') }}'"
       hetzner.hcloud.load_balancer_network:
@@ -570,12 +574,14 @@
         - "primary"
         - "replica"
         - "sync"
+        - "async"
       loop_control:
         label: "{{ patroni_cluster_name }}-{{ item }}"
       when: cloud_load_balancer | bool and
         (item == 'primary' or
-        (item == 'replica' and server_count | int > 1) or
-        (item in ['sync', 'async'] and server_count | int > 1 and synchronous_mode | bool))
+        (item == 'replica' and cloud_load_balancer_replica | bool and server_count | int > 1) or
+        (item == 'sync' and cloud_load_balancer_replica_sync | bool and server_count | int > 1 and synchronous_mode | bool) or
+        (item == 'async' and cloud_load_balancer_replica_async | bool and server_count | int > 1 and synchronous_mode | bool))
 
     - name: "Hetzner Cloud: Disable public interface for Load Balancer"
       hetzner.hcloud.load_balancer:
@@ -587,6 +593,7 @@
         - "primary"
         - "replica"
         - "sync"
+        - "async"
       loop_control:
         label: "{{ patroni_cluster_name }}-{{ item }}"
       register: hetzner_load_balancer_disable_public
@@ -595,8 +602,9 @@
       retries: 3
       when: (cloud_load_balancer | bool and not database_public_access | bool) and
         (item == 'primary' or
-        (item == 'replica' and server_count | int > 1) or
-        (item in ['sync', 'async'] and server_count | int > 1 and synchronous_mode | bool))
+        (item == 'replica' and cloud_load_balancer_replica | bool and server_count | int > 1) or
+        (item == 'sync' and cloud_load_balancer_replica_sync | bool and server_count | int > 1 and synchronous_mode | bool) or
+        (item == 'async' and cloud_load_balancer_replica_async | bool and server_count | int > 1 and synchronous_mode | bool))
 
     - name: "Hetzner Cloud: Enable public interface for Load Balancer"
       hetzner.hcloud.load_balancer:
@@ -608,6 +616,7 @@
         - "primary"
         - "replica"
         - "sync"
+        - "async"
       loop_control:
         label: "{{ patroni_cluster_name }}-{{ item }}"
       register: hetzner_load_balancer_enable_public
@@ -616,8 +625,9 @@
       retries: 3
       when: (cloud_load_balancer | bool and database_public_access | bool) and
         (item == 'primary' or
-        (item == 'replica' and server_count | int > 1) or
-        (item in ['sync', 'async'] and server_count | int > 1 and synchronous_mode | bool))
+        (item == 'replica' and cloud_load_balancer_replica | bool and server_count | int > 1) or
+        (item == 'sync' and cloud_load_balancer_replica_sync | bool and server_count | int > 1 and synchronous_mode | bool) or
+        (item == 'async' and cloud_load_balancer_replica_async | bool and server_count | int > 1 and synchronous_mode | bool))
 
     - name: "Hetzner Cloud: Add servers to Load Balancer (use label_selector 'cluster={{ patroni_cluster_name | default('postgres-cluster') }}')"
       hetzner.hcloud.load_balancer_target:
@@ -630,12 +640,14 @@
         - "primary"
         - "replica"
         - "sync"
+        - "async"
       loop_control:
         label: "{{ patroni_cluster_name }}-{{ item }}"
       when: cloud_load_balancer | bool and
         (item == 'primary' or
-        (item == 'replica' and server_count | int > 1) or
-        (item in ['sync', 'async'] and server_count | int > 1 and synchronous_mode | bool))
+        (item == 'replica' and cloud_load_balancer_replica | bool and server_count | int > 1) or
+        (item == 'sync' and cloud_load_balancer_replica_sync | bool and server_count | int > 1 and synchronous_mode | bool) or
+        (item == 'async' and cloud_load_balancer_replica_async | bool and server_count | int > 1 and synchronous_mode | bool))
 
     - name: "Hetzner Cloud: Gather information about Load Balancers"
       hetzner.hcloud.load_balancer_info:
@@ -759,6 +771,7 @@
         - "primary"
         - "replica"
         - "sync"
+        - "async"
       loop_control:
         label: "{{ patroni_cluster_name }}-{{ item }}"
       when: cloud_load_balancer | bool and
@@ -776,6 +789,7 @@
         - "primary"
         - "replica"
         - "sync"
+        - "async"
       loop_control:
         label: "{{ patroni_cluster_name }}-{{ item }}"
       when: cloud_load_balancer | bool and

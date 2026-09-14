@@ -387,12 +387,14 @@
             - "primary"
             - "replica"
             - "sync"
+            - "async"
           loop_control:
             label: "{{ patroni_cluster_name }}-{{ item }}-hc"
           register: health_check
           when: item == 'primary' or
-            (item == 'replica' and server_count | int > 1) or
-            (item in ['sync', 'async'] and server_count | int > 1 and synchronous_mode | bool)
+            (item == 'replica' and cloud_load_balancer_replica | bool and server_count | int > 1) or
+            (item == 'sync' and cloud_load_balancer_replica_sync | bool and server_count | int > 1 and synchronous_mode | bool) or
+            (item == 'async' and cloud_load_balancer_replica_async | bool and server_count | int > 1 and synchronous_mode | bool)
 
         - name: "GCP: [Load Balancer] Create backend service"
           google.cloud.gcp_compute_backend_service:
@@ -420,14 +422,16 @@
             - "primary"
             - "replica"
             - "sync"
+            - "async"
           loop_control:
             label: "{{ patroni_cluster_name }}-{{ item }}"
           register: backend_service
           # Ignore error if resource already exists on re-run
           failed_when: backend_service is failed and 'resource.fingerprint' not in (backend_service.msg | default(''))
           when: item == 'primary' or
-            (item == 'replica' and server_count | int > 1) or
-            (item in ['sync', 'async'] and server_count | int > 1 and synchronous_mode | bool)
+            (item == 'replica' and cloud_load_balancer_replica | bool and server_count | int > 1) or
+            (item == 'sync' and cloud_load_balancer_replica_sync | bool and server_count | int > 1 and synchronous_mode | bool) or
+            (item == 'async' and cloud_load_balancer_replica_async | bool and server_count | int > 1 and synchronous_mode | bool)
 
         - name: "GCP: [Load Balancer] Create target TCP proxy"
           google.cloud.gcp_compute_target_tcp_proxy:
@@ -444,12 +448,14 @@
             - "primary"
             - "replica"
             - "sync"
+            - "async"
           loop_control:
             label: "{{ patroni_cluster_name }}-{{ item }}-proxy"
           register: target_tcp_proxy
           when: item == 'primary' or
-            (item == 'replica' and server_count | int > 1) or
-            (item in ['sync', 'async'] and server_count | int > 1 and synchronous_mode | bool)
+            (item == 'replica' and cloud_load_balancer_replica | bool and server_count | int > 1) or
+            (item == 'sync' and cloud_load_balancer_replica_sync | bool and server_count | int > 1 and synchronous_mode | bool) or
+            (item == 'async' and cloud_load_balancer_replica_async | bool and server_count | int > 1 and synchronous_mode | bool)
 
         - name: "GCP: [Load Balancer] Reserve static IP address"
           google.cloud.gcp_compute_global_address:
@@ -465,12 +471,14 @@
             - "primary"
             - "replica"
             - "sync"
+            - "async"
           loop_control:
             label: "{{ patroni_cluster_name }}-{{ item }}-ip"
           register: load_balancer_ip
           when: item == 'primary' or
-            (item == 'replica' and server_count | int > 1) or
-            (item in ['sync', 'async'] and server_count | int > 1 and synchronous_mode | bool)
+            (item == 'replica' and cloud_load_balancer_replica | bool and server_count | int > 1) or
+            (item == 'sync' and cloud_load_balancer_replica_sync | bool and server_count | int > 1 and synchronous_mode | bool) or
+            (item == 'async' and cloud_load_balancer_replica_async | bool and server_count | int > 1 and synchronous_mode | bool)
 
         - name: "GCP: [Load Balancer] Create forwarding rule"
           google.cloud.gcp_compute_global_forwarding_rule:
@@ -489,12 +497,14 @@
             - "primary"
             - "replica"
             - "sync"
+            - "async"
           loop_control:
             label: "{{ patroni_cluster_name }}-{{ item }}-fr"
           register: gcp_load_balancer
           when: item == 'primary' or
-            (item == 'replica' and server_count | int > 1) or
-            (item in ['sync', 'async'] and server_count | int > 1 and synchronous_mode | bool)
+            (item == 'replica' and cloud_load_balancer_replica | bool and server_count | int > 1) or
+            (item == 'sync' and cloud_load_balancer_replica_sync | bool and server_count | int > 1 and synchronous_mode | bool) or
+            (item == 'async' and cloud_load_balancer_replica_async | bool and server_count | int > 1 and synchronous_mode | bool)
       when: cloud_load_balancer | bool
 
   when: state == 'present'
@@ -594,6 +604,7 @@
         - "primary"
         - "replica"
         - "sync"
+        - "async"
       loop_control:
         label: "{{ patroni_cluster_name }}-{{ item }}-fr"
       when: item == 'primary' or
@@ -613,6 +624,7 @@
         - "primary"
         - "replica"
         - "sync"
+        - "async"
       loop_control:
         label: "{{ patroni_cluster_name }}-{{ item }}-ip"
       when: item == 'primary' or
@@ -632,6 +644,7 @@
         - "primary"
         - "replica"
         - "sync"
+        - "async"
       loop_control:
         label: "{{ patroni_cluster_name }}-{{ item }}-proxy"
       when: item == 'primary' or
@@ -649,6 +662,7 @@
         - "primary"
         - "replica"
         - "sync"
+        - "async"
       loop_control:
         label: "{{ patroni_cluster_name }}-{{ item }}"
       when: item == 'primary' or
@@ -666,6 +680,7 @@
         - "primary"
         - "replica"
         - "sync"
+        - "async"
       loop_control:
         label: "{{ patroni_cluster_name }}-{{ item }}-hc"
       when: item == 'primary' or

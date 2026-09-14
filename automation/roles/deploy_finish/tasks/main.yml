@@ -217,8 +217,9 @@
     msg:
       address:
         primary: "{{ load_balancer_primary }}"
-        replica: "{{ load_balancer_replica if load_balancer_replica != 'N/A' else omit }}"
-        replica_sync: "{{ load_balancer_replica_sync if synchronous_mode | bool else omit }}"
+        replica: "{{ (load_balancer_replica if load_balancer_replica != 'N/A' else omit ) if cloud_load_balancer_replica | default(true) | bool else omit }}"
+        replica_sync: "{{ load_balancer_replica_sync if synchronous_mode | bool and cloud_load_balancer_replica_sync | default(false) | bool else omit }}"
+        replica_async: "{{ load_balancer_replica_async if synchronous_mode | bool and cloud_load_balancer_replica_async | default(false) | bool else omit }}"
       port: "{{ pgbouncer_listen_port if pgbouncer_install | bool else postgresql_port }}"
       superuser: "{{ superuser_username }}"
       password: "{{ superuser_password }}"
@@ -227,6 +228,7 @@
     load_balancer_primary: "{{ (hostvars['localhost']['aws_elb_classic_lb']['results'] | selectattr('item', 'equalto', 'primary') | first).elb.dns_name | default('N/A') }}"
     load_balancer_replica: "{{ (hostvars['localhost']['aws_elb_classic_lb']['results'] | selectattr('item', 'equalto', 'replica') | first).elb.dns_name | default('N/A') }}"
     load_balancer_replica_sync: "{{ (hostvars['localhost']['aws_elb_classic_lb']['results'] | selectattr('item', 'equalto', 'sync') | first).elb.dns_name | default('N/A') }}"
+    load_balancer_replica_async: "{{ (hostvars['localhost']['aws_elb_classic_lb']['results'] | selectattr('item', 'equalto', 'async') | first).elb.dns_name | default('N/A') }}"
     superuser_username: "{{ patroni_superuser_username }}"
     superuser_password: "{{ '********' if mask_password | default(false) | bool else patroni_superuser_password }}"
   when:
@@ -241,8 +243,9 @@
     msg:
       address:
         primary: "{{ load_balancer_primary }}"
-        replica: "{{ load_balancer_replica if load_balancer_replica != 'N/A' else omit }}"
-        replica_sync: "{{ load_balancer_replica_sync if synchronous_mode | bool else omit }}"
+        replica: "{{ (load_balancer_replica if load_balancer_replica != 'N/A' else omit ) if cloud_load_balancer_replica | default(true) | bool else omit }}"
+        replica_sync: "{{ load_balancer_replica_sync if synchronous_mode | bool and cloud_load_balancer_replica_sync | default(false) | bool else omit }}"
+        replica_async: "{{ load_balancer_replica_async if synchronous_mode | bool and cloud_load_balancer_replica_async | default(false) | bool else omit }}"
       port: "{{ pgbouncer_listen_port if pgbouncer_install | bool else postgresql_port }}"
       superuser: "{{ superuser_username }}"
       password: "{{ superuser_password }}"
@@ -251,6 +254,7 @@
     load_balancer_primary: "{{ (hostvars['localhost']['aws_elb_network_lb']['results'] | selectattr('item', 'equalto', 'primary') | first).load_balancer.dns_name | default('N/A') }}"
     load_balancer_replica: "{{ (hostvars['localhost']['aws_elb_network_lb']['results'] | selectattr('item', 'equalto', 'replica') | first).load_balancer.dns_name | default('N/A') }}"
     load_balancer_replica_sync: "{{ (hostvars['localhost']['aws_elb_network_lb']['results'] | selectattr('item', 'equalto', 'sync') | first).load_balancer.dns_name | default('N/A') }}"
+    load_balancer_replica_async: "{{ (hostvars['localhost']['aws_elb_network_lb']['results'] | selectattr('item', 'equalto', 'async') | first).load_balancer.dns_name | default('N/A') }}"
     superuser_username: "{{ patroni_superuser_username }}"
     superuser_password: "{{ '********' if mask_password | default(false) | bool else patroni_superuser_password }}"
   when:
@@ -266,8 +270,9 @@
     msg:
       address:
         primary: "{{ load_balancer_primary }}"
-        replica: "{{ load_balancer_replica if load_balancer_replica != 'N/A' else omit }}"
-        replica_sync: "{{ load_balancer_replica_sync if synchronous_mode | bool else omit }}"
+        replica: "{{ (load_balancer_replica if load_balancer_replica != 'N/A' else omit ) if cloud_load_balancer_replica | default(true) | bool else omit }}"
+        replica_sync: "{{ load_balancer_replica_sync if synchronous_mode | bool and cloud_load_balancer_replica_sync | default(false) | bool else omit }}"
+        replica_async: "{{ load_balancer_replica_async if synchronous_mode | bool and cloud_load_balancer_replica_async | default(false) | bool else omit }}"
       port: "{{ pgbouncer_listen_port if pgbouncer_install | bool else postgresql_port }}"
       superuser: "{{ superuser_username }}"
       password: "{{ superuser_password }}"
@@ -276,6 +281,7 @@
     load_balancer_primary: "{{ (hostvars['localhost']['gcp_load_balancer']['results'] | selectattr('item', 'equalto', 'primary') | first).IPAddress | default('N/A') }}"
     load_balancer_replica: "{{ (hostvars['localhost']['gcp_load_balancer']['results'] | selectattr('item', 'equalto', 'replica') | first).IPAddress | default('N/A') }}"
     load_balancer_replica_sync: "{{ (hostvars['localhost']['gcp_load_balancer']['results'] | selectattr('item', 'equalto', 'sync') | first).IPAddress | default('N/A') }}"
+    load_balancer_replica_async: "{{ (hostvars['localhost']['gcp_load_balancer']['results'] | selectattr('item', 'equalto', 'async') | first).IPAddress | default('N/A') }}"
     superuser_username: "{{ patroni_superuser_username }}"
     superuser_password: "{{ '********' if mask_password | default(false) | bool else patroni_superuser_password }}"
   when: cloud_provider | default('') | lower == 'gcp' and cloud_load_balancer | default(true) | bool
@@ -288,8 +294,9 @@
     msg:
       address:
         primary: "{{ lb_primary_public if database_public_access | default(false) | bool else lb_primary_private }}"
-        replica: "{{ (lb_replica_public if lb_replica_public != 'N/A' else omit) if database_public_access | default(false) | bool else (lb_replica_private if lb_replica_private != 'N/A' else omit) }}"
-        replica_sync: "{{ (lb_sync_public if database_public_access | default(false) | bool else lb_sync_private) if synchronous_mode | bool else omit }}"
+        replica: "{{ ((lb_replica_public if lb_replica_public != 'N/A' else omit) if database_public_access | default(false) | bool else (lb_replica_private if lb_replica_private != 'N/A' else omit) ) if cloud_load_balancer_replica | default(true) | bool else omit }}"
+        replica_sync: "{{ (lb_sync_public if database_public_access | default(false) | bool else lb_sync_private) if synchronous_mode | bool and cloud_load_balancer_replica_sync | default(false) | bool else omit }}"
+        replica_async: "{{ (lb_async_public if database_public_access | default(false) | bool else lb_async_private) if synchronous_mode | bool and cloud_load_balancer_replica_async | default(false) | bool else omit }}"
       port: "{{ pgbouncer_listen_port if pgbouncer_install | bool else postgresql_port }}"
       superuser: "{{ superuser_username }}"
       password: "{{ superuser_password }}"
@@ -298,9 +305,11 @@
     lb_primary_public: "{{ (hostvars['localhost']['azure_load_balancer_public_ip']['results'] | selectattr('item', 'equalto', 'primary') | first).state.ip_address | default('N/A') }}"
     lb_replica_public: "{{ (hostvars['localhost']['azure_load_balancer_public_ip']['results'] | selectattr('item', 'equalto', 'replica') | first).state.ip_address | default('N/A') }}"
     lb_sync_public: "{{ (hostvars['localhost']['azure_load_balancer_public_ip']['results'] | selectattr('item', 'equalto', 'sync') | first).state.ip_address | default('N/A') }}"
+    lb_async_public: "{{ (hostvars['localhost']['azure_load_balancer_public_ip']['results'] | selectattr('item', 'equalto', 'async') | first).state.ip_address | default('N/A') }}"
     lb_primary_private: "{{ (hostvars['localhost']['azure_load_balancer']['results'] | selectattr('item', 'equalto', 'primary') | first).state.frontend_ip_configurations[0].private_ip_address | default('N/A') }}"
     lb_replica_private: "{{ (hostvars['localhost']['azure_load_balancer']['results'] | selectattr('item', 'equalto', 'replica') | first).state.frontend_ip_configurations[0].private_ip_address | default('N/A') }}"
     lb_sync_private: "{{ (hostvars['localhost']['azure_load_balancer']['results'] | selectattr('item', 'equalto', 'sync') | first).state.frontend_ip_configurations[0].private_ip_address | default('N/A') }}"
+    lb_async_private: "{{ (hostvars['localhost']['azure_load_balancer']['results'] | selectattr('item', 'equalto', 'async') | first).state.frontend_ip_configurations[0].private_ip_address | default('N/A') }}"
     superuser_username: "{{ patroni_superuser_username }}"
     superuser_password: "{{ '********' if mask_password | default(false) | bool else patroni_superuser_password }}"
   when: cloud_provider | default('') | lower == 'azure' and cloud_load_balancer | default(true) | bool
@@ -313,8 +322,9 @@
     msg:
       address:
         primary: "{{ load_balancer_primary }}"
-        replica: "{{ load_balancer_replica if load_balancer_replica != 'N/A' else omit }}"
-        replica_sync: "{{ load_balancer_replica_sync if synchronous_mode | bool else omit }}"
+        replica: "{{ (load_balancer_replica if load_balancer_replica != 'N/A' else omit ) if cloud_load_balancer_replica | default(true) | bool else omit }}"
+        replica_sync: "{{ load_balancer_replica_sync if synchronous_mode | bool and cloud_load_balancer_replica_sync | default(false) | bool else omit }}"
+        replica_async: "{{ load_balancer_replica_async if synchronous_mode | bool and cloud_load_balancer_replica_async | default(false) | bool else omit }}"
       port: "{{ digital_ocean_load_balancer_port | default(database_port) }}"
       superuser: "{{ superuser_username }}"
       password: "{{ superuser_password }}"
@@ -323,6 +333,7 @@
     load_balancer_primary: "{{ (hostvars['localhost']['digitalocean_load_balancer']['data'] | selectattr('name', 'equalto', patroni_cluster_name + '-primary') | first).ip | default('N/A') }}"
     load_balancer_replica: "{{ (hostvars['localhost']['digitalocean_load_balancer']['data'] | selectattr('name', 'equalto', patroni_cluster_name + '-replica') | first).ip | default('N/A') }}"
     load_balancer_replica_sync: "{{ (hostvars['localhost']['digitalocean_load_balancer']['data'] | selectattr('name', 'equalto', patroni_cluster_name + '-sync') | first).ip | default('N/A') }}"
+    load_balancer_replica_async: "{{ (hostvars['localhost']['digitalocean_load_balancer']['data'] | selectattr('name', 'equalto', patroni_cluster_name + '-async') | first).ip | default('N/A') }}"
     database_port: "{{ pgbouncer_listen_port if pgbouncer_install | bool else postgresql_port }}"
     superuser_username: "{{ patroni_superuser_username }}"
     superuser_password: "{{ '********' if mask_password | default(false) | bool else patroni_superuser_password }}"
@@ -336,8 +347,9 @@
     msg:
       address:
         primary: "{{ lb_primary_public if database_public_access | default(false) | bool else lb_primary_private }}"
-        replica: "{{ (lb_replica_public if lb_replica_public != 'N/A' else omit) if database_public_access | default(false) | bool else (lb_replica_private if lb_replica_private != 'N/A' else omit) }}"
-        replica_sync: "{{ (lb_replica_sync_public if database_public_access | default(false) | bool else lb_replica_sync_private) if synchronous_mode | bool else omit }}"
+        replica: "{{ ((lb_replica_public if lb_replica_public != 'N/A' else omit) if database_public_access | default(false) | bool else (lb_replica_private if lb_replica_private != 'N/A' else omit) ) if cloud_load_balancer_replica | default(true) | bool else omit }}"
+        replica_sync: "{{ (lb_replica_sync_public if database_public_access | default(false) | bool else lb_replica_sync_private) if synchronous_mode | bool and cloud_load_balancer_replica_sync | default(false) | bool else omit }}"
+        replica_async: "{{ (lb_replica_async_public if database_public_access | default(false) | bool else lb_replica_async_private) if synchronous_mode | bool and cloud_load_balancer_replica_async | default(false) | bool else omit }}"
       port: "{{ hetzner_load_balancer_port | default(database_port) }}"
       superuser: "{{ superuser_username }}"
       password: "{{ superuser_password }}"
@@ -348,7 +360,9 @@
     lb_replica_public: "{{ (hostvars['localhost']['hetzner_load_balancer']['hcloud_load_balancer_info'] | selectattr('name', 'equalto', patroni_cluster_name + '-replica') | first).ipv4_address | default('N/A') }}"
     lb_replica_private: "{{ (hostvars['localhost']['hetzner_load_balancer']['hcloud_load_balancer_info'] | selectattr('name', 'equalto', patroni_cluster_name + '-replica') | first).private_ipv4_address | default('N/A') }}"
     lb_replica_sync_public: "{{ (hostvars['localhost']['hetzner_load_balancer']['hcloud_load_balancer_info'] | selectattr('name', 'equalto', patroni_cluster_name + '-sync') | first).ipv4_address | default('N/A') }}"
+    lb_replica_async_public: "{{ (hostvars['localhost']['hetzner_load_balancer']['hcloud_load_balancer_info'] | selectattr('name', 'equalto', patroni_cluster_name + '-async') | first).ipv4_address | default('N/A') }}"
     lb_replica_sync_private: "{{ (hostvars['localhost']['hetzner_load_balancer']['hcloud_load_balancer_info'] | selectattr('name', 'equalto', patroni_cluster_name + '-sync') | first).private_ipv4_address | default('N/A') }}"
+    lb_replica_async_private: "{{ (hostvars['localhost']['hetzner_load_balancer']['hcloud_load_balancer_info'] | selectattr('name', 'equalto', patroni_cluster_name + '-async') | first).private_ipv4_address | default('N/A') }}"
     database_port: "{{ pgbouncer_listen_port if pgbouncer_install | bool else postgresql_port }}"
     superuser_username: "{{ patroni_superuser_username }}"
     superuser_password: "{{ '********' if mask_password | default(false) | bool else patroni_superuser_password }}"

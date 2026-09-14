@@ -490,6 +490,7 @@
         - "primary"
         - "replica"
         - "sync"
+        - "async"
       loop_control:
         label: "{{ patroni_cluster_name }}-{{ item }}"
       register: aws_elb_classic_lb
@@ -499,8 +500,9 @@
       when: server_result.results | default([]) | length > 0 and
         cloud_load_balancer | bool and aws_load_balancer_type | lower == 'clb' and
         (item == 'primary' or
-        (item == 'replica' and server_count | int > 1) or
-        (item in ['sync', 'async'] and server_count | int > 1 and synchronous_mode | bool))
+        (item == 'replica' and cloud_load_balancer_replica | bool and server_count | int > 1) or
+        (item == 'sync' and cloud_load_balancer_replica_sync | bool and server_count | int > 1 and synchronous_mode | bool) or
+        (item == 'async' and cloud_load_balancer_replica_async | bool and server_count | int > 1 and synchronous_mode | bool))
 
     # Network Load Balancer (NLB)
     - name: Build NLB targets
@@ -541,14 +543,16 @@
         - "primary"
         - "replica"
         - "sync"
+        - "async"
       loop_control:
         label: "{{ patroni_cluster_name }}-tg-{{ item }}"
       vars:
         target_port: "{{ pgbouncer_listen_port | default('6432') if pgbouncer_install | bool else postgresql_port | default('5432') }}"
       when: cloud_load_balancer | bool and aws_load_balancer_type | lower == 'nlb' and
         (item == 'primary' or
-        (item == 'replica' and server_count | int > 1) or
-        (item in ['sync', 'async'] and server_count | int > 1 and synchronous_mode | bool))
+        (item == 'replica' and cloud_load_balancer_replica | bool and server_count | int > 1) or
+        (item == 'sync' and cloud_load_balancer_replica_sync | bool and server_count | int > 1 and synchronous_mode | bool) or
+        (item == 'async' and cloud_load_balancer_replica_async | bool and server_count | int > 1 and synchronous_mode | bool))
 
     - name: "AWS: Create Network Load Balancer (NLB)"
       community.aws.elb_network_lb:
@@ -574,6 +578,7 @@
         - "primary"
         - "replica"
         - "sync"
+        - "async"
       loop_control:
         label: "{{ patroni_cluster_name }}-{{ item }}"
       register: aws_elb_network_lb
@@ -584,8 +589,9 @@
         target_port: "{{ pgbouncer_listen_port | default('6432') if pgbouncer_install | bool else postgresql_port | default('5432') }}"
       when: cloud_load_balancer | bool and aws_load_balancer_type | lower == 'nlb' and
         (item == 'primary' or
-        (item == 'replica' and server_count | int > 1) or
-        (item in ['sync', 'async'] and server_count | int > 1 and synchronous_mode | bool))
+        (item == 'replica' and cloud_load_balancer_replica | bool and server_count | int > 1) or
+        (item == 'sync' and cloud_load_balancer_replica_sync | bool and server_count | int > 1 and synchronous_mode | bool) or
+        (item == 'async' and cloud_load_balancer_replica_async | bool and server_count | int > 1 and synchronous_mode | bool))
 
   when: state == 'present'
 
@@ -703,6 +709,7 @@
         - "primary"
         - "replica"
         - "sync"
+        - "async"
       loop_control:
         label: "{{ patroni_cluster_name }}-{{ item }}"
       register: aws_elb_classic_lb_delete
@@ -726,6 +733,7 @@
         - "primary"
         - "replica"
         - "sync"
+        - "async"
       loop_control:
         label: "{{ patroni_cluster_name }}-{{ item }}"
       register: aws_elb_network_lb_delete
@@ -748,6 +756,7 @@
         - "primary"
         - "replica"
         - "sync"
+        - "async"
       loop_control:
         label: "{{ patroni_cluster_name }}-tg-{{ item }}"
       register: aws_elb_target_group_delete

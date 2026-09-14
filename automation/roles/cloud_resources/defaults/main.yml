@@ -43,7 +43,10 @@ database_public_access: false # Allow access to the database from the public net
 database_public_allowed_ips: "" # (comma-separated list of IP addresses in CIDR format) If empty, then public access is allowed for any IP address.
 
 # Load balancer
-cloud_load_balancer: true # Create a Load Balancer in the Cloud.
+cloud_load_balancer: true # Create a Load Balancer for master / primary.
+cloud_load_balancer_replica: true # Create a Load Balancer for all replicas (requires server_count > 1).
+cloud_load_balancer_replica_sync: false # Create a Load Balancer for synchronous replicas (requires synchronous_mode).
+cloud_load_balancer_replica_async: false # Create a Load Balancer for asynchronous replicas (requires synchronous_mode).
 aws_load_balancer_type: "nlb" # 'nlb' = Network Load Balancer; 'clb' = Classic Load Balancer (previous generation).
 
 # Bucket (if 'pgbackrest_install' or 'wal_g_install' is 'true')

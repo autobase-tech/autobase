@@ -51,7 +51,10 @@ Provision the PostgreSQL cluster infrastructure in public clouds (AWS, GCP, Azur
 | netdata_public_allowed_ips | string | "" | Comma-separated CIDRs for Netdata |
 | database_public_access | bool | false | Allow public DB access |
 | database_public_allowed_ips | string | "" | Comma-separated CIDRs for DB |
-| cloud_load_balancer | bool | true | Create a cloud Load Balancer |
+| cloud_load_balancer | bool | true | Create cloud Load Balancers (master switch) |
+| cloud_load_balancer_replica | bool | true | Create a Load Balancer for all replicas |
+| cloud_load_balancer_replica_sync | bool | false | Create a Load Balancer for synchronous replicas (requires synchronous_mode) |
+| cloud_load_balancer_replica_async | bool | false | Create a Load Balancer for asynchronous replicas (requires synchronous_mode) |
 | aws_load_balancer_type | string | nlb | 'nlb' = Network Load Balancer; 'clb' = Classic Load Balancer (previous generation) |
 | aws_s3_bucket_create | bool | true | Create S3 bucket (if 'pgbackrest_install' or 'wal_g_install' is 'true') |
 | aws_s3_bucket_name | string | {{ patroni_cluster_name }}-backup | Bucket name |
