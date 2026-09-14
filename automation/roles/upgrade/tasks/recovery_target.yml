@@ -79,7 +79,7 @@
 
 - name: "Check the PostgreSQL log file"
   ansible.builtin.shell: >
-    grep -F 'recovery stopping after WAL location (LSN) "{{ target_lsn }}"' {{ postgresql_log_dir }}/{{ pg_log_filename.stdout }}
+    grep -F 'recovery stopping after WAL location (LSN) "{{ target_lsn }}"' {{ pg_log_filename.stdout }}
   args:
     executable: /bin/bash
   vars:
