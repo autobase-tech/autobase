@@ -1,24 +1,24 @@
 ---
 collections:
   - name: amazon.aws
-    version: ">=10.3.1"
+    version: ">=10.3.2"
   - name: community.aws
-    version: ">=10.1.0"
+    version: ">=10.1.1"
   - name: google.cloud
     version: ">=1.13.0"
   - name: azure.azcollection
-    version: ">=3.18.0"
-  - name: community.digitalocean
-    version: ">=1.27.0"
+    version: ">=3.19.0"
+  - name: community.digitalocean # TODO: replace with digitalocean.cloud
+    version: ">=1.27.0" # EOL
   - name: hetzner.hcloud
-    version: ">=6.9.0"
+    version: ">=6.10.0"
   - name: community.postgresql
     version: ">=4.2.0"
   - name: community.docker
-    version: ">=5.2.0"
+    version: ">=5.2.1"
   - name: community.general
-    version: ">=12.6.1"
+    version: ">=12.6.2"
   - name: ansible.posix
     version: ">=2.2.0"
   - name: ansible.utils
-    version: ">=6.0.2"
+    version: ">=6.0.3"
