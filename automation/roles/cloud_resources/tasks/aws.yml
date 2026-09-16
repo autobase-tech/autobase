@@ -395,34 +395,6 @@
               | list
             }}
 
-    - name: "AWS: Update instance tags"
-      amazon.aws.ec2_tag:
-        region: "{{ server_location }}"
-        resource: "{{ item.instances[0].instance_id }}"
-        state: present
-        tags: "{{ cloud_provider_tags | combine({'Name': item.instances[0].tags.Name, 'Cluster': patroni_cluster_name}) }}"
-        purge_tags: false
-      loop: "{{ server_result.results }}"
-      loop_control:
-        label: "{{ item.instances[0].instance_id }}"
-
-    - name: "AWS: Tag attached EBS volumes, network interfaces"
-      amazon.aws.ec2_tag:
-        region: "{{ server_location }}"
-        resource: "{{ item }}"
-        state: present
-        tags: "{{ cloud_provider_tags | combine({'Cluster': patroni_cluster_name}) }}"
-        purge_tags: false
-      loop: >-
-        {{
-          (server_result.results | map(attribute='instances') | flatten
-            | map(attribute='block_device_mappings') | flatten | map(attribute='ebs.volume_id') | list)
-          + (server_result.results | map(attribute='instances') | flatten
-            | map(attribute='network_interfaces') | flatten | map(attribute='network_interface_id') | list)
-          + (server_result.results | map(attribute='instances') | flatten
-            | selectattr('spot_instance_request_id', 'defined') | map(attribute='spot_instance_request_id') | list)
-        }}
-
     # Required to allow data volume parameters to be changed after deployment.
     - name: "AWS: Ensure EBS data volume parameters"
       amazon.aws.ec2_vol:
