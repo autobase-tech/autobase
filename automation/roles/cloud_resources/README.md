@@ -27,8 +27,8 @@ Provision the PostgreSQL cluster infrastructure in public clouds (AWS, GCP, Azur
 |---------|------|---------|-------------|
 | cloud_provider | string | "" | Specifies the Cloud provider for server creation. Available options: 'aws', 'gcp', 'azure', 'digitalocean', 'hetzner' |
 | cloud_backup_provider | string | cloud_provider | Specifies the Cloud provider for backup storage independently of the server provider. |
-| cloud_provider_tags | dict | managed-by: autobase | Custom resource tags (string keys and values). |
-| cloud_backup_provider_tags | dict | cloud_provider_tags | Custom backup storage tags. An explicit dictionary replaces the inherited custom tags. |
+| cloud_provider_tags | dict | managed-by: autobase | Custom tags requested when supported cloud resources are provisioned. Existing compute resources are not retagged on later runs. Keys and values must be strings. |
+| cloud_backup_provider_tags | dict | cloud_provider_tags | Tags for backup storage resources. An explicit dictionary replaces the inherited tags. |
 | state | string | present | present to create, absent to delete |
 | server_count | int | 3 | Number of servers in the cluster |
 | server_name | string | {{ patroni_cluster_name }}-pgnode | Will be automatically named with suffixes 01, 02, 03, etc. |
@@ -110,25 +110,26 @@ cloud_backup_provider_tags: # Optional; inherits cloud_provider_tags when omitte
   purpose: backup
 ```
 
-Run `cloud_resources.yml` again with `state: present` and the same cluster variables to apply tags to existing resources.
-AWS and Azure add tags and update values without removing unrelated tags. GCP and Hetzner label dictionaries replace the existing labels on managed resources.
-DigitalOcean adds missing `key:value` tags to Droplets. Changing a value adds a new `key:value` tag without removing the previous value. Custom keys cannot contain `:`.
-Removing a key from the variables does not remove it on AWS, Azure or DigitalOcean.
+Autobase passes custom tags through provider modules while provisioning resources.
+It does not run a separate tagging pass for existing compute resources or their attached child resources.
+Changing `cloud_provider_tags` therefore does not retag existing VM instances, servers or Droplets.
+Standalone resources managed by create-or-update tasks, such as networks, firewalls and load balancers, may still have their tags reconciled by the provider module.
+Attached resources that the provider module cannot tag as part of their parent resource's creation remain untagged.
+AWS Spot instances are an exception: the Spot request creates the EC2 instance, so the instance can only be named and tagged afterward with the modules currently used by this role.
 
 Autobase's `Name` (EC2 instances) and `Cluster`/`cluster` values take precedence over conflicting custom values.
 GCP requires label keys and values to use lowercase letters, numbers, underscores or hyphens. Keys must start with a lowercase letter.
 The DigitalOcean cluster tag and GCP network tags remain unchanged because firewalls and load balancers use them to select servers.
-Shared Azure resource groups and virtual networks, and shared Hetzner networks, receive the tags of the most recently processed cluster.
 Use strings for all keys and values (quote numeric values), and follow the selected provider's naming and count limits.
 When backup storage uses a different provider, inherited tags must also satisfy that provider's restrictions.
 
 | Provider | Resources tagged by this role | Exceptions |
 |----------|-------------------------------|------------|
-| AWS | SSH keys created by the role, security groups, EC2 instances, Spot requests, attached EBS system/data volumes, instance network interfaces, CLB/NLB, NLB target groups, S3 buckets | Existing VPCs/subnets are reused and not modified. Service-managed load balancer child resources are not managed separately. |
-| GCP | VM instances, system/data disks, GCS buckets | The Ansible modules used for global static load balancer IP addresses, forwarding rules, backend services, health checks, proxies, unmanaged instance groups and VPC firewall rules do not expose labels. Existing networks/subnets are not modified. |
-| Azure | Resource groups, VNets created by the role, public IPs, security groups, NICs, VMs, OS/data managed disks, load balancers, backup storage accounts | Subnets, load balancer child configurations and Blob containers do not support resource tags. Tags on a resource group are not inherited automatically. |
-| DigitalOcean | Droplets | The collection's tag module does not support data volumes. VPCs, SSH keys, firewalls, load balancers and Spaces buckets do not support resource tagging. Root disks and public IPs belong to the Droplet. |
-| Hetzner | SSH keys created by the role, networks created by the role, firewalls, servers, Primary IPv4 addresses, volumes and load balancers | Subnetworks and load balancer services/targets are child configurations without labels. Root disks belong to the server. Object Storage bucket tagging is unsupported. |
+| AWS | SSH keys created by the role, security groups, EC2 instances, Spot requests, EBS volumes created with regular EC2 instances, CLB/NLB, NLB target groups, S3 buckets | ENIs are not tagged. EBS volumes attached to Spot instances may remain untagged. Existing VPCs/subnets and service-managed load balancer child resources are not modified. |
+| GCP | VM instances and GCS buckets | System and data disks are not labeled. The Ansible modules used for global static load balancer IP addresses, forwarding rules, backend services, health checks, proxies, unmanaged instance groups and VPC firewall rules do not expose labels. Existing networks/subnets are not modified. |
+| Azure | Resource groups, VNets created by the role, public IPs, security groups, NICs, VMs, load balancers and backup storage accounts | OS and data managed disks are not tagged. Subnets, load balancer child configurations and Blob containers do not support resource tags. Tags on a resource group are not inherited automatically. |
+| DigitalOcean | Droplets | Data volumes cannot be tagged through the collection module. VPCs, SSH keys, firewalls, load balancers and Spaces buckets do not support resource tagging. Root disks and public IPs belong to the Droplet. |
+| Hetzner Cloud | SSH keys created by the role, networks created by the role, firewalls, servers, volumes and load balancers | Primary IPs are not labeled. Subnetworks and load balancer services/targets are child configurations without labels. Root disks belong to the server. Object Storage bucket tagging is unsupported. |
 
 ### Provider-specific (optional) variables referenced in tasks
 

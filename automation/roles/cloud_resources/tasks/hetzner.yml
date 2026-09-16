@@ -20,21 +20,6 @@
         - ssh_key_name | length > 0
         - ssh_key_content | length > 0
 
-    - name: "Hetzner Cloud: Update labels on the existing SSH key"
-      hetzner.hcloud.ssh_key:
-        api_token: "{{ lookup('ansible.builtin.env', 'HCLOUD_API_TOKEN') }}"
-        id: "{{ hetzner_matching_ssh_keys[0].id }}"
-        state: present
-        labels: >-
-          {{
-            hetzner_matching_ssh_keys[0].labels | default({})
-            | combine(cloud_provider_tags)
-            | combine({'cluster': patroni_cluster_name})
-          }}
-      when:
-        - hetzner_matching_ssh_keys | length > 0
-        - hetzner_matching_ssh_keys[0].name == ssh_key_name
-
     # if ssh_key_name and ssh_key_content is specified, add this ssh key to the cloud
     - name: "Hetzner Cloud: Add SSH key '{{ ssh_key_name | default('') }}' to cloud"
       hetzner.hcloud.ssh_key:
@@ -446,7 +431,12 @@
         private_networks:
           - "{{ server_network }}"
         firewalls: "{{ firewalls_list }}"
-        labels: "{{ cloud_provider_tags | combine({'cluster': patroni_cluster_name}) }}"
+        labels: >-
+          {{
+            cloud_provider_tags | combine({'cluster': patroni_cluster_name})
+            if (server_info.results[idx].hcloud_server_info | default([]) | length == 0)
+            else omit
+          }}
       loop: "{{ range(0, server_count | int) | list }}"
       loop_control:
         index_var: idx
@@ -459,26 +449,6 @@
               (ssh_public_access | bool or netdata_public_access | bool or database_public_access | bool) else []) +
             ([patroni_cluster_name + '-firewall'] if cloud_firewall | bool else [])
           }}
-
-    - name: "Hetzner Cloud: Gather Primary IPs for tagging"
-      hetzner.hcloud.primary_ip_info:
-        api_token: "{{ lookup('ansible.builtin.env', 'HCLOUD_API_TOKEN') }}"
-      register: primary_ip_info
-      when: server_public_ip | bool
-
-    - name: "Hetzner Cloud: Update server Primary IP labels"
-      hetzner.hcloud.primary_ip:
-        api_token: "{{ lookup('ansible.builtin.env', 'HCLOUD_API_TOKEN') }}"
-        id: "{{ item.id }}"
-        auto_delete: "{{ item.auto_delete }}"
-        state: present
-        labels: "{{ cloud_provider_tags | combine({'cluster': patroni_cluster_name}) }}"
-      loop: "{{ primary_ip_info.hcloud_primary_ip_info | default([]) }}"
-      loop_control:
-        label: "{{ item.ip }}"
-      when:
-        - server_public_ip | bool
-        - item.ip in (server_result.results | map(attribute='hcloud_server.ipv4_address') | list)
 
     - name: "Hetzner Cloud: Add server to network '{{ server_network | default('') }}'"
       hetzner.hcloud.server_network:

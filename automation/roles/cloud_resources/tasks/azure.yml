@@ -199,7 +199,12 @@
         data_disks: "{{ [] if use_local_disk | bool else [data_disk] }}"
         network_interface_names:
           - "{{ server_name | lower }}{{ '%02d' % (idx + 1) }}-network-interface"
-        tags: "{{ cloud_provider_tags | combine({'Cluster': patroni_cluster_name}) }}"
+        tags: >-
+          {{
+            cloud_provider_tags | combine({'Cluster': patroni_cluster_name})
+            if (azure_rm_virtualmachine_info.results[idx].vms | default([]) | length == 0)
+            else omit
+          }}
         append_tags: true
       loop: "{{ range(0, server_count | int) | list }}"
       loop_control:
@@ -220,8 +225,6 @@
         location: "{{ server_location }}"
         disk_size_gb: "{{ volume_size | int }}"
         state: present
-        tags: "{{ cloud_provider_tags | combine({'Cluster': patroni_cluster_name}) }}"
-        append_tags: true
       loop: "{{ server_result.results | selectattr('ansible_facts.azure_vm', 'defined') | list }}"
       loop_control:
         label: "{{ item.ansible_facts.azure_vm.storage_profile.data_disks[0].name | default('data-disk') }}"
@@ -230,17 +233,6 @@
         - item.ansible_facts.azure_vm.storage_profile.data_disks is defined
         - item.ansible_facts.azure_vm.storage_profile.data_disks | length > 0
         - item.ansible_facts.azure_vm.storage_profile.data_disks[0].managed_disk is defined
-
-    - name: "Azure: Update OS disk tags"
-      azure.azcollection.azure_rm_manageddisk:
-        resource_group: "{{ azure_resource_group | default('postgres-cluster-resource-group' ~ '-' ~ server_location) }}"
-        name: "{{ item.ansible_facts.azure_vm.storage_profile.os_disk.name }}"
-        state: present
-        tags: "{{ cloud_provider_tags | combine({'Cluster': patroni_cluster_name}) }}"
-        append_tags: true
-      loop: "{{ server_result.results | selectattr('ansible_facts.azure_vm', 'defined') | list }}"
-      loop_control:
-        label: "{{ item.ansible_facts.azure_vm.storage_profile.os_disk.name }}"
 
     # Load Balancer
     - name: "Azure: Create public IP address for Load Balancer"

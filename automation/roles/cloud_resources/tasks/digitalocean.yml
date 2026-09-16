@@ -462,16 +462,6 @@
         label: "{{ server_name | lower }}{{ '%02d' % (idx + 1) }}"
       register: droplet_result
 
-    - name: "DigitalOcean: Apply tags to Droplets"
-      community.digitalocean.digital_ocean_tag:
-        oauth_token: "{{ lookup('ansible.builtin.env', 'DO_API_TOKEN') }}"
-        name: "{{ item.1 }}"
-        resource_id: "{{ item.0.data.droplet.id }}"
-        state: present
-      loop: "{{ droplet_result.results | product(digital_ocean_resource_tags) | list }}"
-      loop_control:
-        label: "{{ item.0.data.droplet.name }}: {{ item.1 }}"
-
     - name: "DigitalOcean: Create or modify Block Storage"
       community.digitalocean.digital_ocean_block_storage:
         oauth_token: "{{ lookup('ansible.builtin.env', 'DO_API_TOKEN') }}"

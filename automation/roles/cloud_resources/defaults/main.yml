@@ -2,12 +2,12 @@
 ---
 cloud_provider: "{{ provision | default('') }}" # Specifies the Cloud provider for server creation. Available options: 'aws', 'gcp', 'azure', 'digitalocean', 'hetzner'.
 cloud_backup_provider: "{{ cloud_provider }}" # Cloud provider for backup storage. Defaults to the server cloud provider.
-cloud_provider_tags: # Custom resource tags (dictionary of string keys and values).
+cloud_provider_tags: # Custom tags requested when supported cloud resources are provisioned (dictionary of string keys and values).
   managed-by: autobase
 #  environment: production
 #  project: myproject
 #  key: value
-cloud_backup_provider_tags: "{{ cloud_provider_tags }}" # Custom backup storage tags.
+cloud_backup_provider_tags: "{{ cloud_provider_tags }}" # Tags for backup storage resources. Defaults to cloud_provider_tags.
 state: present # Set to 'present' to create a server, 'absent' to delete.
 
 server_count: "{{ servers_count | default(3) }}" # Number of servers in the cluster.
