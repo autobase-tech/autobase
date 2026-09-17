@@ -92,9 +92,45 @@ Provision the PostgreSQL cluster infrastructure in public clouds (AWS, GCP, Azur
 | hetzner_object_storage_secret_key | string | "" | Object Storage SECRET KEY (required) |
 | hetzner_object_storage_absent | bool | false | Allow delete Object Storage on state=absent |
 
-Set `cloud_backup_provider` when backup storage should be provisioned in a different cloud than the database servers.
-In that case, also provide the credentials and region-related variables required by the selected backup provider (for example, `azure_backup_location` for Azure).
-The `server_location` value continues to describe the server provider and is not translated between clouds.
+Set `cloud_backup_provider` when backup storage should be provisioned in a different cloud than the database servers. In that case, also provide the credentials and region-related variables required by the selected backup provider (for example, `azure_backup_location` for Azure). The `server_location` value continues to describe the server provider and is not translated between clouds.
+
+### Provider-specific variables
+
+Provider-specific (optional) variables referenced in tasks
+
+| Provider | Variable | Type | Default | Description |
+|----------|----------|------|---------|-------------|
+| AWS | aws_security_group_ids | list | [] | Additional Security Group IDs to attach to AWS EC2 instances. |
+| AWS | aws_ec2_spot_instance | string | "" | Fallback for `server_spot`. |
+| AWS | aws_ebs_encrypted | bool | true | Encrypt AWS EBS system and data volumes. |
+| AWS | aws_ebs_kms_key_id | string | "" | Customer-managed AWS KMS key ID or ARN for EBS encryption. If empty, AWS uses the default EBS encryption key. |
+| GCP | gcp_project | string | "" | Falls back to `project_id` from the service account credentials. |
+| GCP | gcp_compute_instance_preemptible | bool | false | Fallback for `server_spot`. |
+| GCP | gcp_compute_health_check_interval_sec | int | "provider default" | Interval tuning for health checks. |
+| GCP | gcp_compute_health_check_check_timeout_sec | int | "provider default" | Timeout tuning for health checks. |
+| GCP | gcp_compute_health_check_unhealthy_threshold | int | "provider default" | Unhealthy threshold tuning for health checks. |
+| GCP | gcp_compute_health_check_healthy_threshold | int | "provider default" | Healthy threshold tuning for health checks. |
+| GCP | gcp_compute_backend_service_timeout_sec | int | "provider default" | Backend service timeout tuning. |
+| GCP | gcp_compute_backend_service_log_enable | bool | false | Enables backend service logging. |
+| DigitalOcean | digital_ocean_vpc_name | string | "" | Custom VPC name if creating one. |
+| DigitalOcean | digital_ocean_load_balancer_size | string | "lb-medium" | Default for `server_location` values `ams2`, `nyc2`, `sfo1`. |
+| DigitalOcean | digital_ocean_load_balancer_size_unit | int | 3 | Default when `server_location` is not in `['ams2', 'nyc2', 'sfo1']`. |
+| DigitalOcean | digital_ocean_load_balancer_port | int | `pgbouncer_listen_port` | Load balancer port. |
+| DigitalOcean | digital_ocean_load_balancer_target_port | int | `pgbouncer_listen_port` | Target port for the load balancer. |
+| Azure | azure_resource_group | string | "" | Resource group name. |
+| Azure | azure_virtual_network | string | postgres-cluster-network | VNet name. |
+| Azure | azure_subnet | string | postgres-cluster-subnet | Subnet name. |
+| Azure | azure_virtual_network_prefix | string | 10.0.0.0/16 | VNet CIDR. |
+| Azure | azure_subnet_prefix | string | 10.0.1.0/24 | Subnet CIDR. |
+| Azure | azure_admin_username | string | azureadmin | Administrative username for the VM. |
+| Azure | azure_vm_image_offer | string | "" | Image offer. |
+| Azure | azure_vm_image_publisher | string | "" | Image publisher. |
+| Azure | azure_vm_image_sku | string | "" | Image SKU. |
+| Azure | azure_vm_image_version | string | "" | Image version. |
+| Hetzner | hetzner_load_balancer_type | string | lb21 | Load balancer type. |
+| Hetzner | hcloud_network_name | string | postgres-cluster-network-<zone> | Network name if creating one. |
+| Hetzner | hcloud_network_ip_range | string | 10.0.0.0/16 | Network CIDR. |
+| Hetzner | hcloud_subnetwork_ip_range | string | 10.0.1.0/24 | Subnet CIDR. |
 
 #### Custom resource tags
 
@@ -130,30 +166,6 @@ When backup storage uses a different provider, inherited tags must also satisfy 
 | Azure | Resource groups, VNets created by the role, public IPs, security groups, NICs, VMs, load balancers and backup storage accounts | OS and data managed disks are not tagged. Subnets, load balancer child configurations and Blob containers do not support resource tags. Tags on a resource group are not inherited automatically. |
 | DigitalOcean | Droplets | Data volumes cannot be tagged through the collection module. VPCs, SSH keys, firewalls, load balancers and Spaces buckets do not support resource tagging. Root disks and public IPs belong to the Droplet. |
 | Hetzner Cloud | SSH keys created by the role, networks created by the role, firewalls, servers, volumes and load balancers | Primary IPs are not labeled. Subnetworks and load balancer services/targets are child configurations without labels. Root disks belong to the server. Object Storage bucket tagging is unsupported. |
-
-### Provider-specific (optional) variables referenced in tasks
-
-| Variable | Provider | Default/Notes |
-|----------|----------|---------------|
-| aws_ec2_spot_instance | AWS | Fallback for server_spot |
-| aws_ebs_encrypted | bool | true | Encrypt AWS EBS system and data volumes |
-| aws_ebs_kms_key_id | string | "" | Customer-managed AWS KMS key ID or ARN for EBS encryption. If empty, AWS uses the default EBS encryption key |
-| gcp_project | GCP | Fallbacks to project_id from service account credentials |
-| gcp_compute_instance_preemptible | GCP | Fallback for server_spot |
-| gcp_compute_health_check_interval_sec, gcp_compute_health_check_check_timeout_sec, gcp_compute_health_check_unhealthy_threshold, gcp_compute_health_check_healthy_threshold | GCP | Interval/timeout/threshold tuning |
-| gcp_compute_backend_service_timeout_sec, gcp_compute_backend_service_log_enable | GCP | LB Backend timeouts/logging |
-| digital_ocean_vpc_name | DO | Custom VPC name if creating one |
-| digital_ocean_load_balancer_size | DO | default('lb-medium') if server_location in ['ams2', 'nyc2', 'sfo1'] |
-| digital_ocean_load_balancer_size_unit | DO | default(3) if server_location not in ['ams2', 'nyc2', 'sfo1'] |
-| digital_ocean_load_balancer_port, digital_ocean_load_balancer_target_port | DO | LB port, default: pgbouncer_listen_port |
-| azure_resource_group | Azure | Resource group name |
-| azure_virtual_network, azure_subnet | Azure | VNet/Subnet names, default: postgres-cluster-network/postgres-cluster-subnet |
-| azure_virtual_network_prefix, azure_subnet_prefix | Azure | CIDRs, default: '10.0.0.0/16'/'10.0.1.0/24' |
-| azure_admin_username | Azure | Default: azureadmin |
-| azure_vm_image_offer, azure_vm_image_publisher, azure_vm_image_sku, azure_vm_image_version | Azure | Image reference |
-| hetzner_load_balancer_type | Hetzner | Default: lb21 |
-| hcloud_network_name | Hetzner | Network name if creating, default('postgres-cluster-network-' + target_network_zone) |
-| hcloud_network_ip_range, hcloud_subnetwork_ip_range | Hetzner | CIDRs, default: '10.0.0.0/16'/'10.0.1.0/24' |
 
 ## Dependencies
 

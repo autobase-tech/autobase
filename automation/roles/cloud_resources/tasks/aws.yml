@@ -210,6 +210,16 @@
       register: ec2_security_group_result
       when: cloud_firewall | bool
 
+    - name: "Set variable: aws_ec2_security_group_ids"
+      ansible.builtin.set_fact:
+        aws_ec2_security_group_ids: >-
+          {{
+            (
+              aws_security_group_ids | default([]) +
+              ([ec2_security_group_result.group_id] if cloud_firewall | bool else [])
+            ) | unique | list
+          }}
+
     # Determine which IP address (public or private)
     - name: "Set variable: ip_address_type"
       ansible.builtin.set_fact:
@@ -244,7 +254,7 @@
             region: "{{ server_location }}"
             network_interfaces:
               - subnet_id: "{{ server_network }}"
-                groups: "{{ ([] if not cloud_firewall | bool else [ec2_security_group_result.group_id]) }}"
+                groups: "{{ aws_ec2_security_group_ids }}"
                 assign_public_ip: "{{ server_public_ip | bool }}"
                 delete_on_termination: true
             volumes: "{{ [system_volume] + ([] if use_local_disk | bool else [data_volume]) }}"
@@ -312,7 +322,7 @@
               key_name: "{{ ssh_key_name }}"
               network_interfaces:
                 - subnet_id: "{{ server_network }}"
-                  groups: "{{ ([] if not cloud_firewall | bool else [ec2_security_group_result.group_id]) }}"
+                  groups: "{{ aws_ec2_security_group_ids }}"
                   associate_public_ip_address: "{{ server_public_ip | bool }}"
                   delete_on_termination: true
                   device_index: 0
@@ -443,8 +453,7 @@
         secret_key: "{{ lookup('ansible.builtin.env', 'AWS_SECRET_ACCESS_KEY') }}"
         name: "{{ patroni_cluster_name }}-{{ item }}"
         region: "{{ server_location }}"
-        security_group_ids:
-          - "{{ ec2_security_group_result.group_id }}"
+        security_group_ids: "{{ aws_ec2_security_group_ids }}"
         subnets:
           - "{{ server_network }}"
         instance_ids: "{{ server_result.results | map(attribute='instances') | map('first') | map(attribute='instance_id') }}"
