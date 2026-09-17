@@ -31,6 +31,7 @@
     login_port: "{{ postgresql_port }}"
     login_user: "{{ patroni_superuser_username }}"
     login_password: "{{ patroni_superuser_password }}"
+    login_db: "postgres"
     state: "{{ item.state | default('present') }}"
   ignore_errors: "{{ postgresql_users_ignore_errors | default(false) }}"
   loop: "{{ postgresql_users | flatten(1) }}"
