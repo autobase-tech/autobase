@@ -136,6 +136,8 @@ When backup storage uses a different provider, inherited tags must also satisfy 
 | Variable | Provider | Default/Notes |
 |----------|----------|---------------|
 | aws_ec2_spot_instance | AWS | Fallback for server_spot |
+| aws_ebs_encrypted | bool | true | Encrypt AWS EBS system and data volumes |
+| aws_ebs_kms_key_id | string | "" | Customer-managed AWS KMS key ID or ARN for EBS encryption. If empty, AWS uses the default EBS encryption key |
 | gcp_project | GCP | Fallbacks to project_id from service account credentials |
 | gcp_compute_instance_preemptible | GCP | Fallback for server_spot |
 | gcp_compute_health_check_interval_sec, gcp_compute_health_check_check_timeout_sec, gcp_compute_health_check_unhealthy_threshold, gcp_compute_health_check_healthy_threshold | GCP | Interval/timeout/threshold tuning |

@@ -266,6 +266,8 @@
                 volume_size: "{{ system_volume_size | default(80) | int }}"
                 iops: "{{ system_volume_iops | default(3000) | int if system_volume_type | default('gp3', true) in ['gp3', 'io1', 'io2'] else omit }}"
                 throughput: "{{ (system_volume_throughput | default(125) | int) if (system_volume_type | default('gp3', true)) == 'gp3' else omit }}"
+                encrypted: "{{ aws_ebs_encrypted | default(true) | bool }}"
+                kms_key_id: "{{ aws_ebs_kms_key_id | default(omit, true) }}"
                 delete_on_termination: true
             data_volume:
               device_name: /dev/sdb
@@ -274,6 +276,8 @@
                 volume_size: "{{ volume_size | int }}"
                 iops: "{{ volume_iops | default(3000) | int if volume_type | default('gp3', true) in ['gp3', 'io1', 'io2'] else omit }}"
                 throughput: "{{ (volume_throughput | default(125) | int) if (volume_type | default('gp3', true)) == 'gp3' else omit }}"
+                encrypted: "{{ aws_ebs_encrypted | default(true) | bool }}"
+                kms_key_id: "{{ aws_ebs_kms_key_id | default(omit, true) }}"
                 delete_on_termination: true
       when: not server_spot | default(aws_ec2_spot_instance | default(false)) | bool
 
@@ -328,6 +332,8 @@
                 volume_size: 100 # TODO: use 'system_volume_size' variable (https://github.com/ansible-collections/amazon.aws/issues/1949)
                 iops: "{{ system_volume_iops | default(3000) | int if system_volume_type | default('gp3', true) in ['gp3', 'io1', 'io2'] else omit }}"
                 throughput: "{{ (system_volume_throughput | default(125) | int) if (system_volume_type | default('gp3', true)) == 'gp3' else omit }}"
+                encrypted: "{{ aws_ebs_encrypted | default(true) | bool }}"
+                kms_key_id: "{{ aws_ebs_kms_key_id | default(omit, true) }}"
                 delete_on_termination: true
             data_volume:
               device_name: /dev/sdb
@@ -336,6 +342,8 @@
                 volume_size: 10 # will be redefined via the ec2_vol module
                 iops: "{{ volume_iops | default(3000) | int if volume_type | default('gp3', true) in ['gp3', 'io1', 'io2'] else omit }}"
                 throughput: "{{ (volume_throughput | default(125) | int) if (volume_type | default('gp3', true)) == 'gp3' else omit }}"
+                encrypted: "{{ aws_ebs_encrypted | default(true) | bool }}"
+                kms_key_id: "{{ aws_ebs_kms_key_id | default(omit, true) }}"
                 delete_on_termination: true
 
         - name: "AWS: Wait for EC2 Spot instance to be created"
