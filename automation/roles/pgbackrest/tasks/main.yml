@@ -119,6 +119,7 @@
         owner: postgres
         group: postgres
         mode: "0644"
+      no_log: true # do not output contents to the ansible log
   when:
     - "'postgres_cluster' in group_names"
     - pgbackrest_conf is defined
