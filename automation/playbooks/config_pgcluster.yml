@@ -163,14 +163,14 @@
     - name: Build a firewall_ports_dynamic_var
       ansible.builtin.set_fact:
         firewall_ports_dynamic_var: "{{ firewall_ports_dynamic_var | default([]) + (firewall_allowed_tcp_ports_for[item] | default([])) }}"
-      loop: "{{ hostvars[patroni_bind_address | default(bind_address, true)].group_names }}"
+      loop: "{{ hostvars[inventory_hostname].group_names }}"
       when: firewall_enabled_at_boot | default(false) | bool
       tags: config_firewall, firewall
 
     - name: Build a firewall_rules_dynamic_var
       ansible.builtin.set_fact:
         firewall_rules_dynamic_var: "{{ firewall_rules_dynamic_var | default([]) + (firewall_additional_rules_for[item] | default([])) }}"
-      loop: "{{ hostvars[patroni_bind_address | default(bind_address, true)].group_names }}"
+      loop: "{{ hostvars[inventory_hostname].group_names }}"
       when: firewall_enabled_at_boot | default(false) | bool
       tags: firewall
 
