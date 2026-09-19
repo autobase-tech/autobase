@@ -4,6 +4,13 @@
   gather_facts: true
   any_errors_fatal: true
   pre_tasks:
+    - name: Validate secrets configuration
+      ansible.builtin.import_role:
+        name: vitabaks.autobase.pre_checks
+        tasks_from: secrets
+      when: secrets_provider | default('') | length > 0
+      tags: always
+
     # set_fact: 'pgbackrest_install' to configure Postgres backups if not disabled explicitly.
     # Note: Applicable only for "aws", "gcp", "azure", because:
     # "digitalocean" - requires the Spaces access keys ("digital_ocean_spaces_access_key" and "digital_ocean_spaces_secret_key" variables)
@@ -420,3 +427,9 @@
     - name: Cluster deployment completed
       ansible.builtin.import_role:
         name: vitabaks.autobase.deploy_finish
+
+    - name: Synchronize external secrets
+      ansible.builtin.import_role:
+        name: vitabaks.autobase.secrets
+      when: secrets_provider | default('') | length > 0
+      tags: secrets

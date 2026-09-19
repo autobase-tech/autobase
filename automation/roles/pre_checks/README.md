@@ -20,6 +20,8 @@ Pre-deployment validations and safety checks for the PostgreSQL cluster stack.
   - Validates versions/OS for TimescaleDB, pgvectorscale, ParadeDB, etc.
 - Credentials:
   - Generates Patroni passwords when missing or fetches existing ones during maintenance.
+- External secrets:
+  - Validates the provider, secret definitions, AWS region, recovery window, and tags before cluster changes begin.
 
 ## Dependencies
 
