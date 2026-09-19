@@ -1,5 +1,5 @@
 ---
-- name: Make sure the PostgreSQL schemas are present
+- name: Create or modify PostgreSQL schemas
   become: true
   become_user: postgres
   community.postgresql.postgresql_schema:
