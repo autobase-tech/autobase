@@ -1446,3 +1446,32 @@ os_minimum_versions:
   OracleLinux: 8
   Ubuntu: 22.04
   Debian: 11
+
+############################################################
+# External secrets provider
+############################################################
+
+secrets_provider: "" # default: "" (disabled); "aws" = AWS Secrets Manager
+secrets_prefix: "autobase/{{ patroni_cluster_name }}"
+
+# Arbitrary secrets to create, update, or explicitly delete.
+secrets_values: []
+#  - name: postgresql/superuser
+#    value: "{{ patroni_superuser_password }}"
+#  - name: postgresql/replication
+#    value: "{{ patroni_replication_password }}"
+#  - name: patroni/restapi
+#    value: "{{ patroni_restapi_password }}"
+#  - name: patroni/etcd
+#    value: "{{ patroni_etcd_password }}"
+#  - name: pgbouncer/auth
+#    value: "{{ pgbouncer_auth_password }}"
+
+secrets_export_postgresql_users: false # Export PostgreSQL users and passwords.
+secrets_postgresql_users_format: "json" # json: username and password; string: password only.
+secrets_postgresql_users_path: "postgresql/users" # Relative path; the username is appended.
+
+secrets_export_connection_info: false # Export connection addresses and ports.
+secrets_connection_info_path: "connection" # Relative name of the connection info secret.
+
+# Note: See automation/roles/secrets/README.md for more details and all available variables.
