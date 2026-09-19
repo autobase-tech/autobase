@@ -386,18 +386,23 @@
   ansible.builtin.set_fact:
     connection_info_for_secrets: >-
       {{
-        (connection_info_candidates
-          | selectattr('msg', 'defined')
-          | rejectattr('failed', 'equalto', true)
-          | rejectattr('skipped', 'equalto', true)
-          | map(attribute='msg')
-          | first
+        (connection_info_selected
           | ansible.builtin.dict2items
           | rejectattr('key', 'equalto', 'superuser')
           | rejectattr('key', 'equalto', 'password')
           | ansible.builtin.items2dict)
       }}
   vars:
+    connection_info_selected: >-
+      {{
+        connection_info_candidates
+        | selectattr('msg', 'defined')
+        | reject('ansible.builtin.failed')
+        | reject('ansible.builtin.skipped')
+        | map(attribute='msg')
+        | first
+        | default({})
+      }}
     connection_info_candidates:
       - "{{ connection_info_vip_haproxy | default({}) }}"
       - "{{ connection_info_vip_direct | default({}) }}"
@@ -420,11 +425,7 @@
     - secrets_provider | default('') | length > 0
     - secrets_export_connection_info | default(false) | bool
     - not (point_in_time_recovery | default(false) | bool)
-    - >-
-      connection_info_candidates
-      | selectattr('msg', 'defined')
-      | rejectattr('failed', 'equalto', true)
-      | rejectattr('skipped', 'equalto', true)
-      | list
-      | length > 0
+    - connection_info_selected | length > 0
+    # Cloud endpoints may be unavailable outside the provisioning playbook.
+    - "'\"N/A\"' not in (connection_info_selected | to_json)"
   tags: secrets

@@ -36,7 +36,7 @@ Secrets are created or updated by default. They are deleted only when `state: ab
 
 Secret names must be unique across `secrets_values`, exported PostgreSQL users, and the automatically exported `connection` value. Duplicate names are not rejected. They are processed in order, so the last value wins; different values for the same name also cause repeated updates on every run.
 
-The automatically exported `connection` secret contains only connection endpoints. Store credentials separately through `secrets_values`, for example as `postgresql/superuser`, when required.
+The automatically exported `connection` secret contains only connection endpoints. Export is skipped when connection information is unavailable or contains `N/A`, preserving any existing secret. Store credentials separately through `secrets_values`, for example as `postgresql/superuser`, when required.
 
 ```yaml
 secrets_provider: aws
