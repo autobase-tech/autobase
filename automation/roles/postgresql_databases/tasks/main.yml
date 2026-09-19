@@ -1,5 +1,5 @@
 ---
-- name: Make sure the PostgreSQL databases are present
+- name: Create or modify PostgreSQL databases
   become: true
   become_user: postgres
   community.postgresql.postgresql_db:
