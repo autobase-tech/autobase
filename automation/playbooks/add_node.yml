@@ -393,3 +393,9 @@
     # finish (info)
     - role: vitabaks.autobase.deploy_finish
       tags: always
+
+    - role: vitabaks.autobase.secrets
+      when:
+        - secrets_provider | default('') | length > 0
+        - secrets_export_connection_info | default(false) | bool
+      tags: secrets

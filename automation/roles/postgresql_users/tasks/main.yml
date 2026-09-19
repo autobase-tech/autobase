@@ -15,13 +15,40 @@
     login_db: "postgres"
     state: "{{ item.state | default('present') }}"
   ignore_errors: "{{ postgresql_users_ignore_errors | default(false) }}"
+  register: postgresql_users_result
   loop: "{{ postgresql_users | flatten(1) }}"
   loop_control:
     label: "{{ item.name }}"
   when:
     - postgresql_users | default('') | length > 0
     - patroni_standby_cluster.host | default('') | length < 1 # do not perform on the standby cluster
-  tags: postgresql_users
+  tags: postgresql_users, secrets
+
+- name: Collect successfully applied PostgreSQL users for secrets export
+  ansible.builtin.set_fact:
+    postgresql_users_for_secrets: >-
+      {{
+        (hostvars['localhost']['postgresql_users_for_secrets'] | default([]))
+        + [{
+          'name': 'postgresql/users/' ~ item.item.name,
+          'value': {'username': item.item.name, 'password': item.item.password}
+        }]
+      }}
+  delegate_to: localhost
+  delegate_facts: true
+  become: false
+  loop: "{{ postgresql_users_result.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.name | default('unnamed user') }}"
+  no_log: true
+  when:
+    - secrets_provider | default('') | length > 0
+    - secrets_export_postgresql_users | default(false) | bool
+    - not (item.failed | default(false) | bool)
+    - not (item.skipped | default(false) | bool)
+    - item.item.state | default('present') == 'present'
+    - item.item.password | default('') | length > 0
+  tags: postgresql_users, secrets
 
 - name: Grant roles to users
   community.postgresql.postgresql_membership:

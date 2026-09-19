@@ -5,6 +5,13 @@
   become_method: sudo
   gather_facts: true
   pre_tasks:
+    - name: Validate secrets configuration
+      ansible.builtin.import_role:
+        name: vitabaks.autobase.pre_checks
+        tasks_from: secrets
+      when: secrets_provider | default('') | length > 0
+      tags: always
+
     - name: Gather package facts
       ansible.builtin.package_facts:
         manager: auto
@@ -307,3 +314,9 @@
     # finish (info)
     - role: vitabaks.autobase.deploy_finish
       when: current_patroni_leader_result.status | default(0) == 200
+
+    - role: vitabaks.autobase.secrets
+      when:
+        - current_patroni_leader_result.status | default(0) == 200
+        - secrets_provider | default('') | length > 0
+      tags: secrets

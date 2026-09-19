@@ -94,6 +94,7 @@
             replica_async: "{{ haproxy_listen_port.replicas_async if synchronous_mode | bool else omit }}"
           superuser: "{{ superuser_username }}"
           password: "{{ superuser_password }}"
+      register: connection_info_vip_haproxy
       when: with_haproxy_load_balancing | bool
 
     # if 'with_haproxy_load_balancing' is 'false'
@@ -105,6 +106,7 @@
           port: "{{ pgbouncer_listen_port if pgbouncer_install | bool else postgresql_port }}"
           superuser: "{{ superuser_username }}"
           password: "{{ superuser_password }}"
+      register: connection_info_vip_direct
       when: not with_haproxy_load_balancing | bool
   ignore_errors: true
   vars:
@@ -114,7 +116,7 @@
     - cluster_vip is defined and cluster_vip | length > 0
     - dcs_type == "etcd"
     - (cloud_provider | default('') | length < 1 or not cloud_load_balancer | default(true) | bool)
-  tags: conn_info, cluster_info, cluster_status
+  tags: conn_info, cluster_info, cluster_status, secrets
 
 # if 'cluster_vip' is not defined
 - block:
@@ -132,6 +134,7 @@
             replica_async: "{{ haproxy_listen_port.replicas_async if synchronous_mode | bool else omit }}"
           superuser: "{{ superuser_username }}"
           password: "{{ superuser_password }}"
+      register: connection_info_local_haproxy
       when: with_haproxy_load_balancing | bool
 
     # if 'with_haproxy_load_balancing' is 'false' and 'pgbouncer_install' is 'true'
@@ -144,6 +147,7 @@
           port: "{{ pgbouncer_listen_port }}"
           superuser: "{{ superuser_username }}"
           password: "{{ superuser_password }}"
+      register: connection_info_local_pgbouncer
       when: not with_haproxy_load_balancing | bool and pgbouncer_install | bool
 
     # if 'with_haproxy_load_balancing' is 'false' and 'pgbouncer_install' is 'false'
@@ -159,6 +163,7 @@
           connection_string:
             read_write: "postgresql://{{ superuser_username }}@{{ libpq_postgres_host_port }}/postgres?target_session_attrs=read-write"
             read_only: "postgresql://{{ superuser_username }}@{{ libpq_postgres_host_port }}/postgres?target_session_attrs=read-only{{ libpq_load_balance }}"
+      register: connection_info_local_postgres
       when: not with_haproxy_load_balancing | bool and not pgbouncer_install | bool
   ignore_errors: true
   vars:
@@ -184,7 +189,7 @@
     - (cluster_vip is not defined or cluster_vip | length < 1)
     - dcs_type == "etcd"
     - (cloud_provider | default('') | length < 1 or not cloud_load_balancer | default(true) | bool)
-  tags: conn_info, cluster_info, cluster_status
+  tags: conn_info, cluster_info, cluster_status, secrets
 
 # if dcs_type: "consul"
 - name: Connection info
@@ -199,6 +204,7 @@
       port: "{{ pgbouncer_listen_port if pgbouncer_install | bool else postgresql_port }}"
       superuser: "{{ superuser_username }}"
       password: "{{ superuser_password }}"
+  register: connection_info_consul
   ignore_errors: true
   vars:
     superuser_username: "{{ patroni_superuser_username }}"
@@ -206,7 +212,7 @@
   when:
     - dcs_type == "consul"
     - (cloud_provider | default('') | length < 1 or not cloud_load_balancer | default(true) | bool)
-  tags: conn_info, cluster_info, cluster_status
+  tags: conn_info, cluster_info, cluster_status, secrets
 
 # if 'cloud_provider' and `cloud_load_balancer` is defined
 
@@ -223,6 +229,7 @@
       port: "{{ pgbouncer_listen_port if pgbouncer_install | bool else postgresql_port }}"
       superuser: "{{ superuser_username }}"
       password: "{{ superuser_password }}"
+  register: connection_info_aws_clb
   ignore_errors: true
   vars:
     load_balancer_primary: "{{ (hostvars['localhost']['aws_elb_classic_lb']['results'] | selectattr('item', 'equalto', 'primary') | first).elb.dns_name | default('N/A') }}"
@@ -235,7 +242,7 @@
     - cloud_load_balancer | default(true) | bool
     - cloud_provider | default('') | lower == 'aws'
     - aws_load_balancer_type | default('nlb') | lower == 'clb'
-  tags: conn_info, cluster_info, cluster_status
+  tags: conn_info, cluster_info, cluster_status, secrets
 
 - name: Connection info
   run_once: true
@@ -249,6 +256,7 @@
       port: "{{ pgbouncer_listen_port if pgbouncer_install | bool else postgresql_port }}"
       superuser: "{{ superuser_username }}"
       password: "{{ superuser_password }}"
+  register: connection_info_aws_nlb
   ignore_errors: true
   vars:
     load_balancer_primary: "{{ (hostvars['localhost']['aws_elb_network_lb']['results'] | selectattr('item', 'equalto', 'primary') | first).load_balancer.dns_name | default('N/A') }}"
@@ -261,7 +269,7 @@
     - cloud_load_balancer | default(true) | bool
     - cloud_provider | default('') | lower == 'aws'
     - aws_load_balancer_type | default('nlb') | lower == 'nlb'
-  tags: conn_info, cluster_info, cluster_status
+  tags: conn_info, cluster_info, cluster_status, secrets
 
 # GCP
 - name: Connection info
@@ -276,6 +284,7 @@
       port: "{{ pgbouncer_listen_port if pgbouncer_install | bool else postgresql_port }}"
       superuser: "{{ superuser_username }}"
       password: "{{ superuser_password }}"
+  register: connection_info_gcp
   ignore_errors: true
   vars:
     load_balancer_primary: "{{ (hostvars['localhost']['gcp_load_balancer']['results'] | selectattr('item', 'equalto', 'primary') | first).IPAddress | default('N/A') }}"
@@ -285,7 +294,7 @@
     superuser_username: "{{ patroni_superuser_username }}"
     superuser_password: "{{ '********' if mask_password | default(false) | bool else patroni_superuser_password }}"
   when: cloud_provider | default('') | lower == 'gcp' and cloud_load_balancer | default(true) | bool
-  tags: conn_info, cluster_info, cluster_status
+  tags: conn_info, cluster_info, cluster_status, secrets
 
 # Azure
 - name: Connection info
@@ -300,6 +309,7 @@
       port: "{{ pgbouncer_listen_port if pgbouncer_install | bool else postgresql_port }}"
       superuser: "{{ superuser_username }}"
       password: "{{ superuser_password }}"
+  register: connection_info_azure
   ignore_errors: true
   vars:
     lb_primary_public: "{{ (hostvars['localhost']['azure_load_balancer_public_ip']['results'] | selectattr('item', 'equalto', 'primary') | first).state.ip_address | default('N/A') }}"
@@ -313,7 +323,7 @@
     superuser_username: "{{ patroni_superuser_username }}"
     superuser_password: "{{ '********' if mask_password | default(false) | bool else patroni_superuser_password }}"
   when: cloud_provider | default('') | lower == 'azure' and cloud_load_balancer | default(true) | bool
-  tags: conn_info, cluster_info, cluster_status
+  tags: conn_info, cluster_info, cluster_status, secrets
 
 # DigitalOcean
 - name: Connection info
@@ -328,6 +338,7 @@
       port: "{{ digital_ocean_load_balancer_port | default(database_port) }}"
       superuser: "{{ superuser_username }}"
       password: "{{ superuser_password }}"
+  register: connection_info_digitalocean
   ignore_errors: true
   vars:
     load_balancer_primary: "{{ (hostvars['localhost']['digitalocean_load_balancer']['data'] | selectattr('name', 'equalto', patroni_cluster_name + '-primary') | first).ip | default('N/A') }}"
@@ -338,7 +349,7 @@
     superuser_username: "{{ patroni_superuser_username }}"
     superuser_password: "{{ '********' if mask_password | default(false) | bool else patroni_superuser_password }}"
   when: cloud_provider | default('') | lower  == 'digitalocean' and cloud_load_balancer | default(true) | bool
-  tags: conn_info, cluster_info, cluster_status
+  tags: conn_info, cluster_info, cluster_status, secrets
 
 # Hetzner Cloud
 - name: Connection info
@@ -353,6 +364,7 @@
       port: "{{ hetzner_load_balancer_port | default(database_port) }}"
       superuser: "{{ superuser_username }}"
       password: "{{ superuser_password }}"
+  register: connection_info_hetzner
   ignore_errors: true
   vars:
     lb_primary_public: "{{ (hostvars['localhost']['hetzner_load_balancer']['hcloud_load_balancer_info'] | selectattr('name', 'equalto', patroni_cluster_name + '-primary') | first).ipv4_address | default('N/A') }}"
@@ -367,4 +379,52 @@
     superuser_username: "{{ patroni_superuser_username }}"
     superuser_password: "{{ '********' if mask_password | default(false) | bool else patroni_superuser_password }}"
   when: cloud_provider | default('') | lower == 'hetzner' and cloud_load_balancer | default(true) | bool
-  tags: conn_info, cluster_info, cluster_status
+  tags: conn_info, cluster_info, cluster_status, secrets
+
+# Secrets export
+- name: Collect connection endpoints for secrets export
+  ansible.builtin.set_fact:
+    connection_info_for_secrets: >-
+      {{
+        (connection_info_candidates
+          | selectattr('msg', 'defined')
+          | rejectattr('failed', 'equalto', true)
+          | rejectattr('skipped', 'equalto', true)
+          | map(attribute='msg')
+          | first
+          | ansible.builtin.dict2items
+          | rejectattr('key', 'equalto', 'superuser')
+          | rejectattr('key', 'equalto', 'password')
+          | ansible.builtin.items2dict)
+      }}
+  vars:
+    connection_info_candidates:
+      - "{{ connection_info_vip_haproxy | default({}) }}"
+      - "{{ connection_info_vip_direct | default({}) }}"
+      - "{{ connection_info_local_haproxy | default({}) }}"
+      - "{{ connection_info_local_pgbouncer | default({}) }}"
+      - "{{ connection_info_local_postgres | default({}) }}"
+      - "{{ connection_info_consul | default({}) }}"
+      - "{{ connection_info_aws_clb | default({}) }}"
+      - "{{ connection_info_aws_nlb | default({}) }}"
+      - "{{ connection_info_gcp | default({}) }}"
+      - "{{ connection_info_azure | default({}) }}"
+      - "{{ connection_info_digitalocean | default({}) }}"
+      - "{{ connection_info_hetzner | default({}) }}"
+  delegate_to: localhost
+  delegate_facts: true
+  become: false
+  run_once: true
+  no_log: true
+  when:
+    - secrets_provider | default('') | length > 0
+    - secrets_export_connection_info | default(false) | bool
+    - not (point_in_time_recovery | default(false) | bool)
+    - >-
+      connection_info_candidates
+      | selectattr('msg', 'defined')
+      | rejectattr('failed', 'equalto', true)
+      | rejectattr('skipped', 'equalto', true)
+      | list
+      | length > 0
+  tags: secrets

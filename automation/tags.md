@@ -116,3 +116,4 @@
 - tls
   - tls_cert_generate
   - tls_cert_copy
+- secrets
