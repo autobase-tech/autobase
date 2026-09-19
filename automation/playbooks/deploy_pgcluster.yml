@@ -431,6 +431,5 @@
     - name: Synchronize external secrets
       ansible.builtin.import_role:
         name: vitabaks.autobase.secrets
-      run_once: true
       when: secrets_provider | default('') | length > 0
       tags: secrets
