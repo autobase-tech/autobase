@@ -21,7 +21,6 @@ Stores Autobase values in an external secrets provider. The role is disabled whe
 | `secrets_aws_recovery_window` | `30` | Recovery window used only for explicit deletion. Use `0` for immediate deletion or `7` through `30`. |
 | `secrets_aws_tags` | `cloud_provider_tags` | Tags applied to AWS secrets. The role always adds the `Cluster` tag. |
 | `secrets_aws_overwrite` | `true` | Update an existing secret with the same name. |
-| `secrets_aws_session_token` | `AWS_SESSION_TOKEN` | Optional AWS STS session token. Omitted when empty. |
 | `secrets_aws_resource_policy` | `null` | Optional resource policy, for example for cross-account access. |
 | `secrets_aws_replica` | `null` | Optional list of replica regions and their KMS keys. |
 | `secrets_aws_rotation_lambda` | `""` | Optional ARN of the Lambda function used for automatic rotation. |
