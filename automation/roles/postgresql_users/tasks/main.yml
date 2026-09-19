@@ -30,7 +30,7 @@
       {{
         (hostvars['localhost']['postgresql_users_for_secrets'] | default([]))
         + [{
-          'name': 'postgresql/users/' ~ item.item.name,
+          'name': (secrets_postgresql_users_path | default('postgresql/users') | regex_replace('/+$', '')) ~ '/' ~ item.item.name,
           'value': {'username': item.item.name, 'password': item.item.password}
         }]
       }}
