@@ -1,5 +1,5 @@
 ---
-- name: Make sure the PostgreSQL users are present
+- name: Create or modify PostgreSQL users
   become: true
   become_user: postgres
   community.postgresql.postgresql_user:
