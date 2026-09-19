@@ -31,7 +31,8 @@
         (hostvars['localhost']['postgresql_users_for_secrets'] | default([]))
         + [{
           'name': (secrets_postgresql_users_path | default('postgresql/users') | regex_replace('/+$', '')) ~ '/' ~ item.item.name,
-          'value': {'username': item.item.name, 'password': item.item.password}
+          'value': (item.item.password | string) if secrets_postgresql_users_format | default('json') == 'string'
+            else {'username': item.item.name, 'password': item.item.password}
         }]
       }}
   delegate_to: localhost
