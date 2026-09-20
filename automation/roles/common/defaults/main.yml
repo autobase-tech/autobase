@@ -305,7 +305,6 @@ postgresql_stats_temp_directory_path: "/var/lib/pgsql_stats_tmp" # or 'none'
 postgresql_stats_temp_directory_size: "1024m"
 
 # List of users to be created
-postgresql_users_password_generation: "disabled"  # disabled, on_create, or always
 postgresql_users:
   - { name: "{{ pgbouncer_auth_username }}", password: "{{ pgbouncer_auth_password }}", flags: "LOGIN", role: "" }
 #  - { name: "monitoring_auth_username", password: "monitoring_user_password", flags: "LOGIN", role: "pg_monitor" } # monitoring Service Account
@@ -313,6 +312,9 @@ postgresql_users:
 #  - { name: "", password: "", flags: "NOSUPERUSER" }
 #  - { name: "", password: "", flags: "NOSUPERUSER" }
 #  - { name: "", password: "", flags: "NOLOGIN" }
+
+# Generate missing passwords: "disabled" never, "on_create" only for new users, or "always" on every run.
+postgresql_users_password_generation: "disabled"
 
 # List of databases to be created
 postgresql_databases: []
