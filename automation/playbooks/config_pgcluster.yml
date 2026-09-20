@@ -319,4 +319,4 @@
       when:
         - current_patroni_leader_result.status | default(0) == 200
         - secrets_provider | default('') | length > 0
-      tags: secrets
+      tags: secrets, postgresql_users
