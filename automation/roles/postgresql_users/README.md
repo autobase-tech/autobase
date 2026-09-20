@@ -9,6 +9,7 @@ Based on [community.postgresql.postgresql_user](https://docs.ansible.com/ansible
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `postgresql_users` | `[]` | List of users to create with configuration parameters |
+| `postgresql_users_password_generation` | `disabled` | Password generation mode: `disabled`, `on_create`, or `always` |
 
 ### User Configuration Format
 
@@ -17,7 +18,7 @@ Each user entry supports the following parameters:
 | Parameter | Required | Description | Example |
 |-----------|----------|-------------|---------|
 | `name` | Yes | Username for the PostgreSQL user | `"app_user"` |
-| `password` | No | User password (encrypted automatically). A password is generated for a new user when this value is empty, unless the user has `NOLOGIN`. | `"4eJyGyYoueEYlJQu8bL7CtbVx7cgcc5x"` |
+| `password` | No | User password (encrypted automatically). An empty value is handled according to `postgresql_users_password_generation`. | `"4eJyGyYoueEYlJQu8bL7CtbVx7cgcc5x"` |
 | `flags` | No | Role attributes (comma-separated) | `"CREATEDB,NOSUPERUSER"` |
 | `role` | No | Additional role to grant to user | `"pg_read_all_data"` |
 
@@ -40,9 +41,9 @@ postgresql_users:
   - { name: "pgwatch", password: "pgwatch_pass", flags: "LOGIN", role: "pg_monitor" }
 ```
 
-A 32-character password is generated for a new user if `password` is missing, empty, or null. Password generation is skipped for `NOLOGIN` users and users with `state: absent`. When `secrets_provider` and `secrets_export_postgresql_users` are enabled, the generated password is exported by the `secrets` role after the user is created.
+The default `disabled` mode preserves the previous behavior and does not generate passwords. Set `postgresql_users_password_generation: on_create` to generate a 32-character password for a new user if `password` is missing, empty, or null. Set it to `always` to generate a new password for every user with an empty password on every run. Password generation is skipped for `NOLOGIN` users and users with `state: absent` in all modes.
 
-On subsequent runs, an empty password does not change the password of an existing user and does not overwrite its exported secret. Set a non-empty password explicitly to rotate it.
+When `secrets_provider` and `secrets_export_postgresql_users` are enabled, generated passwords are exported by the `secrets` role after users are created or updated. In `on_create` mode, subsequent runs do not change existing passwords or overwrite their exported secrets. Use `always` for intentional rotation, then return the setting to `on_create` to avoid rotating passwords on every run. A non-empty password always takes precedence over generation.
 
 ## Dependencies
 
