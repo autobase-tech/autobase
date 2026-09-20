@@ -1,10 +1,60 @@
 ---
+# Existing roles must be known before password generation: an empty password means
+# "generate" on first creation and "leave unchanged" on subsequent runs.
+- name: Get existing PostgreSQL users
+  become: true
+  become_user: postgres
+  community.postgresql.postgresql_query:
+    query: "select rolname from pg_catalog.pg_roles"
+    login_host: "127.0.0.1"
+    login_port: "{{ postgresql_port }}"
+    login_user: "{{ patroni_superuser_username }}"
+    login_password: "{{ patroni_superuser_password }}"
+    login_db: "postgres"
+  register: postgresql_existing_users_result
+  changed_when: false
+  when:
+    - postgresql_users | default([]) | length > 0
+    - patroni_standby_cluster.host | default('') | length < 1 # do not perform on the standby cluster
+  tags: postgresql_users, secrets
+
+# Build the complete loop input in one step. Generated passwords remain in the
+# registered module result and can be exported without changing the source YAML.
+- name: Generate passwords for new PostgreSQL users
+  ansible.builtin.set_fact:
+    postgresql_users_effective: >-
+      {%- set effective_users = [] -%}
+      {%- for user in postgresql_users | flatten(1) -%}
+        {%- set user_flags =
+          (user.flags | default('LOGIN', true) | upper | regex_replace('\\s+', '')).split(',') -%}
+        {%- set generate_password =
+          user.state | default('present') == 'present'
+          and user.password | default('', true) | length == 0
+          and 'NOLOGIN' not in user_flags
+          and user.name not in postgresql_existing_users -%}
+        {%- set effective_user = user | combine(
+          {'password': lookup('ansible.builtin.password', '/dev/null chars=ascii_letters,digits length=32')}
+          if generate_password else {}
+        ) -%}
+        {%- set _ = effective_users.append(effective_user) -%}
+      {%- endfor -%}
+      {{ effective_users }}
+  vars:
+    postgresql_existing_users: >-
+      {{ postgresql_existing_users_result.query_result | default([]) | map(attribute='rolname') | list }}
+  no_log: true
+  when:
+    - postgresql_users | default([]) | length > 0
+    - patroni_standby_cluster.host | default('') | length < 1 # do not perform on the standby cluster
+  tags: postgresql_users, secrets
+
 - name: Create or modify PostgreSQL users
   become: true
   become_user: postgres
   community.postgresql.postgresql_user:
     name: "{{ item.name }}"
-    password: "{{ item.password | default(omit) }}"
+    # Omit empty passwords to preserve existing credentials while allowing other attributes to change.
+    password: "{{ item.password | default(omit, true) }}"
     encrypted: true
     role_attr_flags: "{{ item.flags | default('LOGIN') }}"
     conn_limit: "{{ item.conn_limit | default(omit) }}"
@@ -16,7 +66,8 @@
     state: "{{ item.state | default('present') }}"
   ignore_errors: "{{ postgresql_users_ignore_errors | default(false) }}"
   register: postgresql_users_result
-  loop: "{{ postgresql_users | flatten(1) }}"
+  no_log: true # Loop items contain passwords, including generated ones.
+  loop: "{{ postgresql_users_effective | default([]) }}"
   loop_control:
     label: "{{ item.name }}"
   when:
@@ -24,6 +75,8 @@
     - patroni_standby_cluster.host | default('') | length < 1 # do not perform on the standby cluster
   tags: postgresql_users, secrets
 
+# Export only passwords known in this run. Skipping an existing user with an empty
+# password preserves the value already stored in the external secrets provider.
 - name: Collect successfully applied PostgreSQL users for secrets export
   ansible.builtin.set_fact:
     postgresql_users_for_secrets: >-
@@ -48,7 +101,7 @@
     - not (item.failed | default(false) | bool)
     - not (item.skipped | default(false) | bool)
     - item.item.state | default('present') == 'present'
-    - item.item.password | default('') | length > 0
+    - item.item.password | default('', true) | length > 0
   tags: postgresql_users, secrets
 
 - name: Grant roles to users

@@ -81,6 +81,7 @@ The final secret name is `<secrets_prefix>/<relative name>`. With the default pr
 | A `secrets_values` entry with `name: integrations/api-token` | `integrations/api-token` | `autobase/postgres-cluster-01/integrations/api-token` |
 
 - Each exported PostgreSQL user has a separate secret. By default, it contains JSON with `username` and `password`; set `secrets_postgresql_users_format: string` to store only the password as a string.
+- A new user with an empty, missing, or null password receives a generated 32-character password unless the user has `NOLOGIN`. When PostgreSQL user export is enabled, that password is stored in the configured secrets provider. Existing users with an empty password are left unchanged and their secrets are not overwritten.
 - Connection info is stored as one JSON secret containing the available endpoints, ports, and connection strings.
 
 Set `secrets_prefix` to change the prefix for all secrets, including automatic exports:
