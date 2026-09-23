@@ -252,6 +252,7 @@
             image_id: "{{ server_image }}"
             key_name: "{{ ssh_key_name }}"
             region: "{{ server_location }}"
+            vpc_subnet_id: "{{ server_network }}"
             network_interfaces:
               - subnet_id: "{{ server_network }}"
                 groups: "{{ aws_ec2_security_group_ids }}"
