@@ -271,7 +271,7 @@
           when: ec2_instance_info.results[idx].instances | length == 0 # only if instance does not exist
           vars:
             system_volume:
-              device_name: /dev/sda1
+              device_name: "{{ system_volume_name | default('/dev/sda1', true) }}"
               ebs:
                 volume_type: "{{ system_volume_type | default('gp3', true) }}"
                 volume_size: "{{ system_volume_size | default(80) | int }}"
@@ -281,7 +281,7 @@
                 kms_key_id: "{{ aws_ebs_kms_key_id | default(omit, true) }}"
                 delete_on_termination: true
             data_volume:
-              device_name: /dev/sdb
+              device_name: "{{ volume_name | default('/dev/sdb', true) }}"
               ebs:
                 volume_type: "{{ volume_type | default('gp3', true) }}"
                 volume_size: "{{ volume_size | int }}"
@@ -337,7 +337,7 @@
           when: item.instances[0] | default('') | length < 1
           vars:
             system_volume:
-              device_name: /dev/sda1
+              device_name: "{{ system_volume_name | default('/dev/sda1', true) }}"
               ebs:
                 volume_type: "{{ system_volume_type | default('gp3', true) }}"
                 volume_size: 100 # TODO: use 'system_volume_size' variable (https://github.com/ansible-collections/amazon.aws/issues/1949)
@@ -347,7 +347,7 @@
                 kms_key_id: "{{ aws_ebs_kms_key_id | default(omit, true) }}"
                 delete_on_termination: true
             data_volume:
-              device_name: /dev/sdb
+              device_name: "{{ volume_name | default('/dev/sdb', true) }}"
               ebs:
                 volume_type: "{{ volume_type | default('gp3', true) }}"
                 volume_size: 10 # will be redefined via the ec2_vol module
@@ -422,7 +422,7 @@
         region: "{{ server_location }}"
         id: "{{ data_volume.ebs.volume_id | default('') }}"
         instance: "{{ item.instances[0].instance_id }}"
-        device_name: /dev/sdb
+        device_name: "{{ volume_name | default('/dev/sdb', true) }}"
         volume_type: "{{ volume_type | default('gp3', true) }}"
         volume_size: "{{ volume_size | int }}"
         iops: "{{ volume_iops | default(3000) | int if volume_type | default('gp3', true) in ['gp3', 'io1', 'io2'] else omit }}"
