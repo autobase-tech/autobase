@@ -20,7 +20,7 @@
     - role: vitabaks.autobase.cloud_resources
       when: cloud_provider | default('') | length > 0
       vars:
-        generate_inventory: "{{ true if resizefs_enabled | default(false) else false }}"
+        generate_inventory: "{{ (resizefs_enabled | default(false) | bool) and (groups.get('postgres_cluster', []) | length == 0) }}"
       tags: always
 
 - name: vitabaks.autobase.cloud_resources | Resize filesystem
