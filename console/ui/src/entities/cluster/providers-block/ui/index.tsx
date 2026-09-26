@@ -12,6 +12,7 @@ import ClusterFormCloudProviderBox from '@entities/cluster/providers-block/ui/Cl
 import { INSTANCES_BLOCK_FIELD_NAMES } from '@entities/cluster/instances-block/model/const.ts';
 import { STORAGE_BLOCK_FIELDS } from '@entities/cluster/storage-block/model/const.ts';
 import { BACKUPS_BLOCK_FIELD_NAMES } from '@entities/cluster/expert-mode/backups-block/model/const.ts';
+import { getDefaultCloudRegionSelection } from '@shared/lib/defaultCloudRegion.ts';
 
 const ClusterFormProvidersBlock: FC<ProvidersBlockProps> = ({ providers }) => {
   const { t } = useTranslation('clusters');
@@ -21,11 +22,12 @@ const ClusterFormProvidersBlock: FC<ProvidersBlockProps> = ({ providers }) => {
   const nameIconProvidersMap = useNameIconProvidersMap();
 
   const handleProviderChange = (value: any) => () => {
+    const { regionCode, datacenter } = getDefaultCloudRegionSelection(value);
     reset((values) => ({
       ...values,
       [CLUSTER_FORM_FIELD_NAMES.PROVIDER]: value,
-      [CLUSTER_FORM_FIELD_NAMES.REGION]: value?.cloud_regions?.[0]?.code,
-      [CLUSTER_FORM_FIELD_NAMES.REGION_CONFIG]: value?.cloud_regions?.[0]?.datacenters?.[0],
+      [CLUSTER_FORM_FIELD_NAMES.REGION]: regionCode,
+      [CLUSTER_FORM_FIELD_NAMES.REGION_CONFIG]: datacenter,
       [INSTANCES_BLOCK_FIELD_NAMES.INSTANCE_TYPE]: 'small',
       [CLUSTER_FORM_FIELD_NAMES.INSTANCE_CONFIG]: value?.instance_types?.small?.[0],
       [STORAGE_BLOCK_FIELDS.STORAGE_AMOUNT]:
