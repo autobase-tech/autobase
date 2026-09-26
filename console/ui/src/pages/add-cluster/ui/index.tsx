@@ -21,6 +21,7 @@ import { STORAGE_BLOCK_FIELDS } from '@entities/cluster/storage-block/model/cons
 import { IS_EXPERT_MODE, IS_YAML_ENABLED } from '@shared/model/constants.ts';
 import YamlEditorForm from '@widgets/yaml-editor-form/ui';
 import { TabContext, TabList, TabPanel } from '@mui/lab';
+import { getDefaultCloudRegionSelection } from '@shared/lib/defaultCloudRegion.ts';
 
 const AddCluster: FC = () => {
   const { t } = useTranslation(['clusters', 'validation', 'toasts']);
@@ -48,11 +49,12 @@ const AddCluster: FC = () => {
       clusterName.data
     ) {
       const providers = deployments.data.data;
+      const { regionCode, datacenter } = getDefaultCloudRegionSelection(providers[0]);
       methods.reset({
         ...getClusterFormDefaultValues(),
         [CLUSTER_FORM_FIELD_NAMES.PROVIDER]: providers[0],
-        [CLUSTER_FORM_FIELD_NAMES.REGION]: providers[0]?.cloud_regions?.[0]?.code,
-        [CLUSTER_FORM_FIELD_NAMES.REGION_CONFIG]: providers[0]?.cloud_regions?.[0]?.datacenters?.[0],
+        [CLUSTER_FORM_FIELD_NAMES.REGION]: regionCode,
+        [CLUSTER_FORM_FIELD_NAMES.REGION_CONFIG]: datacenter,
         [CLUSTER_FORM_FIELD_NAMES.INSTANCE_CONFIG]: providers[0]?.instance_types?.small?.[0],
         [CLUSTER_FORM_FIELD_NAMES.POSTGRES_VERSION]: postgresVersions.data.data.at(-1)?.major_version,
         [CLUSTER_FORM_FIELD_NAMES.ENVIRONMENT_ID]: environments.data.data[0]?.id,
