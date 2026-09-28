@@ -85,7 +85,7 @@ services:
       - autobase
 
   dbdesk-studio:
-    image: docker.io/bhavikagarwal2001/dbdesk-studio:0.1.5
+    image: docker.io/bhavikagarwal2001/dbdesk-studio:2.0.0
     container_name: dbdesk-studio
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:6789/health"]
