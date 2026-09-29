@@ -117,6 +117,7 @@
     - state == 'present'
     - cluster_scaling | default(false) | bool or
       patroni_standby_cluster.host | default('') | length > 0
+    - not (cloud_provider | lower == 'aws' and ssh_key_name | length > 0 and ssh_key_content | length < 1)
 
 - name: Import tasks for cloud provider dependencies
   ansible.builtin.import_tasks: dependencies.yml

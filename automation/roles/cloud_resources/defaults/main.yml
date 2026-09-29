@@ -30,8 +30,8 @@ system_volume_throughput: 125 # System volume throughput (in MiB/s). Applicable 
 
 use_local_disk: "{{ volume_type | default('') | lower == 'local' or volume_size | default(100) | int == 0 }}" # Use local disk if volume_type is 'local' or volume_size is 0.
 
-ssh_key_name: "" # Name of the SSH key to be added to the server. Note: If not provided, all cloud available SSH keys will be added (applicable to DigitalOcean, Hetzner).
-ssh_key_content: "" # (optional) If provided, the public key content will be added to the cloud (directly to the server for GCP).
+ssh_key_name: "" # Name of the SSH key to be added to the server. Existing cloud keys can be selected by name; if not provided, all available keys will be added (DigitalOcean, Hetzner).
+ssh_key_content: "" # (optional) Public key content to add to the cloud (directly to the server for GCP).
 
 # Firewall / Security Group
 cloud_firewall: true # Specify 'false' if you don't want to configure Firewall rules, or want to manage them yourself.

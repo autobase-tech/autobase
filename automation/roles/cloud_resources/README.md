@@ -42,7 +42,7 @@ Provision the PostgreSQL cluster infrastructure in public clouds (AWS, GCP, Azur
 | volume_size | int | 100 | Data disk size (GB). Set to `0` to use the system disk; this is equivalent to `volume_type: local` |
 | system_volume_type | string | "" | System disk type. Defaults: 'gp3' for AWS, 'pd-ssd' for GCP, 'StandardSSD_LRS' for Azure |
 | system_volume_size | int | 100 | System disk size (GB) |
-| ssh_key_name | string | "" | Name of the SSH key to be added to the server. Note: If not provided, all cloud available SSH keys will be added (applicable to DigitalOcean, Hetzner) |
+| ssh_key_name | string | "" | Name of an SSH key to use from the cloud. If not provided, all available keys will be added (DigitalOcean, Hetzner) |
 | ssh_key_content | string | "" | If provided, the public key content will be added to the cloud (directly to the server for GCP) |
 | cloud_firewall | bool | true | Manage firewall/Security Groups |
 | ssh_public_access | bool | true | Allow public ssh access (required for deployment from the public network). Applicable if server_public_ip is set to true |
