@@ -65,6 +65,7 @@
     - patroni_standby_cluster.host | default('') | length < 1 # exclude for standby cluster
 
 # if ssh_key_name or ssh_key_content is not specified (for cluster scaling or standby cluster)
+# AWS can reuse an existing key pair by name without public key content.
 - block:
     - name: Generate a unique temporary SSH key name
       ansible.builtin.set_fact:
