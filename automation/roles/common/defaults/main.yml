@@ -806,6 +806,7 @@ pgbackrest_install: false # or 'true' to install and configure backups using pgB
 pgbackrest_install_from_pgdg_repo: true
 pgbackrest_stanza: "{{ patroni_cluster_name }}" # specify your --stanza
 pgbackrest_repo_type: "posix" # or "s3", "gcs", "azure"
+pgbackrest_repo_shared: false # 'true' if a posix repo1-path is on a shared network filesystem (stanza-create runs only on the master)
 pgbackrest_repo_host: "" # dedicated repository host (optional)
 pgbackrest_repo_user: "postgres" # if "repo_host" is set (optional)
 pgbackrest_repo_external: false # 'true' if 'repo_host' is an existing repo this collection should not manage (skip the '[pgbackrest]' group requirement)

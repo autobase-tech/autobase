@@ -39,8 +39,8 @@
       changed_when:
         - stanza_create_result.rc == 0
         - stanza_create_result.stdout is not search("already exists")
-      when: repo1_type | lower == 'posix' or
-        (repo1_type | lower != 'posix' and inventory_hostname == groups['master'][0]) # run only on master if it's not posix
+      when: (repo1_type | lower == 'posix' and not (pgbackrest_repo_shared | default(false) | bool)) or
+        inventory_hostname == groups['master'][0] # run only on master if it's not posix or the posix repo is shared
   when:
     - pgbackrest_repo_host | length < 1
     - "'postgres_cluster' in group_names"
