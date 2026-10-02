@@ -27,6 +27,15 @@ This role installs and configures [HAProxy](http://www.haproxy.org/), a reliable
 Note:
 - `master_direct`/`replicas_direct`/`replicas_sync_direct`/`replicas_async_direct` are optional and only used when defined (intended to bypass PgBouncer for direct PostgreSQL connections).
 
+### Replica Listeners
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `haproxy_replicas_sync_enabled` | `true` | Render the `replicas_sync` listener (and `replicas_sync_direct`, if defined) |
+| `haproxy_replicas_async_enabled` | `true` | Render the `replicas_async` listener (and `replicas_async_direct`, if defined) |
+
+Set a flag to `false` to disable the listener, for example in a cluster with a single replica, where one of the two would be permanently DOWN.
+
 ### Addressing
 
 | Variable | Default | Description |

@@ -116,6 +116,7 @@ server {{ hostvars[host]['ansible_hostname'] }} {{ hostvars[host]['patroni_bind_
   {% endfor %}
 {% endif %}
 
+{% if haproxy_replicas_sync_enabled | bool %}
 listen replicas_sync
 {% if cluster_vip is defined and cluster_vip | length > 0 %}
     bind {{ cluster_vip }}:{{ haproxy_listen_port.replicas_sync }}
@@ -162,7 +163,9 @@ listen replicas_sync_direct
 server {{ hostvars[host]['ansible_hostname'] }} {{ hostvars[host]['patroni_bind_address'] | default(hostvars[host]['bind_address'], true) }}:{{ postgresql_port }} check port {{ patroni_restapi_port }}
   {% endfor %}
 {% endif %}
+{% endif %}
 
+{% if haproxy_replicas_async_enabled | bool %}
 listen replicas_async
 {% if cluster_vip is defined and cluster_vip | length > 0 %}
     bind {{ cluster_vip }}:{{ haproxy_listen_port.replicas_async }}
@@ -208,5 +211,6 @@ listen replicas_async_direct
   {% for host in groups['postgres_cluster'] %}
 server {{ hostvars[host]['ansible_hostname'] }} {{ hostvars[host]['patroni_bind_address'] | default(hostvars[host]['bind_address'], true) }}:{{ postgresql_port }} check port {{ patroni_restapi_port }}
   {% endfor %}
+{% endif %}
 {% endif %}
 

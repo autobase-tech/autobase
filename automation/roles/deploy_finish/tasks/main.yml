@@ -90,8 +90,8 @@
           port:
             primary: "{{ haproxy_listen_port.master }}"
             replica: "{{ haproxy_listen_port.replicas }}"
-            replica_sync: "{{ haproxy_listen_port.replicas_sync if synchronous_mode | bool else omit }}"
-            replica_async: "{{ haproxy_listen_port.replicas_async if synchronous_mode | bool else omit }}"
+            replica_sync: "{{ haproxy_listen_port.replicas_sync if synchronous_mode | bool and haproxy_replicas_sync_enabled | bool else omit }}"
+            replica_async: "{{ haproxy_listen_port.replicas_async if synchronous_mode | bool and haproxy_replicas_async_enabled | bool else omit }}"
           superuser: "{{ superuser_username }}"
           password: "{{ superuser_password }}"
       register: connection_info_vip_haproxy
@@ -130,8 +130,8 @@
           port:
             primary: "{{ haproxy_listen_port.master }}"
             replica: "{{ haproxy_listen_port.replicas }}"
-            replica_sync: "{{ haproxy_listen_port.replicas_sync if synchronous_mode | bool else omit }}"
-            replica_async: "{{ haproxy_listen_port.replicas_async if synchronous_mode | bool else omit }}"
+            replica_sync: "{{ haproxy_listen_port.replicas_sync if synchronous_mode | bool and haproxy_replicas_sync_enabled | bool else omit }}"
+            replica_async: "{{ haproxy_listen_port.replicas_async if synchronous_mode | bool and haproxy_replicas_async_enabled | bool else omit }}"
           superuser: "{{ superuser_username }}"
           password: "{{ superuser_password }}"
       register: connection_info_local_haproxy

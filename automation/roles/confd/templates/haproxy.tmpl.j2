@@ -110,6 +110,7 @@ listen replicas_direct
 {{end}}{% endraw %}
 {% endif %}
 
+{% if haproxy_replicas_sync_enabled | bool %}
 listen replicas_sync
 {% if cluster_vip is defined and cluster_vip | length > 0 %}
     bind {{ cluster_vip }}:{{ haproxy_listen_port.replicas_sync }}
@@ -153,7 +154,9 @@ listen replicas_sync_direct
 {% raw %}{{range gets "/members/*"}} server {{base .Key}} {{$data := json .Value}}{{base (replace (index (split $data.conn_url "/") 2) "@" "/" -1)}} check port {{index (split (index (split $data.api_url "/") 2) ":") 1}}
 {{end}}{% endraw %}
 {% endif %}
+{% endif %}
 
+{% if haproxy_replicas_async_enabled | bool %}
 listen replicas_async
 {% if cluster_vip is defined and cluster_vip | length > 0 %}
     bind {{ cluster_vip }}:{{ haproxy_listen_port.replicas_async }}
@@ -196,5 +199,6 @@ listen replicas_async_direct
     {{ default_server(haproxy_default_server.rise_replica) }}
 {% raw %}{{range gets "/members/*"}} server {{base .Key}} {{$data := json .Value}}{{base (replace (index (split $data.conn_url "/") 2) "@" "/" -1)}} check port {{index (split (index (split $data.api_url "/") 2) ":") 1}}
 {{end}}{% endraw %}
+{% endif %}
 {% endif %}
 

@@ -44,6 +44,9 @@ haproxy_listen_port:
   #  replicas_sync_direct: 6002
   #  replicas_async_direct: 6003
   stats: 7000
+# Set to false to disable the synchronous / asynchronous replica listeners
+haproxy_replicas_sync_enabled: true # listener "replicas_sync" (haproxy_listen_port.replicas_sync)
+haproxy_replicas_async_enabled: true # listener "replicas_async" (haproxy_listen_port.replicas_async)
 haproxy_maxconn:
   global: 100000
   master: 10000
@@ -1159,13 +1162,15 @@ firewall_allowed_tcp_ports_for:
     - 8302
     - 8500
     - 8600
-  balancers:
-    - "{{ ansible_ssh_port | default(22) }}"
-    - "{{ haproxy_listen_port.master }}" # HAProxy (read/write) master
-    - "{{ haproxy_listen_port.replicas }}" # HAProxy (read only) all replicas
-    - "{{ haproxy_listen_port.replicas_sync }}" # HAProxy (read only) synchronous replica only
-    - "{{ haproxy_listen_port.replicas_async }}" # HAProxy (read only) asynchronous replicas only
-    - "{{ haproxy_listen_port.stats }}" # HAProxy stats
+  balancers: >-
+    {{
+      [ansible_ssh_port | default(22),
+       haproxy_listen_port.master,
+       haproxy_listen_port.replicas]
+      + ([haproxy_listen_port.replicas_sync] if haproxy_replicas_sync_enabled | bool else [])
+      + ([haproxy_listen_port.replicas_async] if haproxy_replicas_async_enabled | bool else [])
+      + [haproxy_listen_port.stats]
+    }}
 #    - ""
 
 firewall_additional_rules_for:
