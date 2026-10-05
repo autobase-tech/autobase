@@ -313,7 +313,7 @@ postgresql_users:
   - { name: "{{ pgbouncer_auth_username }}", password: "{{ pgbouncer_auth_password }}", flags: "LOGIN", role: "" }
 #  - { name: "monitoring_auth_username", password: "monitoring_user_password", flags: "LOGIN", role: "pg_monitor" } # monitoring Service Account
 #  - { name: "mydb-user", password: "mydb-user-pass", flags: "NOSUPERUSER", conn_limit: "10" }
-#  - { name: "{{ pgbackrest_db_user }}", password: "", flags: "LOGIN", role: "pg_read_all_data,pg_checkpoint,pg_read_all_settings,pg_read_all_stats" } # pgBackRest backup user (least privilege)
+#  - { name: "{{ pgbackrest_db_user }}", password: "", flags: "LOGIN", role: "pg_checkpoint,pg_read_all_settings,pg_read_all_stats" } # pgBackRest backup user (least privilege)
 
 # Generate missing passwords: "disabled" never, "on_create" only for new users, or "always" on every run.
 postgresql_users_password_generation: "disabled"
@@ -812,7 +812,7 @@ pgbackrest_repo_type: "posix" # or "s3", "gcs", "azure"
 pgbackrest_repo_shared: false # 'true' if a posix repo1-path is on a shared network filesystem (stanza-create runs only on the master)
 pgbackrest_repo_host: "" # dedicated repository host (optional)
 pgbackrest_repo_user: "postgres" # if "repo_host" is set (optional)
-pgbackrest_db_user: "" # PostgreSQL user for pgBackRest connections (e.g. "pgbackrest"). If empty (""), pgBackRest uses its default.
+pgbackrest_db_user: "" # PostgreSQL user for pgBackRest connections. If empty, uses the OS user or PGUSER (normally postgres).
 pgbackrest_repo_external: false # 'true' if 'repo_host' is an existing repo this collection should not manage (skip the '[pgbackrest]' group requirement)
 pgbackrest_conf_file: "/etc/pgbackrest/pgbackrest.conf"
 # config https://pgbackrest.org/configuration.html

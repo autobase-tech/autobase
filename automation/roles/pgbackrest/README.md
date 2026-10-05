@@ -13,7 +13,7 @@ Installs and configures [pgBackRest](https://github.com/pgbackrest/pgbackrest) f
 | `pgbackrest_repo_shared` | `false` | Set to `true` if a posix repo is on a shared network filesystem: stanza-create runs only on the master. |
 | `pgbackrest_repo_host` | `""` | Dedicated repository host (optional). |
 | `pgbackrest_repo_user` | `"postgres"` | SSH user on repo_host (when repo_host is set). |
-| `pgbackrest_db_user` | `""` | Database user for pgBackRest connections (e.g. `"pgbackrest"`). If empty (`""`), pgBackRest defaults are used. |
+| `pgbackrest_db_user` | `""` | PostgreSQL user for pgBackRest connections. If empty, uses the OS user or `PGUSER` (normally `postgres`). |
 | `pgbackrest_conf_file` | `"/etc/pgbackrest/pgbackrest.conf"` | Path to pgBackRest config file on DB hosts. |
 | `pgbackrest_conf.global` | [...] | List of global options (section [global]); see defaults. |
 | `pgbackrest_conf.stanza` | [...] | List of stanza options (section [stanza]); see defaults. |
@@ -47,7 +47,7 @@ When a dedicated backup server is used (`pgbackrest_repo_host` is defined), `pgb
 
 ### Database User for Backups (Least Privilege)
 
-By default, pgBackRest connects to PostgreSQL using the default database user (`postgres`). You can specify a dedicated user for pgBackRest with restricted privileges by setting `pgbackrest_db_user`:
+Unless `pg-user` is explicitly configured, pgBackRest connects to PostgreSQL using the local OS user or `PGUSER` (normally `postgres`). You can specify a dedicated user for pgBackRest with restricted privileges by setting `pgbackrest_db_user`:
 
 ```yaml
 pgbackrest_db_user: "pgbackrest"
@@ -72,7 +72,7 @@ postgresql_pg_hba:
 postgresql_users:
   - name: "pgbackrest"
     flags: "LOGIN"
-    role: "pg_read_all_data,pg_checkpoint,pg_read_all_settings,pg_read_all_stats"
+    role: "pg_checkpoint,pg_read_all_settings,pg_read_all_stats"
 
 # 3. Grant execution privileges on backup functions in pg_catalog
 postgresql_privs:
