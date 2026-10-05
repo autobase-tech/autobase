@@ -62,11 +62,11 @@ pgbackrest_db_user: "pgbackrest"
 
 # 1. Allow local socket access to the 'postgres' database in pg_hba.conf (must precede 'local all all')
 postgresql_pg_hba:
-  - { type: "local", database: "all", user: "{{ patroni_superuser_username }}", address: "", method: "trust" }
-  - { type: "local", database: "all", user: "{{ pgbouncer_auth_username }}", address: "", method: "trust" }
-  - { type: "local", database: "postgres", user: "pgbackrest", address: "", method: "trust" }
-  - { type: "local", database: "all", user: "all", address: "", method: "{{ postgresql_password_encryption_algorithm }}" }
-  # ...
+  - type: "local"
+    database: "postgres"
+    user: "pgbackrest"
+    address: ""
+    method: "trust"
 
 # 2. Create the database user with least-privilege roles
 postgresql_users:
