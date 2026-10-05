@@ -1,3 +1,4 @@
+# yamllint disable rule:line-length
 ---
 # ----------------------------------------------------------
 # Proxy variables (optional)
@@ -311,11 +312,8 @@ postgresql_stats_temp_directory_size: "1024m"
 postgresql_users:
   - { name: "{{ pgbouncer_auth_username }}", password: "{{ pgbouncer_auth_password }}", flags: "LOGIN", role: "" }
 #  - { name: "monitoring_auth_username", password: "monitoring_user_password", flags: "LOGIN", role: "pg_monitor" } # monitoring Service Account
-#  - { name: "mydb-user", password: "mydb-user-pass", flags: "SUPERUSER", conn_limit: "10" }
-#  - { name: "pgbackrest", password: "", flags: "LOGIN", role: "pg_read_all_data,pg_checkpoint,pg_read_all_settings,pg_read_all_stats" } # pgBackRest backup user (least privilege)
-#  - { name: "", password: "", flags: "NOSUPERUSER" }
-#  - { name: "", password: "", flags: "NOSUPERUSER" }
-#  - { name: "", password: "", flags: "NOLOGIN" }
+#  - { name: "mydb-user", password: "mydb-user-pass", flags: "NOSUPERUSER", conn_limit: "10" }
+#  - { name: "{{ pgbackrest_db_user }}", password: "", flags: "LOGIN", role: "pg_read_all_data,pg_checkpoint,pg_read_all_settings,pg_read_all_stats" } # pgBackRest backup user (least privilege)
 
 # Generate missing passwords: "disabled" never, "on_create" only for new users, or "always" on every run.
 postgresql_users_password_generation: "disabled"
@@ -325,7 +323,6 @@ postgresql_databases: []
 #  - { db: "mydatabase", encoding: "UTF8", lc_collate: "ru_RU.UTF-8", lc_ctype: "ru_RU.UTF-8", owner: "mydb-user" }
 #  - { db: "mydatabase2", encoding: "UTF8", lc_collate: "ru_RU.UTF-8", lc_ctype: "ru_RU.UTF-8", owner: "mydb-user", conn_limit: "50" }
 #  - { db: "test", encoding: "UTF8", lc_collate: "en_US.UTF-8", lc_ctype: "en_US.UTF-8", tablespace: "my_tablespace" }
-#  - { db: "", encoding: "UTF8", lc_collate: "en_US.UTF-8", lc_ctype: "en_US.UTF-8", owner: "" }
 
 # List of schemas to be created
 postgresql_schemas: []
@@ -339,10 +336,10 @@ postgresql_privs: []
 #  - { role: "test-user", privs: "ALL", type: "database", db: "test-db", objs: "test-db" }  # grant ALL on a database to role test-user
 #  - { role: "mydb-user", privs: "SELECT", type: "table", db: "mydb", objs: "my_table", schema: "my_schema" }  # grant SELECT on a table and schema
 #  - { role: "user", privs: "EXECUTE", type: "function", db: "db1", objs: "pg_ls_waldir()", schema: "pg_catalog" }  # grant EXECUTE on a function
-#  - { role: "pgbackrest", privs: "EXECUTE", type: "function", db: "postgres", objs: "pg_backup_start(text,boolean),pg_backup_stop(boolean),pg_switch_wal(),pg_create_restore_point(text)", schema: "pg_catalog" }  # pgBackRest backup user execution privileges (PG 15+)
-#  - { role: "user, privs: "SELECT", type: "table", db: "mydb", objs: "table2", schema: "schema2", state: "absent" }  # revoke SELECT on a table2 and schema2
+#  - { role: "user", privs: "SELECT", type: "table", db: "mydb", objs: "table2", schema: "schema2", state: "absent" }  # revoke SELECT on a table2 and schema2
 #  - { role: "test, test2", privs: "CREATE", type: "database", db: "test2", objs: "test2" }  # grant CREATE on a database test2 to role test and test2
 #  - { role: "invnatom_ms", privs: "EXECUTE", type: "default_privs", db: "invnatom_db", schema: "invnatom", objs: "FUNCTIONS", target_roles: "invnatom_cd" }
+#  - { role: "{{ pgbackrest_db_user }}", privs: "EXECUTE", type: "function", db: "postgres", objs: "pg_backup_start(text,boolean),pg_backup_stop(boolean),pg_switch_wal(),pg_create_restore_point(text)", schema: "pg_catalog" } # pgBackRest backup user execution privileges
 
 # List of database extensions to be created
 postgresql_extensions: []
@@ -525,7 +522,7 @@ postgresql_index_maintenance_cron_jobs:
     month: "*"
     weekday: "1-5"
     state: "{{ 'present' if postgresql_index_maintenance.enabled | bool else 'absent' }}"
-    job: "/usr/local/bin/pg_auto_reindexer --jobs={{ postgresql_index_maintenance.jobs }} --index-bloat={{ postgresql_index_maintenance.bloat_threshold }} --index-maxsize={{ postgresql_index_maintenance.size_threshold }} --maintenance-start={{ postgresql_index_maintenance.start }} --maintenance-stop={{ postgresql_index_maintenance.stop }}" # yamllint disable rule:line-length
+    job: "/usr/local/bin/pg_auto_reindexer --jobs={{ postgresql_index_maintenance.jobs }} --index-bloat={{ postgresql_index_maintenance.bloat_threshold }} --index-maxsize={{ postgresql_index_maintenance.size_threshold }} --maintenance-start={{ postgresql_index_maintenance.start }} --maintenance-stop={{ postgresql_index_maintenance.stop }}"
   - name: "pg_auto_reindexer: weekends"
     user: "root"
     file: "/etc/cron.d/pg_auto_reindexer"
@@ -535,7 +532,7 @@ postgresql_index_maintenance_cron_jobs:
     month: "*"
     weekday: "6,0"
     state: "{{ 'present' if postgresql_index_maintenance.enabled | bool else 'absent' }}"
-    job: "/usr/local/bin/pg_auto_reindexer --jobs={{ postgresql_index_maintenance.jobs }} --index-bloat={{ postgresql_index_maintenance.bloat_threshold }} --index-minsize={{ postgresql_index_maintenance.size_threshold }} --maintenance-start={{ postgresql_index_maintenance.start }} --maintenance-stop={{ postgresql_index_maintenance.stop }}" # yamllint disable rule:line-length
+    job: "/usr/local/bin/pg_auto_reindexer --jobs={{ postgresql_index_maintenance.jobs }} --index-bloat={{ postgresql_index_maintenance.bloat_threshold }} --index-minsize={{ postgresql_index_maintenance.size_threshold }} --maintenance-start={{ postgresql_index_maintenance.start }} --maintenance-stop={{ postgresql_index_maintenance.stop }}"
 
 ############################################################
 # PgBouncer parameters
@@ -1377,8 +1374,8 @@ glibc_langpack:
 #  - "glibc-langpack-de"
 
 # additional packages
-etcd_package_repo: "https://github.com/etcd-io/etcd/releases/download/v{{ etcd_version }}/etcd-v{{ etcd_version }}-linux-{{ etcd_architecture_map[ansible_architecture] }}.tar.gz" # yamllint disable rule:line-length
-vip_manager_package_repo: "https://github.com/cybertec-postgresql/vip-manager/releases/download/v{{ vip_manager_version }}/vip-manager_{{ vip_manager_version }}_Linux_{{ vip_manager_architecture_map[ansible_architecture] }}.{{ pkg_type }}" # yamllint disable rule:line-length
+etcd_package_repo: "https://github.com/etcd-io/etcd/releases/download/v{{ etcd_version }}/etcd-v{{ etcd_version }}-linux-{{ etcd_architecture_map[ansible_architecture] }}.tar.gz"
+vip_manager_package_repo: "https://github.com/cybertec-postgresql/vip-manager/releases/download/v{{ vip_manager_version }}/vip-manager_{{ vip_manager_version }}_Linux_{{ vip_manager_architecture_map[ansible_architecture] }}.{{ pkg_type }}"
 confd_package_repo: "https://github.com/abtreece/confd/releases/download/v{{ confd_version }}/confd-v{{ confd_version }}-linux-{{ confd_architecture_map[ansible_architecture] }}.tar.gz"
 
 # You can also download the deb/rpm packages into the 'files/' directory.
