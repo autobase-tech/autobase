@@ -19,7 +19,7 @@ pg1-user={{ pgbackrest_db_user }}
 pg{{ loop.index + 1 }}-host={{ hostvars[host]['patroni_bind_address'] | default(hostvars[host]['bind_address'], true) }}
 pg{{ loop.index + 1 }}-port={{ postgresql_port }}
 pg{{ loop.index + 1 }}-path={{ postgresql_data_dir }}
-{% if pgbackrest_db_user | default('') | length > 0 %}
+{% if pgbackrest_db_user | default('') | length > 0 and pgbackrest_conf.stanza | default([]) | selectattr('option', 'equalto', 'pg' ~ (loop.index + 1) ~ '-user') | list | length == 0 %}
 pg{{ loop.index + 1 }}-user={{ pgbackrest_db_user }}
 {% endif %}
 {% endfor %}
