@@ -80,7 +80,7 @@ postgresql_privs:
     privs: "EXECUTE"
     type: "function"
     db: "postgres"
-    objs: "pg_backup_start(text,boolean),pg_backup_stop(boolean),pg_switch_wal(),pg_create_restore_point(text)"
+    objs: "pg_backup_start(text:boolean),pg_backup_stop(boolean),pg_switch_wal(),pg_create_restore_point(text)"
     schema: "pg_catalog"
 ```
 
