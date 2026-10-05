@@ -312,6 +312,7 @@ postgresql_users:
   - { name: "{{ pgbouncer_auth_username }}", password: "{{ pgbouncer_auth_password }}", flags: "LOGIN", role: "" }
 #  - { name: "monitoring_auth_username", password: "monitoring_user_password", flags: "LOGIN", role: "pg_monitor" } # monitoring Service Account
 #  - { name: "mydb-user", password: "mydb-user-pass", flags: "SUPERUSER", conn_limit: "10" }
+#  - { name: "pgbackrest", password: "", flags: "LOGIN", role: "pg_read_all_data,pg_checkpoint,pg_read_all_settings,pg_read_all_stats" } # pgBackRest backup user (least privilege)
 #  - { name: "", password: "", flags: "NOSUPERUSER" }
 #  - { name: "", password: "", flags: "NOSUPERUSER" }
 #  - { name: "", password: "", flags: "NOLOGIN" }
@@ -338,6 +339,7 @@ postgresql_privs: []
 #  - { role: "test-user", privs: "ALL", type: "database", db: "test-db", objs: "test-db" }  # grant ALL on a database to role test-user
 #  - { role: "mydb-user", privs: "SELECT", type: "table", db: "mydb", objs: "my_table", schema: "my_schema" }  # grant SELECT on a table and schema
 #  - { role: "user", privs: "EXECUTE", type: "function", db: "db1", objs: "pg_ls_waldir()", schema: "pg_catalog" }  # grant EXECUTE on a function
+#  - { role: "pgbackrest", privs: "EXECUTE", type: "function", db: "postgres", objs: "pg_backup_start(text,boolean),pg_backup_stop(boolean),pg_switch_wal(),pg_create_restore_point(text)", schema: "pg_catalog" }  # pgBackRest backup user execution privileges (PG 15+)
 #  - { role: "user, privs: "SELECT", type: "table", db: "mydb", objs: "table2", schema: "schema2", state: "absent" }  # revoke SELECT on a table2 and schema2
 #  - { role: "test, test2", privs: "CREATE", type: "database", db: "test2", objs: "test2" }  # grant CREATE on a database test2 to role test and test2
 #  - { role: "invnatom_ms", privs: "EXECUTE", type: "default_privs", db: "invnatom_db", schema: "invnatom", objs: "FUNCTIONS", target_roles: "invnatom_cd" }
@@ -477,6 +479,7 @@ pending_restart: false
 postgresql_pg_hba:
   - { type: "local", database: "all", user: "{{ patroni_superuser_username }}", address: "", method: "trust" }
   - { type: "local", database: "all", user: "{{ pgbouncer_auth_username }}", address: "", method: "trust" }
+#  - { type: "local", database: "postgres", user: "pgbackrest", address: "", method: "trust" } # if pgbackrest_db_user is set to "pgbackrest"
   - { type: "local", database: "all", user: "all", address: "", method: "{{ postgresql_password_encryption_algorithm }}" }
   - { type: "host", database: "all", user: "all", address: "127.0.0.1/32", method: "{{ postgresql_password_encryption_algorithm }}" }
   - { type: "host", database: "all", user: "all", address: "::1/128", method: "{{ postgresql_password_encryption_algorithm }}" }
@@ -812,6 +815,7 @@ pgbackrest_repo_type: "posix" # or "s3", "gcs", "azure"
 pgbackrest_repo_shared: false # 'true' if a posix repo1-path is on a shared network filesystem (stanza-create runs only on the master)
 pgbackrest_repo_host: "" # dedicated repository host (optional)
 pgbackrest_repo_user: "postgres" # if "repo_host" is set (optional)
+pgbackrest_db_user: "" # PostgreSQL user for pgBackRest connections (e.g. "pgbackrest"). If empty (""), pgBackRest uses its default.
 pgbackrest_repo_external: false # 'true' if 'repo_host' is an existing repo this collection should not manage (skip the '[pgbackrest]' group requirement)
 pgbackrest_conf_file: "/etc/pgbackrest/pgbackrest.conf"
 # config https://pgbackrest.org/configuration.html
@@ -861,7 +865,11 @@ pgbackrest_server_conf:
     - { option: "link-all", value: "y" }
     - { option: "resume", value: "n" }
 #    - { option: "", value: "" }
-# the stanza section will be generated automatically
+  stanza: [] # [stanza_name] section (database connection options will be generated automatically; custom stanza options take precedence over auto-generated ones)
+  # Example:
+  # stanza:
+  #   - { option: "repo1-retention-full", value: "14" }
+  #   - { option: "process-max", value: "4" }
 
 pgbackrest_archive_command: "pgbackrest --stanza={{ pgbackrest_stanza }} archive-push %p"
 pgbackrest_restore_command: "pgbackrest --stanza={{ pgbackrest_stanza }} archive-get %f %p"

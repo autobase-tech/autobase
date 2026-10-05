@@ -1,8 +1,23 @@
 [{{ pgbackrest_stanza }}]
+{% for stanza in pgbackrest_server_conf.stanza %}
+{{ stanza.option }}={{ stanza.value }}
+{% endfor %}
+{% set user_options = pgbackrest_server_conf.stanza | map(attribute='option') | list %}
 {% for host in groups['postgres_cluster'] %}
+{% if ('pg' ~ loop.index ~ '-host') not in user_options %}
 pg{{ loop.index }}-host={{ hostvars[host].bind_address }}
+{% endif %}
+{% if ('pg' ~ loop.index ~ '-port') not in user_options %}
 pg{{ loop.index }}-port={{ postgresql_port }}
+{% endif %}
+{% if ('pg' ~ loop.index ~ '-socket-path') not in user_options %}
 pg{{ loop.index }}-socket-path={{ postgresql_unix_socket_dir }}
+{% endif %}
+{% if ('pg' ~ loop.index ~ '-path') not in user_options %}
 pg{{ loop.index }}-path={{ postgresql_data_dir }}
+{% endif %}
+{% if pgbackrest_db_user | default('') | length > 0 and ('pg' ~ loop.index ~ '-user') not in user_options %}
+pg{{ loop.index }}-user={{ pgbackrest_db_user }}
+{% endif %}
 {% endfor %}
 

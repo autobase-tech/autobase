@@ -10,11 +10,17 @@
 {% if pgbackrest_conf.stanza | default([]) | selectattr('option', 'equalto', 'pg1-path') | list | length == 0 %}
 pg1-path={{ postgresql_data_dir }}
 {% endif %}
+{% if pgbackrest_db_user | default('') | length > 0 and pgbackrest_conf.stanza | default([]) | selectattr('option', 'equalto', 'pg1-user') | list | length == 0 %}
+pg1-user={{ pgbackrest_db_user }}
+{% endif %}
 {% if pgbackrest_conf.global | default([]) | selectattr('option', 'equalto', 'backup-standby') | map(attribute='value') | list | last | default('') == 'y' %}
 {% set pg_standby_hosts = groups['postgres_cluster'] | reject('equalto', inventory_hostname) | list %}
 {% for host in pg_standby_hosts %}
 pg{{ loop.index + 1 }}-host={{ hostvars[host]['patroni_bind_address'] | default(hostvars[host]['bind_address'], true) }}
 pg{{ loop.index + 1 }}-port={{ postgresql_port }}
 pg{{ loop.index + 1 }}-path={{ postgresql_data_dir }}
+{% if pgbackrest_db_user | default('') | length > 0 %}
+pg{{ loop.index + 1 }}-user={{ pgbackrest_db_user }}
+{% endif %}
 {% endfor %}
 {% endif %}

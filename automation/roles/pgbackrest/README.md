@@ -13,10 +13,12 @@ Installs and configures [pgBackRest](https://github.com/pgbackrest/pgbackrest) f
 | `pgbackrest_repo_shared` | `false` | Set to `true` if a posix repo is on a shared network filesystem: stanza-create runs only on the master. |
 | `pgbackrest_repo_host` | `""` | Dedicated repository host (optional). |
 | `pgbackrest_repo_user` | `"postgres"` | SSH user on repo_host (when repo_host is set). |
+| `pgbackrest_db_user` | `""` | Database user for pgBackRest connections (e.g. `"pgbackrest"`). If empty (`""`), pgBackRest defaults are used. |
 | `pgbackrest_conf_file` | `"/etc/pgbackrest/pgbackrest.conf"` | Path to pgBackRest config file on DB hosts. |
 | `pgbackrest_conf.global` | [...] | List of global options (section [global]); see defaults. |
 | `pgbackrest_conf.stanza` | [...] | List of stanza options (section [stanza]); see defaults. |
 | `pgbackrest_server_conf.global` | [...] | Global options for a dedicated repo server (generated when repo_host is set). |
+| `pgbackrest_server_conf.stanza` | `[]` | Stanza options for a dedicated repo server (written to `conf.d/<stanza>.conf`). Database connection options (`pgX-*`) are generated automatically unless overridden by custom options. |
 | `pgbackrest_archive_command` | `"pgbackrest --stanza={{ pgbackrest_stanza }} archive-push %p"` | WAL archive_command helper string. |
 | `pgbackrest_restore_command` | `"pgbackrest --stanza={{ pgbackrest_stanza }} archive-get %f %p"` | WAL restore_command helper string. |
 | `pgbackrest_restore_target_time` | `""` | Optional PITR target time, for example `"2020-06-01 11:00:00+03"`. Adds `--type=time --target=...` to the cluster restore command. |
@@ -38,6 +40,49 @@ Note: To bootstrap via backup set `patroni_cluster_bootstrap_method: "pgbackrest
 The `pgbackrest_conf` variable uses a dictionary with global and stanza sections:
 - `global`: repository and general settings
 - `stanza`: database-specific settings (`pg1-path`, `pg1-socket-path`, etc.)
+
+When a dedicated backup server is used (`pgbackrest_repo_host` is defined), `pgbackrest_server_conf` is used on the repository host:
+- `global`: repository and general settings written to `/etc/pgbackrest/pgbackrest.conf`
+- `stanza`: custom options for the stanza configuration in `/etc/pgbackrest/conf.d/<stanza>.conf`. Database connection options (`pg1-*`, `pg2-*`, ...) are added automatically, but any explicitly defined custom values take precedence over auto-generated ones.
+
+### Database User for Backups (Least Privilege)
+
+By default, pgBackRest connects to PostgreSQL using the default database user (`postgres`). You can specify a dedicated user for pgBackRest with restricted privileges by setting `pgbackrest_db_user`:
+
+```yaml
+pgbackrest_db_user: "pgbackrest"
+```
+
+When set:
+- pgBackRest stanza configurations on both the repository server (`conf.d/<stanza>.conf`) and database nodes (`pgbackrest.conf`) will include `pgX-user={{ pgbackrest_db_user }}`.
+- The user must be created, granted access in `postgresql_pg_hba`, and given appropriate backup privileges:
+
+```yaml
+pgbackrest_db_user: "pgbackrest"
+
+# 1. Allow local socket access to the 'postgres' database in pg_hba.conf (must precede 'local all all')
+postgresql_pg_hba:
+  - { type: "local", database: "all", user: "{{ patroni_superuser_username }}", address: "", method: "trust" }
+  - { type: "local", database: "all", user: "{{ pgbouncer_auth_username }}", address: "", method: "trust" }
+  - { type: "local", database: "postgres", user: "pgbackrest", address: "", method: "trust" }
+  - { type: "local", database: "all", user: "all", address: "", method: "{{ postgresql_password_encryption_algorithm }}" }
+  # ...
+
+# 2. Create the database user with least-privilege roles
+postgresql_users:
+  - name: "pgbackrest"
+    flags: "LOGIN"
+    role: "pg_read_all_data,pg_checkpoint,pg_read_all_settings,pg_read_all_stats"
+
+# 3. Grant execution privileges on backup functions in pg_catalog
+postgresql_privs:
+  - role: "pgbackrest"
+    privs: "EXECUTE"
+    type: "function"
+    db: "postgres"
+    objs: "pg_backup_start(text,boolean),pg_backup_stop(boolean),pg_switch_wal(),pg_create_restore_point(text)"
+    schema: "pg_catalog"
+```
 
 
 ### pgBackRest auto conf (cloud_backup_provider)
