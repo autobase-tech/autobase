@@ -476,7 +476,7 @@ pending_restart: false
 postgresql_pg_hba:
   - { type: "local", database: "all", user: "{{ patroni_superuser_username }}", address: "", method: "trust" }
   - { type: "local", database: "all", user: "{{ pgbouncer_auth_username }}", address: "", method: "trust" }
-#  - { type: "local", database: "postgres", user: "pgbackrest", address: "", method: "trust" } # if pgbackrest_db_user is set to "pgbackrest"
+#  - { type: "local", database: "postgres", user: "{{ pgbackrest_db_user }}", address: "", method: "trust" }
   - { type: "local", database: "all", user: "all", address: "", method: "{{ postgresql_password_encryption_algorithm }}" }
   - { type: "host", database: "all", user: "all", address: "127.0.0.1/32", method: "{{ postgresql_password_encryption_algorithm }}" }
   - { type: "host", database: "all", user: "all", address: "::1/128", method: "{{ postgresql_password_encryption_algorithm }}" }
