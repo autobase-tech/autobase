@@ -45,7 +45,7 @@
     - block:
         - name: Check if pgBackRest stanza exists
           become: true
-          become_user: "{{ pgbackrest_repo_user | default('postgres', true) }}"
+          become_user: "{{ pgbackrest_command_user }}"
           ansible.builtin.command: "pgbackrest --stanza={{ pgbackrest_stanza | default(default_pgbackrest_stanza) }} info"
           register: pgbackrest_info_result
           failed_when: false
@@ -53,14 +53,14 @@
 
         - name: Run pgBackRest stop
           become: true
-          become_user: "{{ pgbackrest_repo_user | default('postgres', true) }}"
+          become_user: "{{ pgbackrest_command_user }}"
           ansible.builtin.command: "pgbackrest --stanza={{ pgbackrest_stanza | default(default_pgbackrest_stanza) }} stop --force"
           register: pgbackrest_stop_result
           when: pgbackrest_info_result.stdout is not search("missing stanza path") # skip if no stanza exists
 
         - name: Delete pgBackRest stanza
           become: true
-          become_user: "{{ pgbackrest_repo_user | default('postgres', true) }}"
+          become_user: "{{ pgbackrest_command_user }}"
           ansible.builtin.command: "pgbackrest --stanza={{ pgbackrest_stanza | default(default_pgbackrest_stanza) }} stanza-delete --force"
           when: pgbackrest_stop_result is defined
 
@@ -74,10 +74,14 @@
 
         - name: Run pgBackRest start
           become: true
-          become_user: "{{ pgbackrest_repo_user | default('postgres', true) }}"
+          become_user: "{{ pgbackrest_command_user }}"
           ansible.builtin.command: "pgbackrest --stanza={{ pgbackrest_stanza | default(default_pgbackrest_stanza) }} start" # delete stop file (it exists)
           when: pgbackrest_stop_result is defined
       vars:
+        pgbackrest_command_user: >-
+          {{ (pgbackrest_repo_user | default('postgres', true))
+             if inventory_hostname in groups.get('pgbackrest', [])
+             else 'postgres' }}
         default_pgbackrest_stanza: "{{ patroni_cluster_name | default('postgres-cluster') }}"
         default_pgbackrest_cron_jobs: "{{ [{ 'file': '/etc/cron.d/pgbackrest-' ~ default_pgbackrest_stanza }] }}"
       ignore_errors: true
