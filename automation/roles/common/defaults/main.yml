@@ -1486,6 +1486,6 @@ secrets_postgresql_users_format: "json" # json: username and password; string: p
 secrets_postgresql_users_path: "postgresql/users" # Relative path; the username is appended.
 
 secrets_export_connection_info: false # Export connection addresses and ports.
-secrets_connection_info_path: "connection" # Relative name of the connection info secret.
+secrets_connection_info_path: "postgresql/connection" # Relative name of the connection info secret.
 
 # Note: See automation/roles/secrets/README.md for more details and all available variables.

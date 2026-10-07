@@ -96,7 +96,9 @@
         + [{
           'name': (secrets_postgresql_users_path | default('postgresql/users') | regex_replace('/+$', '')) ~ '/' ~ item.item.name,
           'value': (item.item.password | string) if secrets_postgresql_users_format | default('json') == 'string'
-            else {'username': item.item.name, 'password': item.item.password}
+            else {'username': item.item.name, 'password': item.item.password},
+          'username': item.item.name,
+          'password': item.item.password | string
         }]
       }}
   delegate_to: localhost
@@ -113,6 +115,28 @@
     - not (item.skipped | default(false) | bool)
     - item.item.state | default('present') == 'present'
     - item.item.password | default('', true) | length > 0
+  tags: postgresql_users, secrets
+
+# Used only by value-only secrets mode, where all users share one secret:
+# removed users are deleted from that secret.
+- name: Collect removed PostgreSQL users for secrets export
+  ansible.builtin.set_fact:
+    postgresql_users_removed_for_secrets: >-
+      {{ (hostvars['localhost']['postgresql_users_removed_for_secrets'] | default([])) + [item.item.name] }}
+  delegate_to: localhost
+  delegate_facts: true
+  become: false
+  loop: "{{ postgresql_users_result.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.name | default('unnamed user') }}"
+  no_log: true
+  when:
+    - secrets_provider | default('') | length > 0
+    - secrets_export_postgresql_users | default(false) | bool
+    - secrets_aws_value_only | default(false) | bool
+    - not (item.failed | default(false) | bool)
+    - not (item.skipped | default(false) | bool)
+    - item.item.state | default('present') == 'absent'
   tags: postgresql_users, secrets
 
 - name: Grant roles to users
