@@ -40,7 +40,7 @@ Stores Autobase values in an external secrets provider. The role is disabled whe
 
 Secrets are created or updated by default. They are deleted only when `state: absent` is set explicitly. Removing an item from configuration does not delete it.
 
-Secret names must be unique across `secrets_values`, exported PostgreSQL users, and the automatically exported `postgresql/connection` value. Duplicate names are not rejected. They are processed in order, so the last value wins; different values for the same name also cause repeated updates on every run.
+Secret names must be unique across `secrets_values`, exported PostgreSQL users, and the automatically exported `postgresql/connection` value. Duplicate names are not rejected. They are processed in order, so the last value wins; different values for the same name also cause repeated updates on every run. The only exception is a shared secret for users and connection info in [value-only mode](#postgresql-users-and-connection-info-in-value-only-mode).
 
 The automatically exported `postgresql/connection` secret contains only connection endpoints. Export is skipped when connection information is unavailable or contains `N/A`, preserving any existing secret. Store credentials separately through `secrets_values`, for example as `postgresql/superuser`, when required.
 
@@ -69,7 +69,7 @@ export AWS_ACCESS_KEY_ID="..."
 export AWS_SECRET_ACCESS_KEY="..."
 ```
 
-The credentials need permission to create, update, tag, and explicitly delete Secrets Manager secrets. Required permissions depend on the settings used:
+Required permissions depend on the settings used. For value-only mode, see [its permissions](#value-only-mode).
 
 | Permissions | When required |
 |---|---|
@@ -118,14 +118,14 @@ secrets_connection_info_path: "database/endpoints"
 # Connection info: my-project/my_pgcluster/database/endpoints
 ```
 
-Both paths are relative to `secrets_prefix`. The username is appended to `secrets_postgresql_users_path`; `secrets_connection_info_path` names a single secret. With `secrets_prefix: ""`, the relative names are used directly, without a leading slash.
+Both paths are relative to `secrets_prefix`. The username is appended to `secrets_postgresql_users_path`; `secrets_connection_info_path` names a single secret.
 
-A leading slash in a relative name is ignored; only `secrets_prefix` decides whether the final name starts with `/`. AWS treats `/backend/production/db` and `backend/production/db` as different secrets:
+A leading slash in a relative name is ignored; only `secrets_prefix` decides whether the final name starts with `/`. AWS treats `/backend/production/autobase-db` and `backend/production/autobase-db` as different secrets:
 
 | `secrets_prefix` | Relative name | Full secret name |
 |---|---|---|
-| `""` | `backend/production/db` or `/backend/production/db` | `backend/production/db` |
-| `"/"` | `backend/production/db` or `/backend/production/db` | `/backend/production/db` |
+| `""` | `backend/production/autobase-db` or `/backend/production/autobase-db` | `backend/production/autobase-db` |
+| `"/"` | `backend/production/autobase-db` or `/backend/production/autobase-db` | `/backend/production/autobase-db` |
 
 Changing the prefix or a secret name creates a secret under the new name; it does not delete the old secret. Delete old secrets explicitly with `state: absent` using their original prefix and relative name.
 
@@ -195,10 +195,10 @@ secrets_aws_value_only: true
 
 In this mode Autobase:
 
-- Writes the value only when it differs from the current one. JSON values are compared as data, so formatting differences do not create new versions.
+- Writes the value only when it differs from the current one, unless `secrets_aws_value_compare: false` is set. JSON values are compared as data, so formatting differences do not create new versions.
 - Fails if the secret does not exist or is scheduled for deletion. It never creates, restores, or deletes secrets, and `state: absent` is rejected.
 - Never changes the description, KMS key, resource policy, rotation, replication, or tags. The corresponding `secrets_aws_*` settings are ignored for these secrets.
-- Respects `secrets_aws_overwrite`: with `false`, a value is written only if the secret has no current value.
+- Respects `secrets_aws_overwrite`: with `false`, a value is written only if the secret has no current value. This also stops later updates of exported users and connection info.
 
 The mode can also be set for a single `secrets_values` entry with `value_only: true` or `value_only: false`, which overrides `secrets_aws_value_only`. Automatically exported PostgreSQL users and connection info follow `secrets_aws_value_only`.
 
@@ -226,17 +226,22 @@ The new data is merged into the current value of the secret instead of replacing
 
 Merging requires reading the current value, so `secrets_aws_value_compare: false` is rejected when users are exported. The current value must be empty or a JSON object.
 
-Connection info is stored under the `connection` key and replaced entirely on every run, so the secret always matches the current cluster configuration.
+Create the users secret before adding users. Secrets are written after the users are created in PostgreSQL, so if the secret is missing, the run fails and a password generated in that run is lost; the user then needs a new password.
+
+Merging reads and writes the whole secret. If two Autobase runs update the same secret at the same time, one of them may overwrite the changes of the other.
+
+Connection info is stored under the `connection` key. When it changes, the whole `connection` object is replaced, so keys removed from the cluster configuration are also removed from the secret.
 
 Set the same path for users and connection info to store both in one secret:
 
 ```yaml
 secrets_aws_value_only: true
-secrets_prefix: "" # use the paths as is; set "/" if the secret names start with a slash
+secrets_prefix: "/" # secret names start with a slash; use "" for names without it
 secrets_export_postgresql_users: true
 secrets_export_connection_info: true
-secrets_postgresql_users_path: "backend/production/db"
-secrets_connection_info_path: "backend/production/db"
+secrets_postgresql_users_path: "/backend/production/autobase-db"
+secrets_connection_info_path: "/backend/production/autobase-db"
+# Secret name: /backend/production/autobase-db
 ```
 
 ```json
@@ -252,4 +257,4 @@ secrets_connection_info_path: "backend/production/db"
 }
 ```
 
-With separate paths, users are stored under the `users` key of their secret and connection info under the `connection` key of its own secret. The connection info secret is written without merging, so it works with `secrets_aws_value_compare: false`; its whole value is replaced on every run, and any other keys stored in it are removed.
+With separate paths, users are stored under the `users` key of their secret and connection info under the `connection` key of its own secret. The connection info secret is written without merging, so it works with `secrets_aws_value_compare: false`; its whole value is replaced, and any other keys stored in it are removed.
