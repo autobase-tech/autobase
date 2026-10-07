@@ -25,6 +25,8 @@ Stores Autobase values in an external secrets provider. The role is disabled whe
 | `secrets_aws_manage_tags` | `true` | Manage tags on AWS secrets. Set to `false` to disable tagging completely. |
 | `secrets_aws_tags` | `cloud_provider_tags` | Tags applied to AWS secrets. The role adds the `Cluster` tag when `secrets_aws_manage_tags` is enabled. |
 | `secrets_aws_overwrite` | `true` | Update an existing secret with the same name. |
+| `secrets_aws_value_only` | `false` | Only update values of existing secrets. See [Value-only mode](#value-only-mode). |
+| `secrets_aws_value_compare` | `true` | In value-only mode, read the current value and write only when it differs. Set to `false` when `GetSecretValue` is not permitted. |
 | `secrets_aws_resource_policy` | `null` | Optional resource policy, for example for cross-account access. |
 | `secrets_aws_replica` | `null` | Optional list of replica regions and their KMS keys. |
 | `secrets_aws_rotation_lambda` | `""` | Optional ARN of the Lambda function used for automatic rotation. |
@@ -67,7 +69,50 @@ export AWS_ACCESS_KEY_ID="..."
 export AWS_SECRET_ACCESS_KEY="..."
 ```
 
-The credentials need permission to create, update, tag, and explicitly delete Secrets Manager secrets.
+The credentials need permission to create, update, tag, and explicitly delete Secrets Manager secrets. Required permissions depend on the settings used:
+
+| Permissions | When required |
+|---|---|
+| `secretsmanager:DescribeSecret`, `secretsmanager:GetSecretValue`, `secretsmanager:GetResourcePolicy` | Always. Existing secrets and their resource policy are read on every run. |
+| `secretsmanager:CreateSecret`, `secretsmanager:UpdateSecret` | Always. Create missing secrets and update changed values. |
+| `secretsmanager:TagResource` | `secrets_aws_manage_tags: true` (default), including tags set on creation. |
+| `secretsmanager:PutResourcePolicy`, `secretsmanager:DeleteResourcePolicy` | `secrets_aws_resource_policy` is set, or an existing secret has a policy that must be removed. |
+| `secretsmanager:RotateSecret`, `secretsmanager:CancelRotateSecret` | `secrets_aws_rotation_lambda` is set, or rotation must be disabled on an existing secret. |
+| `secretsmanager:ReplicateSecretToRegions`, `secretsmanager:RemoveRegionsFromReplication` | `secrets_aws_replica` is set. |
+| `secretsmanager:DeleteSecret`, `secretsmanager:RestoreSecret` | A secret has `state: absent`, or a secret scheduled for deletion is set to `present` again. |
+| `kms:Decrypt`, `kms:GenerateDataKey` | `secrets_aws_kms_key_id` is a customer managed KMS key, including keys of replica regions. |
+
+Note: when a secret already has a resource policy and `secrets_aws_resource_policy` is not set, the module removes that policy. Use [value-only mode](#value-only-mode) for secrets whose policy is managed elsewhere.
+
+## Value-only mode
+
+Use value-only mode when the secrets are created and configured by another tool, such as Terraform. Autobase then writes only the secret value with `PutSecretValue`:
+
+```yaml
+secrets_provider: aws
+secrets_aws_value_only: true
+```
+
+In this mode Autobase:
+
+- Writes the value only when it differs from the current one. JSON values are compared as data, so formatting differences do not create new versions.
+- Fails if the secret does not exist or is scheduled for deletion. It never creates, restores, or deletes secrets, and `state: absent` is rejected.
+- Never changes the description, KMS key, resource policy, rotation, replication, or tags. The corresponding `secrets_aws_*` settings are ignored for these secrets.
+- Respects `secrets_aws_overwrite`: with `false`, a value is written only if the secret has no current value.
+
+The mode can also be set for a single `secrets_values` entry with `value_only: true` or `value_only: false`, which overrides `secrets_aws_value_only`. Automatically exported PostgreSQL users and connection info follow `secrets_aws_value_only`.
+
+Required permissions in this mode:
+
+| Permissions | When required |
+|---|---|
+| `secretsmanager:DescribeSecret` | Always. Check that the secret exists and whether it has a current value. |
+| `secretsmanager:GetSecretValue` | `secrets_aws_value_compare: true` (default). Compare the current value with the new one. |
+| `secretsmanager:PutSecretValue` | Always. Write the value when it differs. |
+| `kms:GenerateDataKey` | The secret uses a customer managed KMS key. |
+| `kms:Decrypt` | The secret uses a customer managed KMS key and `secrets_aws_value_compare: true`. |
+
+Where `GetSecretValue` is not permitted, set `secrets_aws_value_compare: false`. The value is then written on every run without comparison: each run creates a new secret version and reports a change. With `secrets_aws_overwrite: false`, existing values are never replaced, so no comparison is needed and `GetSecretValue` is not used.
 
 Secret values and module results are protected with `no_log`, and diff output is disabled.
 
