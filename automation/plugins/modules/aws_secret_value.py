@@ -40,6 +40,8 @@ options:
     description:
       - Replace the current value when it differs.
       - When C(false), the value is written only if the secret has no current value.
+    default: true
+    type: bool
   compare:
     description:
       - Read the current value with C(GetSecretValue) and write only when it differs.
@@ -47,8 +49,21 @@ options:
         so the task always reports a change. Use it where reading secret values is not permitted.
     default: true
     type: bool
-    default: true
+  merge:
+    description:
+      - Apply I(json_secret) to the current JSON object as a JSON Merge Patch (RFC 7396)
+        instead of replacing it. Nested objects are merged, and keys set to C(null) are removed.
+      - Keys that are not in I(json_secret) are preserved.
+      - Requires I(json_secret) and I(compare=true). Fails if the current value is not a JSON object.
+    default: false
     type: bool
+  replace_keys:
+    description:
+      - Top-level keys of I(json_secret) that replace the current values entirely instead of being merged.
+      - Used only with I(merge=true).
+    type: list
+    elements: str
+    default: []
 extends_documentation_fragment:
   - amazon.aws.common.modules
   - amazon.aws.region.modules
@@ -62,6 +77,16 @@ EXAMPLES = r"""
     json_secret:
       username: app_user
       password: "{{ app_user_password }}"
+    region: us-west-2
+
+- name: Add one user and remove another, keeping other keys of the secret
+  vitabaks.autobase.aws_secret_value:
+    name: backend/production/db
+    json_secret:
+      users:
+        app_user: "{{ app_user_password }}"
+        old_user: null
+    merge: true
     region: us-west-2
 """
 
@@ -109,6 +134,19 @@ def get_current_value(module, client, name):
         module.fail_json_aws(e, msg="Failed to read the value of secret '{0}'".format(name))
 
 
+def merge_patch(target, patch):
+    """Applies a JSON Merge Patch (RFC 7396)."""
+    if not isinstance(patch, dict):
+        return patch
+    result = dict(target) if isinstance(target, dict) else {}
+    for key, value in patch.items():
+        if value is None:
+            result.pop(key, None)
+        else:
+            result[key] = merge_patch(result.get(key), value)
+    return result
+
+
 def values_match(current, desired, secret_type, is_json):
     if current is None:
         return False
@@ -134,6 +172,8 @@ def main():
             secret_type=dict(type="str", choices=["string", "binary"], default="string"),
             overwrite=dict(type="bool", default=True),
             compare=dict(type="bool", default=True),
+            merge=dict(type="bool", default=False),
+            replace_keys=dict(type="list", elements="str", default=[], no_log=False),
         ),
         mutually_exclusive=[["secret", "json_secret"]],
         required_one_of=[["secret", "json_secret"]],
@@ -144,6 +184,12 @@ def main():
     is_json = module.params["json_secret"] is not None
     desired = module.params["json_secret"] if is_json else module.params["secret"]
     secret_type = "SecretBinary" if module.params["secret_type"] == "binary" else "SecretString"
+    merge = module.params["merge"]
+
+    if merge and (not is_json or secret_type != "SecretString"):
+        module.fail_json(msg="merge requires json_secret and secret_type string.")
+    if merge and not module.params["compare"]:
+        module.fail_json(msg="merge requires compare, because the current value must be read to be merged.")
 
     client = module.client("secretsmanager")
 
@@ -157,10 +203,29 @@ def main():
     has_value = any("AWSCURRENT" in stages for stages in (secret.get("VersionIdsToStages") or {}).values())
     if has_value and not module.params["overwrite"]:
         module.exit_json(changed=False, secret=result)
+
+    current = None
     if has_value and module.params["compare"]:
         current = get_current_value(module, client, name)
-        if values_match(current, desired, secret_type, is_json):
-            module.exit_json(changed=False, secret=result)
+
+    if merge:
+        current_data = {}
+        if current is not None:
+            try:
+                current_data = json.loads(current.get("SecretString") or "")
+            except ValueError:
+                current_data = None
+            if not isinstance(current_data, dict):
+                module.fail_json(msg="Secret '{0}' does not contain a JSON object, so the new value cannot be merged into it.".format(name))
+        patch = json.loads(desired)
+        if isinstance(patch, dict):
+            for key in module.params["replace_keys"]:
+                if key in patch:
+                    current_data.pop(key, None)
+        desired = json.dumps(merge_patch(current_data, patch))
+
+    if values_match(current, desired, secret_type, is_json):
+        module.exit_json(changed=False, secret=result)
     if module.check_mode:
         module.exit_json(changed=True, secret=result)
 
