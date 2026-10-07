@@ -22,7 +22,8 @@ Stores Autobase values in an external secrets provider. The role is disabled whe
 | `secrets_aws_region` | `server_location` when available | AWS region containing the secrets. Required for AWS. |
 | `secrets_aws_kms_key_id` | `""` | Optional KMS key ID or alias. |
 | `secrets_aws_recovery_window` | `30` | Recovery window used only for explicit deletion. Use `0` for immediate deletion or `7` through `30`. |
-| `secrets_aws_tags` | `cloud_provider_tags` | Tags applied to AWS secrets. The role always adds the `Cluster` tag. |
+| `secrets_aws_manage_tags` | `true` | Manage tags on AWS secrets. Set to `false` to disable tagging completely. |
+| `secrets_aws_tags` | `cloud_provider_tags` | Tags applied to AWS secrets. The role adds the `Cluster` tag when `secrets_aws_manage_tags` is enabled. |
 | `secrets_aws_overwrite` | `true` | Update an existing secret with the same name. |
 | `secrets_aws_resource_policy` | `null` | Optional resource policy, for example for cross-account access. |
 | `secrets_aws_replica` | `null` | Optional list of replica regions and their KMS keys. |
