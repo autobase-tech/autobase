@@ -366,7 +366,8 @@
       ansible.builtin.debug:
         msg:
           server_name: "{{ hostname | default(ansible_hostname) }}"
-          server_location: "{{ server_zone | default(server_location) | default(omit) }}"
+          server_location: "{{ server_location | default(omit) }}"
+          server_zone: "{{ server_zone | default(omit) }}"
           ip_address: "{{ bind_address | default('N/A') }}"
           os: "{{ ansible_distribution | default('N/A') }} {{ ansible_distribution_version | default('N/A') }}"
           kernel: "{{ ansible_kernel | default('N/A') }}"
