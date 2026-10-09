@@ -118,9 +118,13 @@ def main():
     # SetSubnets requires the full list of subnets, including the subnets of already enabled zones.
     try:
         elbv2.set_subnets(LoadBalancerArn=load_balancer["LoadBalancerArn"], Subnets=subnets)
-        elbv2.get_waiter("load_balancer_available").wait(LoadBalancerArns=[load_balancer["LoadBalancerArn"]])
     except Exception as e:  # pylint: disable=broad-except
         module.fail_json_aws(e, msg="Failed to add subnets to load balancer '{0}'".format(name))
+    try:
+        elbv2.get_waiter("load_balancer_available").wait(LoadBalancerArns=[load_balancer["LoadBalancerArn"]])
+    except Exception as e:  # pylint: disable=broad-except
+        module.fail_json_aws(e, msg="Subnets were added, but load balancer '{0}' did not become available".format(name),
+                             changed=True, subnets=subnets)
 
     module.exit_json(changed=True, subnets=subnets)
 

@@ -142,6 +142,10 @@ Provider-specific (optional) variables referenced in tasks
 Servers are distributed across `server_zones_count` zones (3 by default), so that the cluster survives the loss of a zone.
 Currently applicable for AWS.
 
+Traffic between zones is charged by the cloud provider (replication, client connections through load balancers in other zones),
+and synchronous replication (`synchronous_mode`) adds the network latency between zones to each commit.
+For clusters where cost or latency matters more than tolerance to the loss of a zone, set `server_zones_count: 1`.
+
 Zones and subnets (AWS):
 - `aws_subnet_ids` is specified: the Availability Zones of these subnets, in the order of the list.
 - Only `server_network` is specified: the Availability Zone of this subnet (single zone).
@@ -168,11 +172,12 @@ server_placement: # (optional)
 
 #### DCS cluster
 
-The DCS cluster (etcd or Consul servers on the first 7 database servers) must keep its quorum if any single zone fails,
+The DCS cluster (etcd or Consul servers on the first 7 database servers, existing servers first) must keep its quorum if any single zone fails,
 so 2 zones are not enough. For a new cluster, the deployment fails if the placement does not allow this,
 unless `dcs_exists: true` (dedicated DCS) or all servers are in a single zone.
 When servers are added to an existing cluster (scaling, moving to multiple zones), only a warning is shown.
 For example, a cluster of 4 servers in 3 zones loses the etcd quorum if the zone with 2 servers fails.
+In a cluster of more than 7 servers, a re-created server is added after the existing servers, so it does not become a DCS member.
 
 For production clusters in multiple zones, we recommend a dedicated etcd cluster with one member in each of 3 zones
 (`dcs_exists: true` and `patroni_etcd_hosts`). The number of database servers and their placement then do not affect the DCS quorum.
@@ -198,8 +203,9 @@ resolve the NLB IP address in their own zone, if it has a healthy target.
 #### Moving an existing cluster to multiple zones
 
 Existing servers are never moved. To move a single-zone cluster, replace the replicas one by one:
-1. Specify the subnets of the new zones (`aws_subnet_ids`), and optionally `server_placement` for the replaced servers.
-2. Remove a replica from the cluster (`remove_node.yml`) and delete its EC2 instance.
+1. Specify the subnets of the current and new zones (`aws_subnet_ids`) in the VPC of the existing servers, and optionally `server_placement` for the replaced servers.
+2. Remove a replica from the cluster (`remove_node.yml`), delete its EC2 instance and wait until it is in the `terminated` state.
+   Until then, the instance is treated as an existing server, and `add_node.yml` does not create a new one.
 3. Add it again (`add_node.yml` with the same `server_count`). It is created in a new zone, and the zone is added to the NLBs.
 4. Repeat for the other replicas. To move the primary, switch over to a replica first.
 

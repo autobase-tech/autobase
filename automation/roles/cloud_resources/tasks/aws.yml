@@ -87,6 +87,17 @@
               vpc-id: "{{ default_vpc_info.vpcs[0].id }}"
               default-for-az: "true"
           register: default_vpc_subnet_info
+          when: default_vpc_info.vpcs | length > 0
+
+        - name: "AWS: Validate default VPC"
+          ansible.builtin.assert:
+            that:
+              - default_vpc_info.vpcs | length > 0
+              - default_vpc_subnet_info.subnets | default([]) | length > 0
+            fail_msg: >-
+              The default VPC or its default subnets do not exist in region '{{ server_location }}'.
+              Specify 'aws_subnet_ids' (one subnet per Availability Zone) or 'server_network'.
+            quiet: true
 
         - name: "Set variable: vpc_id, zones_available, aws_zone_subnets"
           ansible.builtin.set_fact:
@@ -101,6 +112,56 @@
         filters:
           vpc-id: "{{ vpc_id }}"
       register: vpc_info
+
+    # Existing servers
+    - name: "AWS: Gather information about EC2 instances"
+      amazon.aws.ec2_instance_info:
+        access_key: "{{ lookup('ansible.builtin.env', 'AWS_ACCESS_KEY_ID') }}"
+        secret_key: "{{ lookup('ansible.builtin.env', 'AWS_SECRET_ACCESS_KEY') }}"
+        region: "{{ server_location }}"
+        filters:
+          instance-state-name: ["pending", "running", "shutting-down", "stopping", "stopped"]
+          "tag:Name": "{{ server_name | lower }}{{ '%02d' % (idx + 1) }}"
+      loop: "{{ range(0, server_count | int) | list }}"
+      loop_control:
+        index_var: idx
+        label: "{{ server_name | lower }}{{ '%02d' % (idx + 1) }}"
+      register: ec2_instance_info
+      when: not server_spot | default(aws_ec2_spot_instance | default(false)) | bool
+
+    - name: "AWS: Gather information about EC2 Spot instances"
+      amazon.aws.ec2_instance_info:
+        access_key: "{{ lookup('ansible.builtin.env', 'AWS_ACCESS_KEY_ID') }}"
+        secret_key: "{{ lookup('ansible.builtin.env', 'AWS_SECRET_ACCESS_KEY') }}"
+        region: "{{ server_location }}"
+        filters:
+          instance-lifecycle: "spot"
+          instance-state-name: ["pending", "running", "shutting-down", "stopping", "stopped"]
+          "tag:Name": "{{ server_name | lower }}{{ '%02d' % (idx + 1) }}"
+      loop: "{{ range(0, server_count | int) | list }}"
+      loop_control:
+        index_var: idx
+        label: "{{ server_name | lower }}{{ '%02d' % (idx + 1) }}"
+      register: ec2_spot_instance_info
+      when: server_spot | default(aws_ec2_spot_instance | default(false)) | bool
+
+    - name: "Set variable: aws_existing_instances"
+      ansible.builtin.set_fact:
+        aws_existing_instances: >-
+          {{
+            ((ec2_instance_info.results | default([])) + (ec2_spot_instance_info.results | default([])))
+            | selectattr('instances', 'defined') | map(attribute='instances') | flatten
+          }}
+
+    - name: "AWS: Validate that existing servers are in VPC '{{ vpc_id }}'"
+      ansible.builtin.assert:
+        that: existing_vpcs | difference([vpc_id]) | length == 0
+        fail_msg: >-
+          Existing servers are in VPC {{ existing_vpcs | join(', ') }}, but the subnets ('aws_subnet_ids', 'server_network'
+          or the default VPC) belong to VPC '{{ vpc_id }}'. Specify subnets in the VPC of the existing servers.
+        quiet: true
+      vars:
+        existing_vpcs: "{{ aws_existing_instances | map(attribute='vpc_id') | unique | list }}"
 
     # Security Group (Firewall)
     - name: "AWS: Create or modify Security Group"
@@ -237,51 +298,11 @@
       ansible.builtin.set_fact:
         ip_address_type: "{{ 'public_ip_address' if (server_public_ip | bool and ssh_public_access | bool) else 'private_ip_address' }}"
 
-    # Existing servers
-    - name: "AWS: Gather information about EC2 instances"
-      amazon.aws.ec2_instance_info:
-        access_key: "{{ lookup('ansible.builtin.env', 'AWS_ACCESS_KEY_ID') }}"
-        secret_key: "{{ lookup('ansible.builtin.env', 'AWS_SECRET_ACCESS_KEY') }}"
-        region: "{{ server_location }}"
-        filters:
-          instance-type: "{{ server_type }}"
-          instance-state-name: ["pending", "running", "shutting-down", "stopping", "stopped"]
-          "tag:Name": "{{ server_name | lower }}{{ '%02d' % (idx + 1) }}"
-      loop: "{{ range(0, server_count | int) | list }}"
-      loop_control:
-        index_var: idx
-        label: "{{ server_name | lower }}{{ '%02d' % (idx + 1) }}"
-      register: ec2_instance_info
-      when: not server_spot | default(aws_ec2_spot_instance | default(false)) | bool
-
-    - name: "AWS: Gather information about EC2 Spot instances"
-      amazon.aws.ec2_instance_info:
-        access_key: "{{ lookup('ansible.builtin.env', 'AWS_ACCESS_KEY_ID') }}"
-        secret_key: "{{ lookup('ansible.builtin.env', 'AWS_SECRET_ACCESS_KEY') }}"
-        region: "{{ server_location }}"
-        filters:
-          instance-lifecycle: "spot"
-          instance-type: "{{ server_type }}"
-          instance-state-name: ["pending", "running", "shutting-down", "stopping", "stopped"]
-          "tag:Name": "{{ server_name | lower }}{{ '%02d' % (idx + 1) }}"
-      loop: "{{ range(0, server_count | int) | list }}"
-      loop_control:
-        index_var: idx
-        label: "{{ server_name | lower }}{{ '%02d' % (idx + 1) }}"
-      register: ec2_spot_instance_info
-      when: server_spot | default(aws_ec2_spot_instance | default(false)) | bool
-
     # Zones
     - name: "Set variable: zones_existing"
       ansible.builtin.set_fact:
         zones_existing: >-
-          {{ dict(existing_instances | map(attribute='tags.Name') | zip(existing_instances | map(attribute='placement.availability_zone'))) }}
-      vars:
-        existing_instances: >-
-          {{
-            ((ec2_instance_info.results | default([])) + (ec2_spot_instance_info.results | default([])))
-            | selectattr('instances', 'defined') | map(attribute='instances') | flatten
-          }}
+          {{ dict(aws_existing_instances | map(attribute='tags.Name') | zip(aws_existing_instances | map(attribute='placement.availability_zone'))) }}
 
     - name: "Distribute servers across zones"
       ansible.builtin.import_tasks: zones.yml
@@ -698,7 +719,6 @@
         secret_key: "{{ lookup('ansible.builtin.env', 'AWS_SECRET_ACCESS_KEY') }}"
         region: "{{ server_location }}"
         filters:
-          instance-type: "{{ server_type }}"
           instance-state-name: ["pending", "running", "shutting-down", "stopping", "stopped"]
           "tag:Name": "{{ server_name | lower }}{{ '%02d' % (idx + 1) }}"
           "tag:Cluster": "{{ patroni_cluster_name }}"
