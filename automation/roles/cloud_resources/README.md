@@ -104,7 +104,7 @@ Provider-specific (optional) variables referenced in tasks
 
 | Provider | Variable | Type | Default | Description |
 |----------|----------|------|---------|-------------|
-| AWS | aws_subnet_ids | list | [] | Subnets for servers in a custom VPC, one per Availability Zone. Required for multi-AZ in a custom VPC. If specified, `server_network` is ignored. |
+| AWS | aws_subnet_ids | list | [] | Subnets for servers in a custom VPC, one per Availability Zone (a list or a comma-separated string). Required for multi-AZ in a custom VPC. If specified, `server_network` is ignored. |
 | AWS | aws_security_group_ids | list | [] | Additional Security Group IDs to attach to AWS EC2 instances. |
 | AWS | aws_ec2_spot_instance | string | "" | Fallback for `server_spot`. |
 | AWS | aws_ebs_encrypted | bool | true | Encrypt AWS EBS system and data volumes. |

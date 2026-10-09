@@ -23,7 +23,7 @@ server_public_ip: true # Assign public IPs; set false only when the control host
 server_zones_count: 3 # Number of zones to distribute servers across. Set to 1 to place all servers in a single zone.
 server_zones: [] # (optional) Zones to use, in priority order (e.g. ['us-east-1a', 'us-east-1b', 'us-east-1c']). If empty, zones are selected automatically.
 server_placement: {} # (optional) Place specific servers in specific zones, e.g. { "postgres-cluster-pgnode01": "us-east-1a" }. Existing servers are never moved.
-aws_subnet_ids: [] # (optional) AWS subnets for servers in a custom VPC, one per Availability Zone. Required for multi-AZ in a custom VPC; if specified, 'server_network' is ignored.
+aws_subnet_ids: [] # (optional) AWS subnets for servers in a custom VPC, one per Availability Zone (list or comma-separated string). Required for multi-AZ in a custom VPC; if specified, 'server_network' is ignored.
 
 volume_type: "" # Data disk type. Set to 'local' to use the system disk and skip creating an external data disk.
 volume_size: 100 # Storage size for the data directory (GB). Set to 0 to use the system disk.

@@ -18,24 +18,32 @@
         - name: "AWS: Gather information about subnets"
           amazon.aws.ec2_vpc_subnet_info:
             region: "{{ server_location }}"
-            subnet_ids: "{{ subnet_ids }}"
+            filters:
+              subnet-id: "{{ subnet_ids }}" # unlike 'subnet_ids', the filter returns the found subnets instead of an empty result
           register: custom_vpc_subnet_info
+
+        - name: "AWS: Validate subnets"
+          ansible.builtin.assert:
+            that:
+              - subnets_missing | length == 0
+              - custom_vpc_subnet_info.subnets | map(attribute='vpc_id') | unique | list | length == 1
+              - subnet_ids | map('extract', subnet_zones) | unique | list | length == subnet_ids | length
+            fail_msg: >-
+              {% if subnets_missing | length > 0 %}Subnets {{ subnets_missing | join(', ') }} are not found in region '{{ server_location }}'.
+              {% else %}'aws_subnet_ids' must belong to the same VPC and contain one subnet per Availability Zone. Subnets: {{ subnet_zones }}{% endif %}
+            quiet: true
+          vars:
+            subnets_missing: "{{ subnet_ids | difference(custom_vpc_subnet_info.subnets | map(attribute='id')) }}"
 
         - name: "Set variable: vpc_id, zones_available, aws_zone_subnets"
           ansible.builtin.set_fact:
             vpc_id: "{{ custom_vpc_subnet_info.subnets[0].vpc_id }}"
             zones_available: "{{ subnet_ids | map('extract', subnet_zones) | list }}"
             aws_zone_subnets: "{{ custom_vpc_subnet_info.subnets | items2dict(key_name='availability_zone', value_name='id') }}"
-
-        - name: "AWS: Validate subnets"
-          ansible.builtin.assert:
-            that:
-              - custom_vpc_subnet_info.subnets | map(attribute='vpc_id') | unique | list | length == 1
-              - zones_available | unique | list | length == zones_available | length
-            fail_msg: "'aws_subnet_ids' must belong to the same VPC and contain one subnet per Availability Zone. Subnets: {{ subnet_zones }}"
-            quiet: true
       vars:
-        subnet_ids: "{{ aws_subnet_ids if aws_subnet_ids | length > 0 else [server_network] }}"
+        # 'aws_subnet_ids' can also be a comma-separated string
+        subnet_ids_list: "{{ (aws_subnet_ids.split(',') if aws_subnet_ids is string else aws_subnet_ids) | map('trim') | select | list }}"
+        subnet_ids: "{{ subnet_ids_list if subnet_ids_list | length > 0 else [server_network] }}"
         subnet_zones: "{{ custom_vpc_subnet_info.subnets | items2dict(key_name='id', value_name='availability_zone') }}"
       when: aws_subnet_ids | length > 0 or server_network | length > 0
 
