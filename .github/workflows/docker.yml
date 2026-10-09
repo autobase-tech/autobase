@@ -3,8 +3,9 @@ name: "Docker"
 
 on:
   push:
-    branches:
-      - main
+    # TODO: uncomment before merge. Temporarily build and push images for all branches (tag = branch name) to test before merge.
+    # branches:
+    #   - main
   pull_request:
     branches:
       - main
