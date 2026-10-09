@@ -229,33 +229,6 @@
       port: "{{ pgbouncer_listen_port if pgbouncer_install | bool else postgresql_port }}"
       superuser: "{{ superuser_username }}"
       password: "{{ superuser_password }}"
-  register: connection_info_aws_clb
-  ignore_errors: true
-  vars:
-    load_balancer_primary: "{{ (hostvars['localhost']['aws_elb_classic_lb']['results'] | selectattr('item', 'equalto', 'primary') | first).elb.dns_name | default('N/A') }}"
-    load_balancer_replica: "{{ (hostvars['localhost']['aws_elb_classic_lb']['results'] | selectattr('item', 'equalto', 'replica') | first).elb.dns_name | default('N/A') }}"
-    load_balancer_replica_sync: "{{ (hostvars['localhost']['aws_elb_classic_lb']['results'] | selectattr('item', 'equalto', 'sync') | first).elb.dns_name | default('N/A') }}"
-    load_balancer_replica_async: "{{ (hostvars['localhost']['aws_elb_classic_lb']['results'] | selectattr('item', 'equalto', 'async') | first).elb.dns_name | default('N/A') }}"
-    superuser_username: "{{ patroni_superuser_username }}"
-    superuser_password: "{{ '********' if mask_password | default(false) | bool else patroni_superuser_password }}"
-  when:
-    - cloud_load_balancer | default(true) | bool
-    - cloud_provider | default('') | lower == 'aws'
-    - aws_load_balancer_type | default('nlb') | lower == 'clb'
-  tags: conn_info, cluster_info, cluster_status, secrets
-
-- name: Connection info
-  run_once: true
-  ansible.builtin.debug:
-    msg:
-      address:
-        primary: "{{ load_balancer_primary }}"
-        replica: "{{ (load_balancer_replica if load_balancer_replica != 'N/A' else omit ) if cloud_load_balancer_replica | default(true) | bool else omit }}"
-        replica_sync: "{{ load_balancer_replica_sync if synchronous_mode | bool and cloud_load_balancer_replica_sync | default(false) | bool else omit }}"
-        replica_async: "{{ load_balancer_replica_async if synchronous_mode | bool and cloud_load_balancer_replica_async | default(false) | bool else omit }}"
-      port: "{{ pgbouncer_listen_port if pgbouncer_install | bool else postgresql_port }}"
-      superuser: "{{ superuser_username }}"
-      password: "{{ superuser_password }}"
   register: connection_info_aws_nlb
   ignore_errors: true
   vars:
@@ -268,7 +241,6 @@
   when:
     - cloud_load_balancer | default(true) | bool
     - cloud_provider | default('') | lower == 'aws'
-    - aws_load_balancer_type | default('nlb') | lower == 'nlb'
   tags: conn_info, cluster_info, cluster_status, secrets
 
 # GCP
@@ -410,7 +382,6 @@
       - "{{ connection_info_local_pgbouncer | default({}) }}"
       - "{{ connection_info_local_postgres | default({}) }}"
       - "{{ connection_info_consul | default({}) }}"
-      - "{{ connection_info_aws_clb | default({}) }}"
       - "{{ connection_info_aws_nlb | default({}) }}"
       - "{{ connection_info_gcp | default({}) }}"
       - "{{ connection_info_azure | default({}) }}"

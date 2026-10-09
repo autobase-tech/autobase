@@ -1,9 +1,9 @@
 # Ansible Role: cloud_resources
 
 Provision the PostgreSQL cluster infrastructure in public clouds (AWS, GCP, Azure, DigitalOcean, Hetzner). The role can:
-- Create/delete servers (count, size, image, region)
+- Create/delete servers (count, size, image, region), distributed across availability zones (AWS)
 - Configure private networking/VPC/VNet and firewalls/Security Groups
-- Optionally create Load Balancers (AWS NLB/CLB, GCP TCP Proxy, Azure LB, DO LB, Hetzner LB)
+- Optionally create Load Balancers (AWS NLB, GCP TCP Proxy, Azure LB, DO LB, Hetzner LB)
 - Optionally create object storage for backups (S3/GCS/Azure Blob/Spaces/Hetzner Object Storage)
 - Generate in-memory inventory (postgres_cluster, master/replica, etcd_cluster/consul_instances).
 
@@ -38,6 +38,9 @@ Provision the PostgreSQL cluster infrastructure in public clouds (AWS, GCP, Azur
 | server_network | string | "" | Existing network/subnet/VPC. If provided, the server will be added to this network (needs to be created beforehand) |
 | server_spot | bool | false | Spot/preemptible where supported. Applicable for AWS, GCP, Azure |
 | server_public_ip | bool | true | Assign public IPs to servers |
+| server_zones_count | int | 3 | Number of zones to distribute servers across. Set to `1` to place all servers in a single zone. Currently applicable for AWS |
+| server_zones | list | [] | Zones to use, in priority order (e.g. `['us-east-1a', 'us-east-1b', 'us-east-1c']`). If empty, zones are selected automatically. Currently applicable for AWS |
+| server_placement | dict | {} | Place specific servers in specific zones, e.g. `{"postgres-cluster-pgnode01": "us-east-1a"}`. Existing servers are never moved. Currently applicable for AWS |
 | volume_type | string | "" | Data disk type. Set to `local` to use the system disk and skip creating an external data disk. Defaults: 'gp3' for AWS, 'pd-ssd' for GCP, 'StandardSSD_LRS' for Azure |
 | volume_size | int | 100 | Data disk size (GB). Set to `0` to use the system disk; this is equivalent to `volume_type: local` |
 | system_volume_type | string | "" | System disk type. Defaults: 'gp3' for AWS, 'pd-ssd' for GCP, 'StandardSSD_LRS' for Azure |
@@ -55,7 +58,8 @@ Provision the PostgreSQL cluster infrastructure in public clouds (AWS, GCP, Azur
 | cloud_load_balancer_replica | bool | true | Create a Load Balancer for all replicas |
 | cloud_load_balancer_replica_sync | bool | false | Create a Load Balancer for synchronous replicas (requires synchronous_mode) |
 | cloud_load_balancer_replica_async | bool | false | Create a Load Balancer for asynchronous replicas (requires synchronous_mode) |
-| aws_load_balancer_type | string | nlb | 'nlb' = Network Load Balancer; 'clb' = Classic Load Balancer (previous generation) |
+| aws_nlb_client_routing_policy | string | availability_zone_affinity | NLB DNS client routing policy: `availability_zone_affinity`, `partial_availability_zone_affinity` or `any_availability_zone` |
+| aws_nlb_replica_cross_zone | bool | false | Cross-zone load balancing for replica NLBs (replica, sync, async). Always enabled for the primary NLB |
 | aws_s3_bucket_create | bool | true | Create S3 bucket (if 'pgbackrest_install' or 'wal_g_install' is 'true') |
 | aws_s3_bucket_name | string | {{ patroni_cluster_name }}-backup | Bucket name |
 | aws_s3_bucket_region | string | {{ server_location }} | Bucket region |
@@ -100,6 +104,7 @@ Provider-specific (optional) variables referenced in tasks
 
 | Provider | Variable | Type | Default | Description |
 |----------|----------|------|---------|-------------|
+| AWS | aws_subnet_ids | list | [] | Subnets for servers in a custom VPC, one per Availability Zone. Required for multi-AZ in a custom VPC. If specified, `server_network` is ignored. |
 | AWS | aws_security_group_ids | list | [] | Additional Security Group IDs to attach to AWS EC2 instances. |
 | AWS | aws_ec2_spot_instance | string | "" | Fallback for `server_spot`. |
 | AWS | aws_ebs_encrypted | bool | true | Encrypt AWS EBS system and data volumes. |
@@ -132,6 +137,67 @@ Provider-specific (optional) variables referenced in tasks
 | Hetzner | hcloud_network_ip_range | string | 10.0.0.0/16 | Network CIDR. |
 | Hetzner | hcloud_subnetwork_ip_range | string | 10.0.1.0/24 | Subnet CIDR. |
 
+### Availability zones
+
+Servers are distributed across `server_zones_count` zones (3 by default), so that the cluster survives the loss of a zone.
+Currently applicable for AWS.
+
+Zones and subnets (AWS):
+- `aws_subnet_ids` is specified: the Availability Zones of these subnets, in the order of the list.
+- Only `server_network` is specified: the Availability Zone of this subnet (single zone).
+- Neither is specified: the default subnets of the default VPC, in the alphabetical order of the zones.
+
+The first `server_zones_count` zones are used, unless `server_zones` lists them explicitly.
+If fewer zones are available than `server_zones_count`, a warning is shown and the available zones are used.
+
+Placement of each server (`<server_name>01`, `<server_name>02`, ...):
+1. An existing server stays in its zone. Servers are never moved, even if `server_placement` requests another zone.
+2. A new server listed in `server_placement` is created in that zone.
+3. Other new servers are created in the zone with the fewest servers (ties are resolved by the zone order).
+
+```yaml
+server_zones_count: 3
+aws_subnet_ids: # custom VPC, one subnet per Availability Zone
+  - subnet-0a1b2c3d4e5f60001 # us-east-1a
+  - subnet-0a1b2c3d4e5f60002 # us-east-1b
+  - subnet-0a1b2c3d4e5f60003 # us-east-1c
+server_placement: # (optional)
+  postgres-cluster-pgnode01: us-east-1b
+```
+
+#### DCS cluster
+
+The DCS cluster (etcd or Consul servers on the first 7 database servers) must keep its quorum if any single zone fails,
+so 2 zones are not enough. For a new cluster, the deployment fails if the placement does not allow this,
+unless `dcs_exists: true` (dedicated DCS) or all servers are in a single zone.
+When servers are added to an existing cluster (scaling, moving to multiple zones), only a warning is shown.
+For example, a cluster of 4 servers in 3 zones loses the etcd quorum if the zone with 2 servers fails.
+
+For production clusters in multiple zones, we recommend a dedicated etcd cluster with one member in each of 3 zones
+(`dcs_exists: true` and `patroni_etcd_hosts`). The number of database servers and their placement then do not affect the DCS quorum.
+
+#### AWS Network Load Balancer
+
+NLBs are enabled in the zones of all servers. When new servers are added in a new zone, the zone is added to the existing NLBs online:
+their DNS names and existing IP addresses are kept.
+
+With `aws_nlb_client_routing_policy: availability_zone_affinity` (default), clients that use the Route 53 Resolver of the VPC
+resolve the NLB IP address in their own zone, if it has a healthy target.
+- Primary NLB: cross-zone load balancing is always enabled, so the NLB node in any zone forwards connections to the primary
+  right after a failover, without waiting for DNS changes.
+- Replica NLBs: with `aws_nlb_replica_cross_zone: false` (default), reads stay in the client's zone when it has a healthy replica.
+  Clients in a zone without a healthy replica resolve the NLB in other zones. During a switchover, clients that still use a cached
+  DNS record (up to 60 seconds) may fail to connect until it is refreshed, and replicas may receive uneven load.
+  Set `aws_nlb_replica_cross_zone: true` to distribute connections across replicas in all zones.
+
+#### Moving an existing cluster to multiple zones
+
+Existing servers are never moved. To move a single-zone cluster, replace the replicas one by one:
+1. Specify the subnets of the new zones (`aws_subnet_ids`), and optionally `server_placement` for the replaced servers.
+2. Remove a replica from the cluster (`remove_node.yml`) and delete its EC2 instance.
+3. Add it again (`add_node.yml` with the same `server_count`). It is created in a new zone, and the zone is added to the NLBs.
+4. Repeat for the other replicas. To move the primary, switch over to a replica first.
+
 #### Custom resource tags
 
 ```yaml
@@ -161,7 +227,7 @@ When backup storage uses a different provider, inherited tags must also satisfy 
 
 | Provider | Resources tagged by this role | Exceptions |
 |----------|-------------------------------|------------|
-| AWS | SSH keys created by the role, security groups, EC2 instances, Spot requests, EBS volumes created with regular EC2 instances, CLB/NLB, NLB target groups, S3 buckets | ENIs are not tagged. EBS volumes attached to Spot instances may remain untagged. Existing VPCs/subnets and service-managed load balancer child resources are not modified. |
+| AWS | SSH keys created by the role, security groups, EC2 instances, Spot requests, EBS volumes created with regular EC2 instances, NLB, NLB target groups, S3 buckets | ENIs are not tagged. EBS volumes attached to Spot instances may remain untagged. Existing VPCs/subnets and service-managed load balancer child resources are not modified. |
 | GCP | VM instances and GCS buckets | System and data disks are not labeled. The Ansible modules used for global static load balancer IP addresses, forwarding rules, backend services, health checks, proxies, unmanaged instance groups and VPC firewall rules do not expose labels. Existing networks/subnets are not modified. |
 | Azure | Resource groups, VNets created by the role, public IPs, security groups, NICs, VMs, load balancers and backup storage accounts | OS and data managed disks are not tagged. Subnets, load balancer child configurations and Blob containers do not support resource tags. Tags on a resource group are not inherited automatically. |
 | DigitalOcean | Droplets | Data volumes cannot be tagged through the collection module. VPCs, SSH keys, firewalls, load balancers and Spaces buckets do not support resource tagging. Root disks and public IPs belong to the Droplet. |

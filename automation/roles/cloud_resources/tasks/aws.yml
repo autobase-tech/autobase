@@ -9,7 +9,6 @@
   when:
     - state == 'present'
     - cloud_load_balancer | bool
-    - aws_load_balancer_type | lower == 'nlb'
 
 # SSH key
 - block:
@@ -45,20 +44,34 @@
 
 # Create (if state is present)
 - block:
-    # if server_network is specified, get vpc id for this subnet
+    # Subnets (one per Availability Zone): zones_available and aws_zone_subnets ({ zone: subnet_id })
+    # if aws_subnet_ids or server_network is specified, use these subnets ('server_network' is ignored if 'aws_subnet_ids' is specified)
     - block:
-        - name: "AWS: Gather information about VPC for '{{ server_network | default('') }}'"
+        - name: "AWS: Gather information about subnets"
           amazon.aws.ec2_vpc_subnet_info:
             region: "{{ server_location }}"
-            subnet_ids: "{{ server_network }}"
+            subnet_ids: "{{ subnet_ids }}"
           register: custom_vpc_subnet_info
 
-        - name: "Set variable: vpc_id"
+        - name: "Set variable: vpc_id, zones_available, aws_zone_subnets"
           ansible.builtin.set_fact:
             vpc_id: "{{ custom_vpc_subnet_info.subnets[0].vpc_id }}"
-      when: server_network | length > 0
+            zones_available: "{{ subnet_ids | map('extract', subnet_zones) | list }}"
+            aws_zone_subnets: "{{ custom_vpc_subnet_info.subnets | items2dict(key_name='availability_zone', value_name='id') }}"
 
-    # if server_network is not specified, use default vpc subnet
+        - name: "AWS: Validate subnets"
+          ansible.builtin.assert:
+            that:
+              - custom_vpc_subnet_info.subnets | map(attribute='vpc_id') | unique | list | length == 1
+              - zones_available | unique | list | length == zones_available | length
+            fail_msg: "'aws_subnet_ids' must belong to the same VPC and contain one subnet per Availability Zone. Subnets: {{ subnet_zones }}"
+            quiet: true
+      vars:
+        subnet_ids: "{{ aws_subnet_ids if aws_subnet_ids | length > 0 else [server_network] }}"
+        subnet_zones: "{{ custom_vpc_subnet_info.subnets | items2dict(key_name='id', value_name='availability_zone') }}"
+      when: aws_subnet_ids | length > 0 or server_network | length > 0
+
+    # if aws_subnet_ids and server_network are not specified, use the default subnets of the default VPC
     - block:
         - name: "AWS: Gather information about default VPC"
           amazon.aws.ec2_vpc_net_info:
@@ -67,21 +80,20 @@
               "is-default": true
           register: default_vpc_info
 
-        - name: "AWS: Gather information about VPC subnet for default VPC"
+        - name: "AWS: Gather information about default subnets of default VPC"
           amazon.aws.ec2_vpc_subnet_info:
             region: "{{ server_location }}"
             filters:
               vpc-id: "{{ default_vpc_info.vpcs[0].id }}"
+              default-for-az: "true"
           register: default_vpc_subnet_info
 
-        - name: "Set variable: vpc_id"
+        - name: "Set variable: vpc_id, zones_available, aws_zone_subnets"
           ansible.builtin.set_fact:
             vpc_id: "{{ default_vpc_info.vpcs[0].id }}"
-
-        - name: "Set variable: server_network"
-          ansible.builtin.set_fact:
-            server_network: "{{ default_vpc_subnet_info.subnets[0].id }}"
-      when: server_network | length < 1
+            zones_available: "{{ default_vpc_subnet_info.subnets | map(attribute='availability_zone') | sort | list }}"
+            aws_zone_subnets: "{{ default_vpc_subnet_info.subnets | items2dict(key_name='availability_zone', value_name='id') }}"
+      when: aws_subnet_ids | length < 1 and server_network | length < 1
 
     - name: "AWS: Gather information about VPC '{{ vpc_id | default('') }}'"
       amazon.aws.ec2_vpc_net_info:
@@ -225,23 +237,57 @@
       ansible.builtin.set_fact:
         ip_address_type: "{{ 'public_ip_address' if (server_public_ip | bool and ssh_public_access | bool) else 'private_ip_address' }}"
 
+    # Existing servers
+    - name: "AWS: Gather information about EC2 instances"
+      amazon.aws.ec2_instance_info:
+        access_key: "{{ lookup('ansible.builtin.env', 'AWS_ACCESS_KEY_ID') }}"
+        secret_key: "{{ lookup('ansible.builtin.env', 'AWS_SECRET_ACCESS_KEY') }}"
+        region: "{{ server_location }}"
+        filters:
+          instance-type: "{{ server_type }}"
+          instance-state-name: ["pending", "running", "shutting-down", "stopping", "stopped"]
+          "tag:Name": "{{ server_name | lower }}{{ '%02d' % (idx + 1) }}"
+      loop: "{{ range(0, server_count | int) | list }}"
+      loop_control:
+        index_var: idx
+        label: "{{ server_name | lower }}{{ '%02d' % (idx + 1) }}"
+      register: ec2_instance_info
+      when: not server_spot | default(aws_ec2_spot_instance | default(false)) | bool
+
+    - name: "AWS: Gather information about EC2 Spot instances"
+      amazon.aws.ec2_instance_info:
+        access_key: "{{ lookup('ansible.builtin.env', 'AWS_ACCESS_KEY_ID') }}"
+        secret_key: "{{ lookup('ansible.builtin.env', 'AWS_SECRET_ACCESS_KEY') }}"
+        region: "{{ server_location }}"
+        filters:
+          instance-lifecycle: "spot"
+          instance-type: "{{ server_type }}"
+          instance-state-name: ["pending", "running", "shutting-down", "stopping", "stopped"]
+          "tag:Name": "{{ server_name | lower }}{{ '%02d' % (idx + 1) }}"
+      loop: "{{ range(0, server_count | int) | list }}"
+      loop_control:
+        index_var: idx
+        label: "{{ server_name | lower }}{{ '%02d' % (idx + 1) }}"
+      register: ec2_spot_instance_info
+      when: server_spot | default(aws_ec2_spot_instance | default(false)) | bool
+
+    # Zones
+    - name: "Set variable: zones_existing"
+      ansible.builtin.set_fact:
+        zones_existing: >-
+          {{ dict(existing_instances | map(attribute='tags.Name') | zip(existing_instances | map(attribute='placement.availability_zone'))) }}
+      vars:
+        existing_instances: >-
+          {{
+            ((ec2_instance_info.results | default([])) + (ec2_spot_instance_info.results | default([])))
+            | selectattr('instances', 'defined') | map(attribute='instances') | flatten
+          }}
+
+    - name: "Distribute servers across zones"
+      ansible.builtin.import_tasks: zones.yml
+
     # Server and volume
     - block:
-        - name: "AWS: Gather information about EC2 instances"
-          amazon.aws.ec2_instance_info:
-            access_key: "{{ lookup('ansible.builtin.env', 'AWS_ACCESS_KEY_ID') }}"
-            secret_key: "{{ lookup('ansible.builtin.env', 'AWS_SECRET_ACCESS_KEY') }}"
-            region: "{{ server_location }}"
-            filters:
-              instance-type: "{{ server_type }}"
-              instance-state-name: ["pending", "running", "shutting-down", "stopping", "stopped"]
-              "tag:Name": "{{ server_name | lower }}{{ '%02d' % (idx + 1) }}"
-          loop: "{{ range(0, server_count | int) | list }}"
-          loop_control:
-            index_var: idx
-            label: "{{ server_name | lower }}{{ '%02d' % (idx + 1) }}"
-          register: ec2_instance_info
-
         - name: "AWS: Create EC2 instance"
           amazon.aws.ec2_instance:
             access_key: "{{ lookup('ansible.builtin.env', 'AWS_ACCESS_KEY_ID') }}"
@@ -252,9 +298,9 @@
             image_id: "{{ server_image }}"
             key_name: "{{ ssh_key_name }}"
             region: "{{ server_location }}"
-            vpc_subnet_id: "{{ server_network }}"
+            vpc_subnet_id: "{{ aws_zone_subnets[server_zone_placement[idx].zone] }}"
             network_interfaces:
-              - subnet_id: "{{ server_network }}"
+              - subnet_id: "{{ aws_zone_subnets[server_zone_placement[idx].zone] }}"
                 groups: "{{ aws_ec2_security_group_ids }}"
                 assign_public_ip: "{{ server_public_ip | bool }}"
                 delete_on_termination: true
@@ -294,22 +340,6 @@
 
     # Spot instance (if 'server_spot' is 'true')
     - block:
-        - name: "AWS: Gather information about EC2 Spot instances"
-          amazon.aws.ec2_instance_info:
-            access_key: "{{ lookup('ansible.builtin.env', 'AWS_ACCESS_KEY_ID') }}"
-            secret_key: "{{ lookup('ansible.builtin.env', 'AWS_SECRET_ACCESS_KEY') }}"
-            region: "{{ server_location }}"
-            filters:
-              instance-lifecycle: "spot"
-              instance-type: "{{ server_type }}"
-              instance-state-name: ["pending", "running", "shutting-down", "stopping", "stopped"]
-              "tag:Name": "{{ server_name | lower }}{{ '%02d' % (idx + 1) }}"
-          loop: "{{ range(0, server_count | int) | list }}"
-          loop_control:
-            index_var: idx
-            label: "{{ server_name | lower }}{{ '%02d' % (idx + 1) }}"
-          register: ec2_spot_instance_info
-
         # if spot instances are still created, create them
         - name: "AWS: Create a request for EC2 Spot instance"
           amazon.aws.ec2_spot_instance:
@@ -322,7 +352,7 @@
               image_id: "{{ server_image }}"
               key_name: "{{ ssh_key_name }}"
               network_interfaces:
-                - subnet_id: "{{ server_network }}"
+                - subnet_id: "{{ aws_zone_subnets[server_zone_placement[idx].zone] }}"
                   groups: "{{ aws_ec2_security_group_ids }}"
                   associate_public_ip_address: "{{ server_public_ip | bool }}"
                   delete_on_termination: true
@@ -447,35 +477,14 @@
         - item.instances is defined
         - data_volume.ebs.volume_id | default('') | length > 0
 
-    # Classic Load Balancer (CLB) - previous generation
-    - name: "AWS: Create Classic Load Balancer (CLB)"
-      amazon.aws.elb_classic_lb:
-        access_key: "{{ lookup('ansible.builtin.env', 'AWS_ACCESS_KEY_ID') }}"
-        secret_key: "{{ lookup('ansible.builtin.env', 'AWS_SECRET_ACCESS_KEY') }}"
+    # Network Load Balancer (NLB)
+    # Add the zones of new servers to existing NLBs online (the DNS name and existing IP addresses are kept).
+    # TODO: remove when community.aws.elb_network_lb supports modifying subnets of an existing NLB.
+    - name: "AWS: Add Availability Zones to existing NLB"
+      vitabaks.autobase.aws_nlb_subnets:
         name: "{{ patroni_cluster_name }}-{{ item }}"
         region: "{{ server_location }}"
-        security_group_ids: "{{ aws_ec2_security_group_ids }}"
-        subnets:
-          - "{{ server_network }}"
-        instance_ids: "{{ server_result.results | map(attribute='instances') | map('first') | map(attribute='instance_id') }}"
-        purge_instance_ids: true
-        listeners:
-          - protocol: tcp
-            load_balancer_port: "{{ pgbouncer_listen_port | default('6432') if pgbouncer_install | bool else postgresql_port | default('5432') }}"
-            instance_port: "{{ pgbouncer_listen_port | default('6432') if pgbouncer_install | bool else postgresql_port | default('5432') }}"
-        health_check:
-          ping_protocol: "{{ patroni_restapi_protocol | default('http') }}"
-          ping_port: "{{ patroni_restapi_port | default('8008') }}"
-          ping_path: "/{{ item }}"
-          interval: 5
-          timeout: 2
-          unhealthy_threshold: 2
-          healthy_threshold: 3
-        idle_timeout: 600
-        scheme: "{{ 'internet-facing' if database_public_access | bool else 'internal' }}"
-        state: present
-        tags: "{{ cloud_provider_tags | combine({'Cluster': patroni_cluster_name}) }}"
-        purge_tags: false
+        subnets: "{{ dict(instances | map(attribute='placement.availability_zone') | zip(instances | map(attribute='subnet_id'))).values() | list }}"
       loop:
         - "primary"
         - "replica"
@@ -483,18 +492,16 @@
         - "async"
       loop_control:
         label: "{{ patroni_cluster_name }}-{{ item }}"
-      register: aws_elb_classic_lb
-      until: aws_elb_classic_lb is success
-      retries: 3
-      delay: 10
-      when: server_result.results | default([]) | length > 0 and
-        cloud_load_balancer | bool and aws_load_balancer_type | lower == 'clb' and
+      register: aws_nlb_subnets_result
+      vars:
+        # NLBs are enabled in the zones of all servers (one subnet per zone)
+        instances: "{{ server_result.results | map(attribute='instances') | map('first') | list }}"
+      when: cloud_load_balancer | bool and
         (item == 'primary' or
         (item == 'replica' and cloud_load_balancer_replica | bool and server_count | int > 1) or
         (item == 'sync' and cloud_load_balancer_replica_sync | bool and server_count | int > 1 and synchronous_mode | bool) or
         (item == 'async' and cloud_load_balancer_replica_async | bool and server_count | int > 1 and synchronous_mode | bool))
 
-    # Network Load Balancer (NLB)
     - name: Build NLB targets
       ansible.builtin.set_fact:
         nlb_targets: "{{ (nlb_targets | default([])) + [{'Id': item, 'Port': target_port | int}] }}"
@@ -502,7 +509,7 @@
       vars:
         instance_ids: "{{ (server_result | default({'results': []})) | json_query('results[].instances[].instance_id') }}"
         target_port: "{{ pgbouncer_listen_port | default('6432') if pgbouncer_install | bool else postgresql_port | default('5432') }}"
-      when: cloud_load_balancer | bool and aws_load_balancer_type | lower == 'nlb'
+      when: cloud_load_balancer | bool
 
     - name: "AWS: Create or modify NLB Target Group"
       community.aws.elb_target_group:
@@ -538,7 +545,7 @@
         label: "{{ patroni_cluster_name }}-tg-{{ item }}"
       vars:
         target_port: "{{ pgbouncer_listen_port | default('6432') if pgbouncer_install | bool else postgresql_port | default('5432') }}"
-      when: cloud_load_balancer | bool and aws_load_balancer_type | lower == 'nlb' and
+      when: cloud_load_balancer | bool and
         (item == 'primary' or
         (item == 'replica' and cloud_load_balancer_replica | bool and server_count | int > 1) or
         (item == 'sync' and cloud_load_balancer_replica_sync | bool and server_count | int > 1 and synchronous_mode | bool) or
@@ -550,15 +557,14 @@
         secret_key: "{{ lookup('ansible.builtin.env', 'AWS_SECRET_ACCESS_KEY') }}"
         name: "{{ patroni_cluster_name }}-{{ item }}"
         region: "{{ server_location }}"
-        subnets:
-          - "{{ server_network }}"
+        subnets: "{{ aws_nlb_subnets_result.results[idx].subnets }}"
         listeners:
           - Protocol: TCP
             Port: "{{ target_port }}"
             DefaultActions:
               - Type: forward
                 TargetGroupName: "{{ patroni_cluster_name }}-tg-{{ item }}"
-        cross_zone_load_balancing: true
+        cross_zone_load_balancing: "{{ true if item == 'primary' else aws_nlb_replica_cross_zone | bool }}"
         scheme: "{{ 'internet-facing' if database_public_access | bool else 'internal' }}"
         wait: true
         state: present
@@ -570,6 +576,7 @@
         - "sync"
         - "async"
       loop_control:
+        index_var: idx
         label: "{{ patroni_cluster_name }}-{{ item }}"
       register: aws_elb_network_lb
       until: aws_elb_network_lb is success
@@ -577,11 +584,24 @@
       delay: 10
       vars:
         target_port: "{{ pgbouncer_listen_port | default('6432') if pgbouncer_install | bool else postgresql_port | default('5432') }}"
-      when: cloud_load_balancer | bool and aws_load_balancer_type | lower == 'nlb' and
+      when: cloud_load_balancer | bool and
         (item == 'primary' or
         (item == 'replica' and cloud_load_balancer_replica | bool and server_count | int > 1) or
         (item == 'sync' and cloud_load_balancer_replica_sync | bool and server_count | int > 1 and synchronous_mode | bool) or
         (item == 'async' and cloud_load_balancer_replica_async | bool and server_count | int > 1 and synchronous_mode | bool))
+
+    # Availability Zone affinity: clients resolve the NLB IP address in their own zone.
+    # TODO: remove when community.aws.elb_network_lb supports the 'dns_record.client_routing_policy' attribute.
+    - name: "AWS: Set NLB client routing policy"
+      vitabaks.autobase.aws_nlb_attributes:
+        name: "{{ patroni_cluster_name }}-{{ item }}"
+        region: "{{ server_location }}"
+        attributes:
+          dns_record.client_routing_policy: "{{ aws_nlb_client_routing_policy }}"
+      loop: "{{ aws_elb_network_lb.results | default([]) | selectattr('load_balancer', 'defined') | map(attribute='item') | list }}"
+      loop_control:
+        label: "{{ patroni_cluster_name }}-{{ item }}"
+      when: cloud_load_balancer | bool
 
   when: state == 'present'
 
@@ -596,6 +616,7 @@
       volume_size: "{{ volume_size }} GB"
       public_ip: "{{ item.instances[0].public_ip_address | default('N/A', true) }}"
       private_ip: "{{ item.instances[0].private_ip_address | default('N/A', true) }}"
+      zone: "{{ item.instances[0].placement.availability_zone | default('N/A', true) }}"
   loop: "{{ server_result.results | default([]) }}"
   loop_control:
     index_var: idx
@@ -628,6 +649,7 @@
             [{
               'public_ip': item.instances[0].public_ip_address | default(''),
               'private_ip': item.instances[0].private_ip_address | default(''),
+              'zone': item.instances[0].placement.availability_zone | default(''),
               'new_node': (cluster_scaling | default(false) | bool and item.instances[0].instance_id not in existing_instance_ids)
             }]
           }}
@@ -687,30 +709,6 @@
         index_var: idx
         label: "{{ server_name | lower }}{{ '%02d' % (idx + 1) }}"
 
-    - name: "AWS: Delete Classic Load Balancer (CLB)"
-      amazon.aws.elb_classic_lb:
-        access_key: "{{ lookup('ansible.builtin.env', 'AWS_ACCESS_KEY_ID') }}"
-        secret_key: "{{ lookup('ansible.builtin.env', 'AWS_SECRET_ACCESS_KEY') }}"
-        name: "{{ patroni_cluster_name }}-{{ item }}"
-        region: "{{ server_location }}"
-        wait: true
-        state: absent
-      loop:
-        - "primary"
-        - "replica"
-        - "sync"
-        - "async"
-      loop_control:
-        label: "{{ patroni_cluster_name }}-{{ item }}"
-      register: aws_elb_classic_lb_delete
-      until: aws_elb_classic_lb_delete is success
-      retries: 3
-      delay: 10
-      when: aws_load_balancer_type | lower == 'clb' and
-        (item == 'primary' or
-        (item == 'replica' and server_count | int > 1) or
-        (item in ['sync', 'async'] and server_count | int > 1 and synchronous_mode | bool))
-
     - name: "AWS: Delete Network Load Balancer (NLB)"
       community.aws.elb_network_lb:
         access_key: "{{ lookup('ansible.builtin.env', 'AWS_ACCESS_KEY_ID') }}"
@@ -730,8 +728,7 @@
       until: aws_elb_network_lb_delete is success
       retries: 3
       delay: 10
-      when: aws_load_balancer_type | lower == 'nlb' and
-        (item == 'primary' or
+      when: (item == 'primary' or
         (item == 'replica' and server_count | int > 1) or
         (item in ['sync', 'async'] and server_count | int > 1 and synchronous_mode | bool))
 
@@ -753,8 +750,7 @@
       until: aws_elb_target_group_delete is success
       retries: 3
       delay: 10
-      when: aws_load_balancer_type | lower == 'nlb' and
-        (item == 'primary' or
+      when: (item == 'primary' or
         (item == 'replica' and server_count | int > 1) or
         (item in ['sync', 'async'] and server_count | int > 1 and synchronous_mode | bool))
 

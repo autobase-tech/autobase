@@ -10,7 +10,7 @@ Auxiliary role that prints PostgreSQL cluster information and connection details
   - etcd + cluster_vip (with/without HAProxy)
   - etcd without VIP (HAProxy or direct PostgreSQL, with optional PgBouncer)
   - Consul-based DNS names
-  - Cloud load balancers (AWS CLB/NLB, GCP, Azure, DigitalOcean, Hetzner)
+  - Cloud load balancers (AWS NLB, GCP, Azure, DigitalOcean, Hetzner)
 
 ## Dependencies
 
