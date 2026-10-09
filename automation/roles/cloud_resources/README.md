@@ -186,9 +186,13 @@ resolve the NLB IP address in their own zone, if it has a healthy target.
 - Primary NLB: cross-zone load balancing is always enabled, so the NLB node in any zone forwards connections to the primary
   right after a failover, without waiting for DNS changes.
 - Replica NLBs: with `aws_nlb_replica_cross_zone: false` (default), reads stay in the client's zone when it has a healthy replica.
-  Clients in a zone without a healthy replica resolve the NLB in other zones. During a switchover, clients that still use a cached
-  DNS record (up to 60 seconds) may fail to connect until it is refreshed, and replicas may receive uneven load.
-  Set `aws_nlb_replica_cross_zone: true` to distribute connections across replicas in all zones.
+  The NLB node in a zone forwards connections only to targets in its own zone. If the zone has no healthy replica
+  (for example, the zone of the primary), its IP address is removed from DNS and clients resolve the NLB in other zones.
+  However, the NLB node in that zone fails open and forwards connections to all targets in its zone, including the primary.
+  After a switchover, clients that still use a cached DNS record (TTL 60 seconds) or keep connecting to that IP address
+  reach the primary through the replica endpoint until the record is refreshed, and replicas may receive uneven load.
+  To make sure that such connections never use the primary, connect with `target_session_attrs=standby` (or `prefer-standby`),
+  or set `aws_nlb_replica_cross_zone: true` to distribute connections across replicas in all zones.
 
 #### Moving an existing cluster to multiple zones
 
