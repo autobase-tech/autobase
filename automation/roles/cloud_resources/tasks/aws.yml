@@ -10,38 +10,6 @@
     - state == 'present'
     - cloud_load_balancer | bool
 
-# SSH key
-- block:
-    # Delete the temporary ssh key from the cloud (if exists)
-    - name: "AWS: Remove temporary SSH key '{{ ssh_key_name | default('') }}' from cloud (if any)"
-      amazon.aws.ec2_key:
-        access_key: "{{ lookup('ansible.builtin.env', 'AWS_ACCESS_KEY_ID') }}"
-        secret_key: "{{ lookup('ansible.builtin.env', 'AWS_SECRET_ACCESS_KEY') }}"
-        name: "{{ ssh_key_name }}"
-        region: "{{ server_location }}"
-        state: absent
-      when:
-        - ssh_key_name is defined
-        - tmp_ssh_key_name is defined
-        - ssh_key_name == tmp_ssh_key_name
-
-    # if ssh_key_name and ssh_key_content is specified, add this ssh key to the cloud
-    - name: "AWS: Add SSH key '{{ ssh_key_name | default('') }}' to cloud"
-      amazon.aws.ec2_key:
-        access_key: "{{ lookup('ansible.builtin.env', 'AWS_ACCESS_KEY_ID') }}"
-        secret_key: "{{ lookup('ansible.builtin.env', 'AWS_SECRET_ACCESS_KEY') }}"
-        name: "{{ ssh_key_name }}"
-        key_material: "{{ ssh_key_content }}"
-        region: "{{ server_location }}"
-        state: present
-        tags: "{{ cloud_provider_tags | combine({'Cluster': patroni_cluster_name}) }}"
-        purge_tags: false
-      register: ssh_key_result
-      when:
-        - ssh_key_name | length > 0
-        - ssh_key_content | length > 0
-  when: state == 'present'
-
 # Create (if state is present)
 - block:
     # Subnets (one per Availability Zone): zones_available and aws_zone_subnets ({ zone: subnet_id })
@@ -162,6 +130,15 @@
         quiet: true
       vars:
         existing_vpcs: "{{ aws_existing_instances | map(attribute='vpc_id') | unique | list }}"
+
+    # Zones
+    - name: "Set variable: zones_existing"
+      ansible.builtin.set_fact:
+        zones_existing: >-
+          {{ dict(aws_existing_instances | map(attribute='tags.Name') | zip(aws_existing_instances | map(attribute='placement.availability_zone'))) }}
+
+    - name: "Distribute servers across zones"
+      ansible.builtin.import_tasks: zones.yml
 
     # Security Group (Firewall)
     - name: "AWS: Create or modify Security Group"
@@ -298,14 +275,35 @@
       ansible.builtin.set_fact:
         ip_address_type: "{{ 'public_ip_address' if (server_public_ip | bool and ssh_public_access | bool) else 'private_ip_address' }}"
 
-    # Zones
-    - name: "Set variable: zones_existing"
-      ansible.builtin.set_fact:
-        zones_existing: >-
-          {{ dict(aws_existing_instances | map(attribute='tags.Name') | zip(aws_existing_instances | map(attribute='placement.availability_zone'))) }}
+    # SSH key (after all validations, so that a failed validation does not leave the key in the cloud)
+    # Delete the temporary ssh key from the cloud (if exists)
+    - name: "AWS: Remove temporary SSH key '{{ ssh_key_name | default('') }}' from cloud (if any)"
+      amazon.aws.ec2_key:
+        access_key: "{{ lookup('ansible.builtin.env', 'AWS_ACCESS_KEY_ID') }}"
+        secret_key: "{{ lookup('ansible.builtin.env', 'AWS_SECRET_ACCESS_KEY') }}"
+        name: "{{ ssh_key_name }}"
+        region: "{{ server_location }}"
+        state: absent
+      when:
+        - ssh_key_name is defined
+        - tmp_ssh_key_name is defined
+        - ssh_key_name == tmp_ssh_key_name
 
-    - name: "Distribute servers across zones"
-      ansible.builtin.import_tasks: zones.yml
+    # if ssh_key_name and ssh_key_content is specified, add this ssh key to the cloud
+    - name: "AWS: Add SSH key '{{ ssh_key_name | default('') }}' to cloud"
+      amazon.aws.ec2_key:
+        access_key: "{{ lookup('ansible.builtin.env', 'AWS_ACCESS_KEY_ID') }}"
+        secret_key: "{{ lookup('ansible.builtin.env', 'AWS_SECRET_ACCESS_KEY') }}"
+        name: "{{ ssh_key_name }}"
+        key_material: "{{ ssh_key_content }}"
+        region: "{{ server_location }}"
+        state: present
+        tags: "{{ cloud_provider_tags | combine({'Cluster': patroni_cluster_name}) }}"
+        purge_tags: false
+      register: ssh_key_result
+      when:
+        - ssh_key_name | length > 0
+        - ssh_key_content | length > 0
 
     # Server and volume
     - block:
