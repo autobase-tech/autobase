@@ -9,6 +9,7 @@
 #
 # Existing servers are never moved. New servers are placed in the zone from 'server_placement',
 # otherwise in the zone with the fewest servers (ties are resolved by the zone order).
+# Unless 'server_zones' is specified, the zones of existing servers are used first.
 
 - name: "Zones | Set variable: zone_server_names"
   ansible.builtin.set_fact:
@@ -45,11 +46,14 @@
       Servers: {{ zone_server_names }}. Available zones: {{ zones_available }}.
     quiet: true
 
+# Zones of existing servers are selected first, so that an existing cluster keeps using them.
 - name: "Zones | Set variable: zones_selected"
   ansible.builtin.set_fact:
-    zones_selected: "{{ server_zones if server_zones | length > 0 else zones_available[:zones_limit] }}"
+    zones_selected: "{{ server_zones if server_zones | length > 0 else (zones_ordered | list)[:zones_limit] }}"
   vars:
     zones_limit: "{{ server_zones_count | int }}"
+    zones_in_use: "{{ zones_existing.values() | list }}"
+    zones_ordered: "{{ (zones_available | select('in', zones_in_use) | list) + (zones_available | reject('in', zones_in_use) | list) }}"
 
 - name: "Zones | WARNING: fewer zones available than requested"
   ansible.builtin.debug:

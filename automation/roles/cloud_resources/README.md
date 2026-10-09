@@ -148,6 +148,7 @@ Zones and subnets (AWS):
 - Neither is specified: the default subnets of the default VPC, in the alphabetical order of the zones.
 
 The first `server_zones_count` zones are used, unless `server_zones` lists them explicitly.
+The zones of existing servers come first, so an existing cluster keeps using its zones (for example, a single-zone cluster with `server_zones_count: 1` stays in its zone).
 If fewer zones are available than `server_zones_count`, a warning is shown and the available zones are used.
 
 Placement of each server (`<server_name>01`, `<server_name>02`, ...):
