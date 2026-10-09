@@ -3,9 +3,9 @@ name: "Docker"
 
 on:
   push:
-    # TODO: uncomment before merge. Temporarily build and push images for all branches (tag = branch name) to test before merge.
-    # branches:
-    #   - main
+    branches:
+      - main
+      - aws-multi-az # TODO: remove before merge. Temporarily build and push images with the 'aws-multi-az' tag to test before merge.
   pull_request:
     branches:
       - main
