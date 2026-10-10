@@ -28,7 +28,11 @@ auth_query = SELECT usename, passwd FROM user_search($1)
 auth_file = {{ pgbouncer_conf_dir }}/userlist.txt
 {% endif %}
 admin_users = {{ pgbouncer_admin_users }}
+{% if netdata_install | default(false) | bool and netdata_pgbouncer_collector | default(true) | bool %}
+stats_users = {{ ((pgbouncer_stats_users.split(',') | map('trim') | reject('equalto', '') | list) + [netdata_pgbouncer_stats_user | default(patroni_superuser_username)]) | unique(case_sensitive=true) | join(',') }}
+{% else %}
 stats_users = {{ pgbouncer_stats_users }}
+{% endif %}
 ignore_startup_parameters = {{ pgbouncer_ignore_startup_parameters }}
 
 pool_mode = {{ pgbouncer_default_pool_mode }}

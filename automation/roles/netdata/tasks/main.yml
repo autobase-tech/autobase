@@ -16,6 +16,7 @@
       until: install_status is success
       delay: 10
       retries: 3
+      notify: restart netdata
 
     - name: Configure Netdata
       ansible.builtin.template:
@@ -24,11 +25,10 @@
         owner: root
         group: root
         mode: u=wrx,g=rx,o=r,+x
+      notify: restart netdata
 
-    - name: Restart Netdata
-      ansible.builtin.service:
-        name: netdata
-        state: restarted
+    - name: Configure PgBouncer monitoring
+      ansible.builtin.import_tasks: pgbouncer.yml
   environment: "{{ proxy_env | default({}) }}"
   ignore_errors: "{{ netdata_install_ignore_errors | default(true) }}" # show the error and continue the playbook execution
   when: netdata_install | default(false)| bool

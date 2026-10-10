@@ -1,0 +1,8 @@
+---
+- name: Restart Netdata
+  ansible.builtin.service:
+    name: netdata
+    state: restarted
+  listen: restart netdata
+  ignore_errors: "{{ netdata_install_ignore_errors | default(true) }}"
+  when: netdata_install | default(false) | bool

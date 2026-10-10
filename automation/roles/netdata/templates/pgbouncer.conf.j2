@@ -1,0 +1,10 @@
+update_every: 1
+autodetection_retry: 10
+jobs:
+{% set stats_user = netdata_pgbouncer_stats_user | default(patroni_superuser_username) | urlencode | replace('/', '%2F') %}
+{% set stats_password = netdata_pgbouncer_stats_password | default(patroni_superuser_password) | urlencode | replace('/', '%2F') %}
+{% for idx in range(pgbouncer_processes | default(1) | int) %}
+{% set socket_dir = '/var/run/pgbouncer' ~ ('-%d' % (idx + 1) if idx > 0 else '') %}
+  - name: pgbouncer{{ '-%d' % (idx + 1) if idx > 0 else '' }}
+    dsn: {{ ('postgres://' ~ stats_user ~ ':' ~ stats_password ~ '@/pgbouncer?host=' ~ (socket_dir | urlencode) ~ '&port=' ~ (pgbouncer_listen_port | default(6432) | string) ~ '&sslmode=disable') | to_json }}
+{% endfor %}
