@@ -10,7 +10,7 @@ cloud_provider_tags: # Custom tags requested when supported cloud resources are 
 cloud_backup_provider_tags: "{{ cloud_provider_tags }}" # Tags for backup storage resources. Defaults to cloud_provider_tags.
 state: present # Set to 'present' to create a server, 'absent' to delete.
 
-server_count: "{{ servers_count | default(3) }}" # Number of servers in the cluster.
+server_count: 3 # Number of servers in the cluster.
 server_name: "{{ patroni_cluster_name }}-pgnode" # (optional) If not provided, a name will be auto-generated. Servers will be automatically named with suffixes 01, 02, 03, etc.
 server_type: "" # (required) Server type.
 server_image: "" # (required) OS image for the server. For Azure, use variables 'azure_vm_image_offer', 'azure_vm_image_publisher', 'azure_vm_image_sku', 'azure_vm_image_version' instead of variable 'server_image'
@@ -18,6 +18,12 @@ server_location: "" # (required) Server location or region.
 server_network: "" # (optional) If provided, the server will be added to this network (needs to be created beforehand).
 server_spot: false # Spot instance. Applicable for AWS, GCP, Azure.
 server_public_ip: true # Assign public IPs; set false only when the control host can reach private IPs and outbound egress is provided separately (for example, NAT).
+
+# Zones (multi-AZ). Currently supported for AWS.
+server_zones_count: 3 # Number of zones to distribute servers across. Set to 1 to place all servers in a single zone.
+server_zones: [] # (optional) Zones to use, in priority order (e.g. ['us-east-1a', 'us-east-1b', 'us-east-1c']). If empty, zones are selected automatically.
+server_placement: {} # (optional) Place specific servers in specific zones, e.g. { "postgres-cluster-pgnode01": "us-east-1a" }. Existing servers are never moved.
+aws_subnet_ids: [] # (optional) AWS subnets for servers in a custom VPC, one per Availability Zone (list or comma-separated string). Required for multi-AZ in a custom VPC; if specified, 'server_network' is ignored.
 
 volume_type: "" # Data disk type. Set to 'local' to use the system disk and skip creating an external data disk.
 volume_size: 100 # Storage size for the data directory (GB). Set to 0 to use the system disk.
@@ -47,7 +53,8 @@ cloud_load_balancer: true # Create a Load Balancer for master / primary.
 cloud_load_balancer_replica: true # Create a Load Balancer for all replicas (requires server_count > 1).
 cloud_load_balancer_replica_sync: false # Create a Load Balancer for synchronous replicas (requires synchronous_mode).
 cloud_load_balancer_replica_async: false # Create a Load Balancer for asynchronous replicas (requires synchronous_mode).
-aws_load_balancer_type: "nlb" # 'nlb' = Network Load Balancer; 'clb' = Classic Load Balancer (previous generation).
+aws_nlb_client_routing_policy: "availability_zone_affinity" # NLB DNS client routing policy: 'availability_zone_affinity', 'partial_availability_zone_affinity' or 'any_availability_zone'.
+aws_nlb_replica_cross_zone: false # Cross-zone load balancing for replica NLBs. 'false' keeps reads in the client's zone when it has a healthy replica. Always enabled for the primary NLB.
 
 # Bucket (if 'pgbackrest_install' or 'wal_g_install' is 'true')
 aws_s3_bucket_create: true # if 'cloud_backup_provider=aws'

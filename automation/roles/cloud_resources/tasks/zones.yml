@@ -1,0 +1,143 @@
+---
+# Distribute servers across zones (provider-agnostic).
+#
+# Input (set by the cloud provider tasks before this file is imported):
+#   zones_available - ordered list of zones where servers can be created
+#   zones_existing  - dictionary { server name: zone } of already existing servers
+# Output:
+#   server_zone_placement - list of { 'name': server name, 'zone': zone } in server index order
+#
+# Existing servers are never moved. New servers are placed in the zone from 'server_placement',
+# otherwise in the zone with the fewest servers (ties are resolved by the zone order).
+# Unless 'server_zones' is specified, the zones of existing servers are used first.
+
+- name: "Zones | Set variable: zone_server_names"
+  ansible.builtin.set_fact:
+    zone_server_names: "{{ query('ansible.builtin.sequence', 'start=1 count=' ~ server_count ~ ' format=' ~ server_name | lower ~ '%02d') }}"
+
+- name: "Zones | Validate available zones"
+  ansible.builtin.assert:
+    that: zones_available | length > 0
+    fail_msg: "No zones are available to create servers in."
+    quiet: true
+
+- name: "Zones | Validate 'server_zones_count' and 'server_zones'"
+  ansible.builtin.assert:
+    that:
+      - server_zones_count | int > 0
+      - server_zones is sequence and server_zones is not string
+      - server_zones | difference(zones_available) | length == 0
+    fail_msg: >-
+      'server_zones_count' must be greater than 0, and 'server_zones' must be a list of available zones.
+      Unknown zones: {{ server_zones | difference(zones_available) if server_zones is sequence and server_zones is not string else server_zones }}.
+      Available zones: {{ zones_available }}.
+    quiet: true
+
+- name: "Zones | Validate 'server_placement'"
+  ansible.builtin.assert:
+    that:
+      - server_placement is mapping
+      - server_placement.keys() | list | difference(zone_server_names) | length == 0
+      - server_placement.values() | list | difference(zones_available) | length == 0
+    fail_msg: >-
+      'server_placement' must be a dictionary of server names and available zones.
+      Unknown servers: {{ server_placement.keys() | list | difference(zone_server_names) if server_placement is mapping else '-' }}.
+      Unknown zones: {{ server_placement.values() | list | difference(zones_available) if server_placement is mapping else '-' }}.
+      Servers: {{ zone_server_names }}. Available zones: {{ zones_available }}.
+    quiet: true
+
+# Zones of existing servers are selected first, so that an existing cluster keeps using them.
+- name: "Zones | Set variable: zones_selected"
+  ansible.builtin.set_fact:
+    zones_selected: "{{ server_zones if server_zones | length > 0 else (zones_ordered | list)[:zones_limit] }}"
+  vars:
+    zones_limit: "{{ server_zones_count | int }}"
+    zones_in_use: "{{ zones_existing.values() | list }}"
+    zones_ordered: "{{ (zones_available | select('in', zones_in_use) | list) + (zones_available | reject('in', zones_in_use) | list) }}"
+
+- name: "Zones | WARNING: fewer zones available than requested"
+  ansible.builtin.debug:
+    msg: >-
+      'server_zones_count' is {{ server_zones_count }}, but only {{ zones_selected | length }} zone(s) are available:
+      {{ zones_selected | join(', ') }}. Servers will be distributed across the available zones.
+      To use more zones, specify them (for AWS, 'aws_subnet_ids' with one subnet per Availability Zone),
+      or set 'server_zones_count: 1' to hide this warning.
+  when:
+    - server_zones | length == 0
+    - zones_selected | length < server_zones_count | int
+
+- name: "Zones | Set variable: server_zone_placement"
+  ansible.builtin.set_fact:
+    server_zone_placement: "{{ placement_json | from_json }}"
+  vars:
+    placement_json: >-
+      {%- set fixed = server_placement | combine(zones_existing) -%}
+      {%- set ns = namespace(used=fixed.values() | list, placement=[]) -%}
+      {%- for name in zone_server_names -%}
+      {%-   if name in fixed -%}
+      {%-     set zone = fixed[name] -%}
+      {%-   else -%}
+      {%-     set best = namespace(zone='', count=0) -%}
+      {%-     for candidate in zones_selected -%}
+      {%-       set count = ns.used | select('equalto', candidate) | list | length -%}
+      {%-       if best.zone == '' or count < best.count -%}
+      {%-         set best.zone = candidate -%}
+      {%-         set best.count = count -%}
+      {%-       endif -%}
+      {%-     endfor -%}
+      {%-     set zone = best.zone -%}
+      {%-     set ns.used = ns.used + [zone] -%}
+      {%-   endif -%}
+      {%-   set ns.placement = ns.placement + [{'name': name, 'zone': zone}] -%}
+      {%- endfor -%}
+      {{ ns.placement | to_json }}
+
+- name: "Zones | WARNING: existing servers are not in the requested zone"
+  ansible.builtin.debug:
+    msg: >-
+      Server '{{ item.name }}' already exists in zone '{{ item.zone }}', but 'server_placement' requests
+      '{{ server_placement[item.name] }}'. Existing servers are not moved. To move it, remove the node from
+      the cluster, delete the server and add it again.
+  loop: "{{ server_zone_placement }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when:
+    - item.name in zones_existing
+    - item.name in server_placement
+    - server_placement[item.name] != item.zone
+
+# The DCS cluster (etcd or Consul servers) runs on the first 7 servers in the inventory order:
+# existing servers first, then new servers (each in server name order).
+# It keeps the majority of its members if any single zone fails, when no zone has more than (n - 1) // 2 of them.
+# Fail for a new cluster. Only warn when servers are added to an existing cluster (scaling, moving to multiple zones).
+- block:
+    - name: "Zones | Validate that the DCS cluster survives the loss of any zone"
+      ansible.builtin.fail:
+        msg:
+          - "The {{ dcs_type }} cluster would lose quorum if the zone with the most servers fails."
+          - "DCS servers: {{ dcs_members | items2dict(key_name='name', value_name='zone') }}."
+          - "Use at least 3 zones ({{ 'server_zones' if server_zones | length > 0 else 'server_zones_count' }}), change server_count,
+            {{ 'specify a single zone in server_zones' if server_zones | length > 0 else 'use server_zones_count: 1' }}
+            for a single-zone cluster, or use a dedicated DCS cluster (dcs_exists: true)."
+      when:
+        - not dcs_quorum_ok | bool
+        - zones_existing | length == 0
+
+    - name: "Zones | WARNING: the DCS cluster does not survive the loss of any zone"
+      ansible.builtin.debug:
+        msg: >-
+          The {{ dcs_type }} cluster would lose quorum if the zone with the most servers fails.
+          DCS servers: {{ dcs_members | items2dict(key_name='name', value_name='zone') }}.
+          Distribute the servers evenly across at least 3 zones, or use a dedicated DCS cluster (dcs_exists: true).
+      when:
+        - not dcs_quorum_ok | bool
+        - zones_existing | length > 0
+  vars:
+    dcs_members: >-
+      {{ ((server_zone_placement | selectattr('name', 'in', zones_existing) | list)
+      + (server_zone_placement | rejectattr('name', 'in', zones_existing) | list))[:7] }}
+    dcs_quorum_ok: "{{ (dcs_members | groupby('zone') | map('last') | map('length') | max) <= (dcs_members | length - 1) // 2 }}"
+  when:
+    - server_zone_placement | map(attribute='zone') | unique | list | length > 1
+    - not dcs_exists | default(false) | bool
+    - dcs_type | default('etcd') in ['etcd', 'consul']

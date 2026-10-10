@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - main
+      - aws-multi-az # TODO: remove before merge. Temporarily build and push images with the 'aws-multi-az' tag to test before merge.
   pull_request:
     branches:
       - main
