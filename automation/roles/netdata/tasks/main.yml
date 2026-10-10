@@ -16,6 +16,7 @@
       until: install_status is success
       delay: 10
       retries: 3
+      notify: restart netdata
 
     - name: Configure Netdata
       ansible.builtin.template:
@@ -24,38 +25,10 @@
         owner: root
         group: root
         mode: u=wrx,g=rx,o=r,+x
+      notify: restart netdata
 
-    - block:
-        - name: Ensure Netdata collector configuration directory exists
-          ansible.builtin.file:
-            path: /etc/netdata/go.d
-            state: directory
-            owner: root
-            group: netdata
-            mode: "0750"
-
-        - name: Configure Netdata PgBouncer collector
-          ansible.builtin.template:
-            src: templates/pgbouncer.conf.j2
-            dest: /etc/netdata/go.d/pgbouncer.conf
-            owner: root
-            group: netdata
-            mode: "0640"
-          no_log: true
-      when:
-        - pgbouncer_install | default(true) | bool
-        - netdata_pgbouncer_collector | default(true) | bool
-
-    - name: Remove disabled Netdata PgBouncer collector configuration
-      ansible.builtin.file:
-        path: /etc/netdata/go.d/pgbouncer.conf
-        state: absent
-      when: not (pgbouncer_install | default(true) | bool and netdata_pgbouncer_collector | default(true) | bool)
-
-    - name: Restart Netdata
-      ansible.builtin.service:
-        name: netdata
-        state: restarted
+    - name: Configure PgBouncer monitoring
+      ansible.builtin.import_tasks: pgbouncer.yml
   environment: "{{ proxy_env | default({}) }}"
   ignore_errors: "{{ netdata_install_ignore_errors | default(true) }}" # show the error and continue the playbook execution
   when: netdata_install | default(false)| bool

@@ -251,6 +251,11 @@
         tasks_from: config
       when: pgbouncer_install | default(true) | bool
 
+    - name: Configure PgBouncer monitoring
+      ansible.builtin.import_role:
+        name: vitabaks.autobase.netdata
+        tasks_from: pgbouncer
+
 - name: config_pgcluster | Configure pgBackRest
   hosts: pgbackrest:postgres_cluster
   become: true

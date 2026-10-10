@@ -26,11 +26,13 @@ Installs and configures [Netdata](https://github.com/netdata/netdata) using the 
 
 ## PgBouncer monitoring
 
-When both Netdata and PgBouncer are enabled, the role writes `/etc/netdata/go.d/pgbouncer.conf` and restarts Netdata to activate the collector. Each PgBouncer process gets a separate job (`pgbouncer`, `pgbouncer-2`, etc.) connected through its Unix socket using `pgbouncer_listen_port`. Unix socket connections also work when PgBouncer requires TLS for TCP clients.
+When both Netdata and PgBouncer are enabled, the role writes `/etc/netdata/go.d/pgbouncer.conf` and notifies a handler to restart Netdata when the configuration changes. Each PgBouncer process gets a separate job (`pgbouncer`, `pgbouncer-2`, etc.) connected through its Unix socket using `pgbouncer_listen_port`. Unix socket connections also work when PgBouncer requires TLS for TCP clients.
 
 The default credentials belong to the existing Patroni superuser. To use a dedicated account with read-only access to the PgBouncer console, create a PostgreSQL login through `postgresql_users` and set `netdata_pgbouncer_stats_user` and `netdata_pgbouncer_stats_password` to its credentials. With `pgbouncer_auth_user: false`, the normal PgBouncer configuration step includes that account in `userlist.txt`.
 
 The collector configuration is owned by `root:netdata` with mode `0640`, and its contents are hidden from Ansible logs. Setting `netdata_pgbouncer_collector: false` or `pgbouncer_install: false` removes the configuration when the Netdata role runs.
+
+Use `--tags pgbouncer,netdata_pgbouncer` with `deploy_pgcluster.yml` or `config_pgcluster.yml` to update PgBouncer and its collector jobs together. The `netdata_pgbouncer` tag only manages the collector configuration; installation and general Netdata configuration use the `netdata` tag. The restart handler runs once after configuration changes.
 
 ## Dependencies
 
