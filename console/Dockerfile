@@ -1,5 +1,5 @@
 # dbdesk-studio image (frontend + Express backend)
-ARG DBDESK_STUDIO_VERSION=0.1.5
+ARG DBDESK_STUDIO_VERSION=2.0.0
 FROM docker.io/bhavikagarwal2001/dbdesk-studio:${DBDESK_STUDIO_VERSION} AS dbdesk-studio
 
 # Node.js runtime binary (for dbdesk-studio Express server)
