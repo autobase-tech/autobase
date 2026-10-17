@@ -7,7 +7,7 @@ collections:
   - name: google.cloud
     version: ">=1.13.0"
   - name: azure.azcollection
-    version: ">=3.19.0"
+    version: ">=4.0.0"
   - name: community.digitalocean # TODO: replace with digitalocean.cloud
     version: ">=1.27.0" # EOL
   - name: hetzner.hcloud

@@ -19,7 +19,7 @@ server_network: "" # (optional) If provided, the server will be added to this ne
 server_spot: false # Spot instance. Applicable for AWS, GCP, Azure.
 server_public_ip: true # Assign public IPs; set false only when the control host can reach private IPs and outbound egress is provided separately (for example, NAT).
 
-# Zones (multi-AZ). Currently supported for AWS and GCP.
+# Zones (multi-AZ). Currently supported for AWS, GCP and Azure.
 server_zones_count: 3 # Number of zones to distribute servers across. Set to 1 to place all servers in a single zone.
 server_zones: [] # (optional) Preferred zones, in priority order (e.g. ['us-east-1a', 'us-east-1b', 'us-east-1c']); the first 'server_zones_count' are used. If empty, zones are selected automatically.
 server_placement: {} # (optional) Place specific servers in specific zones, e.g. { "postgres-cluster-pgnode01": "us-east-1a" }. Existing servers are never moved.

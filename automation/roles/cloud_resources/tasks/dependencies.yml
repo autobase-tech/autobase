@@ -133,47 +133,6 @@
             PATH: "{{ ansible_env.PATH }}:/usr/local/bin:/usr/bin"
             PIP_BREAK_SYSTEM_PACKAGES: "1"
 
-    - name: Prepare Azure CLI
-      when:
-        - cloud_provider | default('') | lower == 'azure'
-        - cloud_load_balancer | bool
-      block:
-        - name: Check if Azure CLI is installed
-          ansible.builtin.command: az --version
-          register: az_version_result
-          changed_when: false
-          failed_when: false
-
-        - name: Install Azure CLI
-          community.general.homebrew:
-            name: azure-cli
-            state: present
-          ignore_errors: true
-          when:
-            - az_version_result.rc != 0
-            - ansible_distribution == "MacOSX"
-
-        - name: Install Azure CLI
-          ansible.builtin.shell: >
-            set -o pipefail;
-            curl -sL https://aka.ms/InstallAzureCLIDeb | bash
-          args:
-            executable: /bin/bash
-          ignore_errors: true
-          when:
-            - az_version_result.rc != 0
-            - ansible_os_family == "Debian"
-
-        - name: Login to Azure using Service Principal
-          ansible.builtin.shell: |
-            az login --service-principal \
-            --username "{{ lookup('env', 'AZURE_CLIENT_ID') }}" \
-            --password "{{ lookup('env', 'AZURE_SECRET') }}" \
-            --tenant "{{ lookup('env', 'AZURE_TENANT') }}"
-          args:
-            executable: /bin/bash
-          changed_when: false
-
   delegate_to: 127.0.0.1
   become: false
   run_once: true

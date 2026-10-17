@@ -33,7 +33,7 @@ dependencies:
   amazon.aws: ">=10.3.2"
   community.aws: ">=10.1.1"
   google.cloud: ">=1.13.0"
-  azure.azcollection: ">=3.19.0"
+  azure.azcollection: ">=4.0.0"
   community.digitalocean: ">=1.27.0"
   hetzner.hcloud: ">=6.10.0"
   community.postgresql: ">=4.2.0"

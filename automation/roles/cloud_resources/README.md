@@ -1,13 +1,15 @@
 # Ansible Role: cloud_resources
 
 Provision the PostgreSQL cluster infrastructure in public clouds (AWS, GCP, Azure, DigitalOcean, Hetzner). The role can:
-- Create/delete servers (count, size, image, region), distributed across availability zones (AWS, GCP)
+
+- Create/delete servers (count, size, image, region), distributed across availability zones (AWS, GCP, Azure)
 - Configure private networking/VPC/VNet and firewalls/Security Groups
 - Optionally create Load Balancers (AWS NLB, GCP TCP Proxy, Azure LB, DO LB, Hetzner LB)
 - Optionally create object storage for backups (S3/GCS/Azure Blob/Spaces/Hetzner Object Storage)
 - Generate in-memory inventory (postgres_cluster, master/replica, etcd_cluster/consul_instances).
 
 ## Requirements
+
 - Collections on control host:
   - amazon.aws, community.aws
   - google.cloud
@@ -21,13 +23,17 @@ Provision the PostgreSQL cluster infrastructure in public clouds (AWS, GCP, Azur
   - DigitalOcean: `DO_API_TOKEN`
   - Hetzner: `HCLOUD_API_TOKEN`
 
+Collection versions are specified in [requirements.yml](../../requirements.yml).
+
 ## Variables
+
+The zone placement variables apply to AWS, GCP and Azure; see [Availability zones](#availability-zones) for placement rules and examples.
 
 | Variable | Type | Default | Description |
 |---------|------|---------|-------------|
 | cloud_provider | string | "" | Specifies the Cloud provider for server creation. Available options: 'aws', 'gcp', 'azure', 'digitalocean', 'hetzner' |
 | cloud_backup_provider | string | cloud_provider | Specifies the Cloud provider for backup storage independently of the server provider. |
-| cloud_provider_tags | dict | Managed: autobase | Custom tags requested when supported cloud resources are provisioned. Existing compute resources are not retagged on later runs. Keys and values must be strings. |
+| cloud_provider_tags | dict | Managed: autobase | Custom tags for supported resources; see [Custom resource tags](#custom-resource-tags). |
 | cloud_backup_provider_tags | dict | cloud_provider_tags | Tags for backup storage resources. An explicit dictionary replaces the inherited tags. |
 | state | string | present | present to create, absent to delete |
 | server_count | int | 3 | Number of servers in the cluster |
@@ -38,9 +44,9 @@ Provision the PostgreSQL cluster infrastructure in public clouds (AWS, GCP, Azur
 | server_network | string | "" | Existing network/subnet/VPC. If provided, the server will be added to this network (needs to be created beforehand) |
 | server_spot | bool | false | Spot/preemptible where supported. Applicable for AWS, GCP, Azure |
 | server_public_ip | bool | true | Assign public IPs to servers |
-| server_zones_count | int | 3 | Number of zones to distribute servers across. Set to `1` to place all servers in a single zone. Applicable for AWS and GCP |
-| server_zones | list | [] | Preferred zones, in priority order (e.g. `['us-east-1a', 'us-east-1b', 'us-east-1c']`); the first `server_zones_count` zones are used. If empty, zones are selected automatically. Applicable for AWS and GCP |
-| server_placement | dict | {} | Place specific servers in specific zones, e.g. `{"postgres-cluster-pgnode01": "us-east-1a"}`. Existing servers are never moved. Applicable for AWS and GCP |
+| server_zones_count | int | 3 | Number of preferred zones to use. Set to `1` for single-zone placement. |
+| server_zones | list | [] | Preferred zones in priority order. If empty, zones are selected automatically. |
+| server_placement | dict | {} | Explicit zone overrides for new servers, keyed by server name. |
 | volume_type | string | "" | Data disk type. Set to `local` to use the system disk and skip creating an external data disk. Defaults: 'gp3' for AWS, 'pd-ssd' for GCP, 'StandardSSD_LRS' for Azure |
 | volume_size | int | 100 | Data disk size (GB). Set to `0` to use the system disk; this is equivalent to `volume_type: local` |
 | system_volume_type | string | "" | System disk type. Defaults: 'gp3' for AWS, 'pd-ssd' for GCP, 'StandardSSD_LRS' for Azure |
@@ -50,7 +56,7 @@ Provision the PostgreSQL cluster infrastructure in public clouds (AWS, GCP, Azur
 | cloud_firewall | bool | true | Manage firewall/Security Groups |
 | ssh_public_access | bool | true | Allow public ssh access (required for deployment from the public network). Applicable if server_public_ip is set to true |
 | ssh_public_allowed_ips | string | "" | Comma-separated CIDRs for SSH (empty = 0.0.0.0/0,::/0) |
-| netdata_public_access | bool | true | Allow public Netdata (if 'netdata_install' is 'true') |
+| netdata_public_access | bool | false | Allow public Netdata (if 'netdata_install' is 'true') |
 | netdata_public_allowed_ips | string | "" | Comma-separated CIDRs for Netdata |
 | database_public_access | bool | false | Allow public DB access |
 | database_public_allowed_ips | string | "" | Comma-separated CIDRs for DB |
@@ -100,8 +106,6 @@ Set `cloud_backup_provider` when backup storage should be provisioned in a diffe
 
 ### Provider-specific variables
 
-Provider-specific (optional) variables referenced in tasks
-
 | Provider | Variable | Type | Default | Description |
 |----------|----------|------|---------|-------------|
 | AWS | aws_subnet_ids | list | [] | Subnets for servers in a custom VPC, one per Availability Zone (a list or a comma-separated string). Required for multi-AZ in a custom VPC. If specified, `server_network` is ignored. |
@@ -140,43 +144,64 @@ Provider-specific (optional) variables referenced in tasks
 
 ### Availability zones
 
-Servers are distributed across `server_zones_count` zones (3 by default), so that the cluster survives the loss of a zone.
-Currently applicable for AWS and GCP.
+AWS, GCP and Azure support placement across availability zones. The role uses up to `server_zones_count` zones (3 by default).
+Surviving a zone failure also requires a healthy database replica and a DCS quorum; see [DCS cluster](#dcs-cluster).
 
-Traffic between zones is charged by the cloud provider (replication, client connections through load balancers in other zones),
-and synchronous replication (`synchronous_mode`) adds the network latency between zones to each commit.
-For clusters where cost or latency matters more than tolerance to the loss of a zone, set `server_zones_count: 1`.
+Cross-zone replication adds network latency, including to commits when `synchronous_mode` is enabled.
+Consider your provider's inter-zone traffic costs when choosing a placement. Set `server_zones_count: 1` for a single-zone cluster.
 
-Zones and subnets (AWS):
-- `aws_subnet_ids` is specified: the Availability Zones of these subnets, in the order of the list.
-- Only `server_network` is specified: the Availability Zone of this subnet (single zone).
-- Neither is specified: the default subnets of the default VPC, in the alphabetical order of the zones.
+#### Placement rules
 
-Zones and subnets (GCP):
-- `server_location` is a region (for example, `europe-west1`): zones with status `UP` that support `server_type` are discovered in alphabetical order.
-- An explicit zone in `server_location` (for example, `europe-west1-b`) keeps single-zone placement for new servers, regardless of `server_zones_count`.
-- `server_network` is the VPC network name (defaults to `default`). All cluster VMs share one private regional subnetwork across zones; use `gcp_subnetwork` to select it explicitly.
+The role selects zones from `server_zones`, or from the provider's discovery results when this list is empty.
+Within that list, zones already used by existing servers take priority; the first `server_zones_count` zones are selected.
+If fewer zones are available than requested, the role warns and uses those available.
 
-`server_zones` (if specified) and `aws_subnet_ids` are lists of preferred zones: the first `server_zones_count` of them are used.
-`server_placement` takes precedence: a server listed there is created in its zone even if the zone is not among the selected ones.
-The zones of existing servers come first, so an existing cluster keeps using its zones (for example, a single-zone cluster with `server_zones_count: 1` stays in its zone).
-If fewer zones are available than `server_zones_count`, a warning is shown and the available zones are used.
+Each server (`<server_name>01`, `<server_name>02`, ...) is placed as follows:
 
-Placement of each server (`<server_name>01`, `<server_name>02`, ...):
-1. An existing server stays in its zone. Servers are never moved, even if `server_placement` requests another zone.
-2. A new server listed in `server_placement` is created in that zone.
-3. Other new servers are created in the zone with the fewest servers (ties are resolved by the zone order).
+1. An existing server keeps its placement, even if `server_placement` requests another zone.
+2. A new server listed in `server_placement` uses that zone, even if it is outside the selected set.
+3. Other new servers use the selected zone with the fewest servers; ties follow the zone order.
+
+Existing Azure VMs created without a zone keep their regional placement. Their actual zone is unknown.
+To change an existing server's placement, follow [Moving an existing cluster to multiple zones](#moving-an-existing-cluster-to-multiple-zones).
+
+#### Zones and networks
+
+**AWS**
+
+- With `aws_subnet_ids`, zones are taken from those subnets in the supplied order, with one subnet per zone in the same VPC.
+- With only `server_network`, its subnet determines a single zone.
+- With neither, the default VPC's default subnets are used in alphabetical zone order.
+
+**GCP**
+
+- With a region in `server_location` (for example, `europe-west1`), zones with status `UP` that support `server_type` are discovered in alphabetical order.
+- An explicit zone (for example, `europe-west1-b`) restricts new servers to that zone regardless of `server_zones_count`.
+- `server_network` is the VPC network name (defaults to `default`). All VMs share one private regional subnetwork; use `gcp_subnetwork` to select it explicitly.
+
+**Azure**
+
+- `server_location` is a region (for example, `westeurope`). Logical zone IDs are `"1"`, `"2"`, `"3"` within the subscription; numeric YAML values are also accepted.
+- Zones are discovered for `server_type`, excluding subscription restrictions. Discovery does not reserve allocation or Spot capacity.
+- All VMs share one regional VNet and `azure_subnet`. Existing VMs must also use this subnet.
+- If the VM SKU has no zonal support, the role uses regional placement with a warning, provided `server_zones` and `server_placement` are empty. Subscription restrictions cause an error instead.
+
+#### Examples
+
+AWS with a custom VPC:
 
 ```yaml
 cloud_provider: aws
 server_zones_count: 3
-aws_subnet_ids: # custom VPC, one subnet per Availability Zone
+aws_subnet_ids:
   - subnet-0a1b2c3d4e5f60001 # us-east-1a
   - subnet-0a1b2c3d4e5f60002 # us-east-1b
   - subnet-0a1b2c3d4e5f60003 # us-east-1c
-server_placement: # (optional)
+server_placement: # optional
   postgres-cluster-pgnode01: us-east-1b
 ```
+
+GCP with preferred zones:
 
 ```yaml
 cloud_provider: gcp
@@ -187,25 +212,41 @@ server_zones: # optional
   - europe-west1-d
 ```
 
+Azure with preferred zones and a server override:
+
+```yaml
+cloud_provider: azure
+server_location: westeurope
+server_type: Standard_D4s_v5
+server_zones: ["1", "2", "3"] # optional
+server_placement: # optional
+  postgres-cluster-pgnode01: "2"
+```
+
 #### DCS cluster
 
-The DCS cluster (etcd or Consul servers on the first 7 database servers, existing servers first) must keep its quorum if any single zone fails,
-so 2 zones are not enough. For a new cluster, the deployment fails if the placement does not allow this,
-unless `dcs_exists: true` (dedicated DCS) or all servers are in a single zone.
-When servers are added to an existing cluster (scaling, moving to multiple zones), only a warning is shown.
-For example, a cluster of 4 servers in 3 zones loses the etcd quorum if the zone with 2 servers fails.
-In a cluster of more than 7 servers, a re-created server is added after the existing servers, so it does not become a DCS member.
+Unless `dcs_exists: true`, etcd or Consul runs on up to the first 7 database servers in inventory order, with existing servers before new ones.
+To retain quorum after any single zone fails, the DCS must span at least 3 zones and keep a majority of its members outside each zone.
+For example, 4 DCS members distributed 2/1/1 lose quorum if the zone with 2 members fails.
 
-For production clusters in multiple zones, we recommend a dedicated etcd cluster with one member in each of 3 zones
-(`dcs_exists: true` and `patroni_etcd_hosts`). The number of database servers and their placement then do not affect the DCS quorum.
+The role rejects an unsafe placement for a new multi-zone cluster and warns when scaling or changing an existing cluster.
+This validation is skipped for single-zone placement and a dedicated DCS (`dcs_exists: true`).
+If a DCS member is an Azure regional VM without a known zone, the role warns that zone-failure tolerance cannot be verified.
+In a cluster with more than 7 database servers, a replacement is ordered after the existing servers and does not become a DCS member.
 
-#### AWS Network Load Balancer
+For production, a dedicated etcd cluster with one member in each of 3 zones (`dcs_exists: true` and `patroni_etcd_hosts`)
+keeps DCS quorum independent of database server count and placement.
+
+#### Load balancers
+
+##### AWS Network Load Balancer
 
 NLBs are enabled in the zones of all servers. When new servers are added in a new zone, the zone is added to the existing NLBs online:
 their DNS names and existing IP addresses are kept.
 
 With `aws_nlb_client_routing_policy: availability_zone_affinity` (default), clients that use the Route 53 Resolver of the VPC
 resolve the NLB IP address in their own zone, if it has a healthy target.
+
 - Primary NLB: cross-zone load balancing is always enabled, so the NLB node in any zone forwards connections to the primary
   right after a failover, without waiting for DNS changes.
 - Replica NLBs: with `aws_nlb_replica_cross_zone: false` (default), reads stay in the client's zone when it has a healthy replica.
@@ -217,14 +258,30 @@ resolve the NLB IP address in their own zone, if it has a healthy target.
   To make sure that such connections never use the primary, connect with `target_session_attrs=standby` (or `prefer-standby`),
   or set `aws_nlb_replica_cross_zone: true` to distribute connections across replicas in all zones.
 
+##### Azure Load Balancer
+
+In regions with three availability zones, new Standard public IPs (for VMs and load balancers) and internal load balancer frontends use zone redundancy.
+Frontend placement uses the region's zones independently of VM SKU availability. Internal frontends use `azure_subnet`.
+Each enabled primary/replica/sync/async endpoint uses the corresponding Patroni health probe.
+Load balancer updates preserve existing backend pool settings and members; scaling adds the new servers' addresses.
+
+Existing IP addresses and frontend zone settings are preserved. The role warns about zonal frontends/public IPs and internal frontends without explicit zone redundancy.
+Migrate these frontends separately before relying on them during a zone failure; public IP zone settings cannot be changed in place.
+A Standard public IP without explicit zones may already be zone redundant and does not trigger this warning.
+
 #### Moving an existing cluster to multiple zones
 
-Existing servers are never moved. To move a single-zone cluster, replace the replicas one by one:
-1. Specify the subnets of the current and new zones (`aws_subnet_ids`) in the VPC of the existing servers, and optionally `server_placement` for the replaced servers.
-2. Remove a replica from the cluster (`remove_node.yml`), delete its EC2 instance and wait until it is in the `terminated` state.
-   Until then, the instance is treated as an existing server, and `add_node.yml` does not create a new one.
-3. Add it again (`add_node.yml` with the same `server_count`). It is created in a new zone, and the zone is added to the NLBs.
-4. Repeat for the other replicas. To move the primary, switch over to a replica first.
+Configure the target zones with `server_zones_count`, optionally `server_zones` and `server_placement`, while keeping the existing cluster network:
+
+- AWS: include the current and target zones' subnets in `aws_subnet_ids`.
+- GCP: use a region in `server_location` and keep the shared regional subnetwork.
+- Azure: ensure any reused disks and zonal public IPs are compatible with the target zone. Create a new zone-redundant public IP if needed.
+
+Replace replicas one at a time:
+
+1. Remove a replica using `remove_node.yml`, delete its cloud VM and wait for deletion to finish (`terminated` for EC2).
+2. Add it again using `add_node.yml` with the same desired `server_count`. The role applies the new placement and updates the load balancers.
+3. Repeat for the remaining replicas. Switch over to a replica before replacing the primary.
 
 ## Custom resource tags
 
@@ -240,11 +297,8 @@ cloud_backup_provider_tags: # Optional; inherits cloud_provider_tags when omitte
   Purpose: backup
 ```
 
-Autobase passes custom tags through provider modules while provisioning resources.
-It does not run a separate tagging pass for existing compute resources or their attached child resources.
-Changing `cloud_provider_tags` therefore does not retag existing VM instances, servers or Droplets.
-Standalone resources managed by create-or-update tasks, such as networks, firewalls and load balancers, may still have their tags reconciled by the provider module.
-Attached resources that the provider module cannot tag as part of their parent resource's creation remain untagged.
+Custom tags are applied when servers are created. Existing servers retain their tags when `cloud_provider_tags` changes.
+Other resources managed by create-or-update tasks, such as networks, firewalls, NICs and load balancers, may have their tags reconciled on later runs.
 AWS Spot instances are an exception: the Spot request creates the EC2 instance, so the instance can only be named and tagged afterward with the modules currently used by this role.
 
 Autobase's `Name` (EC2 instances) and `Cluster` (`cluster` for GCP) values take precedence over conflicting custom values.
@@ -265,4 +319,5 @@ When backup storage uses a different provider, inherited tags must also satisfy 
 ## Dependencies
 
 This role depends on:
+
 - `vitabaks.autobase.common` - Provides common variables and configurations

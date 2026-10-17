@@ -1,6 +1,92 @@
 ---
 # Create (if state is present)
 - block:
+    - name: "Set variable: azure_region, azure_resource_group_name, azure_network_name, azure_server_names"
+      ansible.builtin.set_fact:
+        azure_region: "{{ server_location | lower | replace(' ', '') }}"
+        azure_resource_group_name: "{{ azure_resource_group | default('postgres-cluster-resource-group-' ~ server_location, true) }}"
+        azure_network_name: "{{ server_network | default(azure_virtual_network | default('postgres-cluster-network'), true) }}"
+        azure_server_names: "{{ query('ansible.builtin.sequence', 'start=1 count=' ~ server_count ~ ' format=' ~ server_name | lower ~ '%02d') }}"
+
+    - name: "Azure: Gather information about availability zones"
+      vitabaks.autobase.azure_compute_zones_info:
+        location: "{{ azure_region }}"
+        vm_size: "{{ server_type }}"
+      register: azure_zone_info
+
+    - name: "Azure: Validate VM SKU availability"
+      ansible.builtin.assert:
+        that:
+          - azure_zone_info.regional_available
+          - azure_zone_info.zones | length == 0 or azure_zone_info.zones_available | length > 0
+        fail_msg: >-
+          VM SKU '{{ server_type }}' is restricted in '{{ azure_region }}' for this subscription.
+          Offered zones: {{ azure_zone_info.zones }}. Available zones: {{ azure_zone_info.zones_available }}.
+        quiet: true
+
+    - name: "Azure: Gather information about the existing resource group"
+      azure.azcollection.azure_rm_resourcegroup_info:
+        name: "{{ azure_resource_group_name }}"
+      register: azure_resource_group_info
+
+    - name: "Azure: Gather information about existing virtual machines"
+      azure.azcollection.azure_rm_virtualmachine_info:
+        resource_group: "{{ azure_resource_group_name }}"
+      register: azure_vm_info
+      when: azure_resource_group_info.resourcegroups | length > 0
+
+    - name: "Set variable: azure_existing_vms, zones_available, zones_existing"
+      ansible.builtin.set_fact:
+        azure_existing_vms: "{{ azure_vm_info.vms | default([]) | selectattr('name', 'in', azure_server_names) | list }}"
+        zones_available: "{{ azure_zone_info.zones_available }}"
+        zones_existing: {}
+
+    - name: "Azure: Validate existing virtual machines"
+      ansible.builtin.assert:
+        that:
+          - item.location | lower | replace(' ', '') == azure_region
+          - (item.tags | default({}, true)).get('Cluster', '') == patroni_cluster_name
+          - item.zones | default([], true) | length <= 1
+        fail_msg: "VM '{{ item.name }}' must belong to cluster '{{ patroni_cluster_name }}' in region '{{ azure_region }}'."
+        quiet: true
+      loop: "{{ azure_existing_vms }}"
+      loop_control:
+        label: "{{ item.name }}"
+
+    - name: "Azure: Record existing VM placement, including regional VMs without a zone"
+      ansible.builtin.set_fact:
+        zones_existing: "{{ zones_existing | combine({item.name: (item.zones | default([], true) | first | default('') | string)}) }}"
+      loop: "{{ azure_existing_vms }}"
+      loop_control:
+        label: "{{ item.name }}"
+
+    - name: "Distribute servers across zones"
+      ansible.builtin.import_tasks: zones.yml
+      when: zones_available | length > 0
+
+    - name: "Azure: Keep regional placement when the VM SKU does not support zones"
+      block:
+        - name: "Azure: Validate regional placement options"
+          ansible.builtin.assert:
+            that:
+              - server_zones is sequence and server_zones is not string and server_zones | length == 0
+              - server_placement is mapping and server_placement | length == 0
+              - server_zones_count | int > 0
+              - zones_existing.values() | reject('equalto', '') | list | length == 0
+            fail_msg: "VM SKU '{{ server_type }}' does not support availability zones in '{{ azure_region }}'."
+            quiet: true
+
+        - name: "Azure: WARNING: availability zones are not supported for this VM SKU"
+          ansible.builtin.debug:
+            msg: >-
+              VM SKU '{{ server_type }}' does not support availability zones in '{{ azure_region }}'.
+              Servers will use regional placement without protection against a zone failure.
+
+        - name: "Set variable: server_zone_placement"
+          ansible.builtin.set_fact:
+            server_zone_placement: "{{ azure_server_names | map('community.general.dict_kv', 'name') | map('combine', {'zone': ''}) | list }}"
+      when: zones_available | length == 0
+
     # if ssh_key_content is not defined, get the user public key from the system (if exists)
     - name: "Set variable: ssh_key_content"
       ansible.builtin.set_fact:
@@ -10,8 +96,8 @@
 
     - name: "Azure: Create resource group"
       azure.azcollection.azure_rm_resourcegroup:
-        name: "{{ azure_resource_group | default('postgres-cluster-resource-group' ~ '-' ~ server_location) }}"
-        location: "{{ server_location }}"
+        name: "{{ azure_resource_group_name }}"
+        location: "{{ azure_region }}"
         tags: "{{ cloud_provider_tags | combine({'Cluster': patroni_cluster_name}) }}"
         append_tags: true
 
@@ -19,15 +105,16 @@
     - block:
         - name: "Azure: Create virtual network"
           azure.azcollection.azure_rm_virtualnetwork:
-            resource_group: "{{ azure_resource_group | default('postgres-cluster-resource-group' ~ '-' ~ server_location) }}"
-            name: "{{ azure_virtual_network | default('postgres-cluster-network') }}"
+            resource_group: "{{ azure_resource_group_name }}"
+            name: "{{ azure_network_name }}"
+            location: "{{ azure_region }}"
             address_prefixes_cidr: ["{{ azure_virtual_network_prefix | default('10.0.0.0/16') }}"]
             tags: "{{ cloud_provider_tags | combine({'Cluster': patroni_cluster_name}) }}"
             append_tags: true
 
         - name: "Azure: Create subnet"
           azure.azcollection.azure_rm_subnet:
-            resource_group: "{{ azure_resource_group | default('postgres-cluster-resource-group' ~ '-' ~ server_location) }}"
+            resource_group: "{{ azure_resource_group_name }}"
             name: "{{ azure_subnet | default('postgres-cluster-subnet') }}"
             address_prefix_cidr: "{{ azure_subnet_prefix | default('10.0.1.0/24') }}"
             virtual_network: "{{ azure_virtual_network | default('postgres-cluster-network') }}"
@@ -35,29 +122,76 @@
 
     - name: "Azure: Gather information about network"
       azure.azcollection.azure_rm_virtualnetwork_info:
-        resource_group: "{{ azure_resource_group | default('postgres-cluster-resource-group' ~ '-' ~ server_location) }}"
-        name: "{{ server_network | default(azure_virtual_network | default('postgres-cluster-network'), true) }}"
+        resource_group: "{{ azure_resource_group_name }}"
+        name: "{{ azure_network_name }}"
       register: network_info
+
+    - name: "Azure: Validate virtual network and selected subnet"
+      ansible.builtin.assert:
+        that:
+          - network_info.virtualnetworks | length == 1
+          - network_info.virtualnetworks[0].location | lower | replace(' ', '') == azure_region
+          - selected_subnets | length == 1
+        fail_msg: "VNet '{{ azure_network_name }}' and subnet '{{ azure_subnet | default('postgres-cluster-subnet') }}' must exist in '{{ azure_region }}'."
+        quiet: true
+      vars:
+        selected_subnets: "{{ (network_info.virtualnetworks | first | default({})).subnets | default([])
+          | selectattr('name', 'equalto', azure_subnet | default('postgres-cluster-subnet')) | list }}"
+
+    - name: "Set variable: azure_subnet_id"
+      ansible.builtin.set_fact:
+        azure_subnet_id: "{{ network_info.virtualnetworks[0].subnets
+          | selectattr('name', 'equalto', azure_subnet | default('postgres-cluster-subnet')) | map(attribute='id') | first }}"
+
+    - name: "Azure: Gather existing VM network interfaces"
+      azure.azcollection.azure_rm_networkinterface_info:
+        resource_group: "{{ azure_resource_group_name }}"
+        name: "{{ item.network_interface_names | first }}"
+      loop: "{{ azure_existing_vms }}"
+      loop_control:
+        label: "{{ item.name }}"
+      register: azure_existing_nics
+
+    - name: "Azure: Validate existing VM networking"
+      ansible.builtin.assert:
+        that:
+          - item.networkinterfaces | length == 1
+          - item.networkinterfaces[0].virtual_network.subnet_id | lower == azure_subnet_id | lower
+        fail_msg: "VM '{{ item.item.name }}' must use subnet '{{ azure_subnet_id }}'."
+        quiet: true
+      loop: "{{ azure_existing_nics.results }}"
+      loop_control:
+        label: "{{ item.item.name }}"
+
+    - name: "Azure: Gather existing public IP addresses"
+      azure.azcollection.azure_rm_publicipaddress_info:
+        resource_group: "{{ azure_resource_group_name }}"
+      register: azure_existing_public_ips
 
     - name: "Azure: Create public IP address"
       azure.azcollection.azure_rm_publicipaddress:
-        resource_group: "{{ azure_resource_group | default('postgres-cluster-resource-group' ~ '-' ~ server_location) }}"
-        name: "{{ server_name | lower }}{{ '%02d' % (idx + 1) }}-public-ip"
+        resource_group: "{{ azure_resource_group_name }}"
+        name: "{{ item.name }}-public-ip"
         allocation_method: "Static"
         sku: "Standard"
+        location: "{{ azure_region }}"
+        zones: "{{ azure_zone_info.region_zones if azure_zone_info.region_zones | length >= 3
+          and ip_name not in existing_ip_names else omit }}"
         tags: "{{ cloud_provider_tags | combine({'Cluster': patroni_cluster_name}) }}"
         append_tags: true
-      loop: "{{ range(0, server_count | int) | list }}"
+      loop: "{{ server_zone_placement }}"
       loop_control:
-        index_var: idx
-        label: "{{ server_name | lower }}{{ '%02d' % (idx + 1) }}-public-ip"
+        label: "{{ item.name }}-public-ip"
       register: public_ip_address
+      vars:
+        ip_name: "{{ item.name }}-public-ip"
+        existing_ip_names: "{{ azure_existing_public_ips.publicipaddresses | map(attribute='name') | list }}"
       when: server_public_ip | bool
 
     # Security Group (Firewall)
     - name: "Azure: Create or modify Security Group"
       azure.azcollection.azure_rm_securitygroup:
-        resource_group: "{{ azure_resource_group | default('postgres-cluster-resource-group' ~ '-' ~ server_location) }}"
+        resource_group: "{{ azure_resource_group_name }}"
         name: "{{ patroni_cluster_name }}-security-group"
         rules: "{{ rules }}"
         tags: "{{ cloud_provider_tags | combine({'Cluster': patroni_cluster_name}) }}"
@@ -143,49 +277,38 @@
     # Network interface
     - name: "Azure: Create network interface"
       azure.azcollection.azure_rm_networkinterface:
-        resource_group: "{{ azure_resource_group | default('postgres-cluster-resource-group' ~ '-' ~ server_location) }}"
-        name: "{{ server_name | lower }}{{ '%02d' % (idx + 1) }}-network-interface"
-        virtual_network: "{{ server_network | default(azure_virtual_network | default('postgres-cluster-network'), true) }}"
+        resource_group: "{{ azure_resource_group_name }}"
+        name: "{{ item.name }}-network-interface"
+        virtual_network: "{{ azure_network_name }}"
         subnet_name: "{{ azure_subnet | default('postgres-cluster-subnet') }}"
         security_group: "{{ patroni_cluster_name }}-security-group"
         ip_configurations:
           - name: ipconfig1
             primary: true
-            public_ip_address_name: "{{ server_public_ip | bool | ternary(server_name | lower ~ '%02d' % (idx + 1) ~ '-public-ip', None) }}"
+            public_ip_address_name: "{{ (item.name ~ '-public-ip') if server_public_ip | bool else None }}"
         dns_servers:
           - 8.8.8.8
         tags: "{{ cloud_provider_tags | combine({'Cluster': patroni_cluster_name}) }}"
         append_tags: true
-      loop: "{{ range(0, server_count | int) | list }}"
+      loop: "{{ server_zone_placement }}"
       loop_control:
-        index_var: idx
-        label: "{{ server_name | lower }}{{ '%02d' % (idx + 1) }}-network-interface"
+        label: "{{ item.name }}-network-interface"
 
     # Server and volume
-    - name: "Azure: Gather information about virtual machines"
-      azure.azcollection.azure_rm_virtualmachine_info:
-        resource_group: "{{ azure_resource_group | default('postgres-cluster-resource-group' ~ '-' ~ server_location) }}"
-        name: "{{ server_name | lower }}{{ '%02d' % (idx + 1) }}"
-      loop: "{{ range(0, server_count | int) | list }}"
-      loop_control:
-        index_var: idx
-        label: "{{ server_name | lower }}{{ '%02d' % (idx + 1) }}"
-      register: azure_rm_virtualmachine_info
-      failed_when: false
-
     - name: "Azure: Create virtual machine"
       azure.azcollection.azure_rm_virtualmachine:
-        resource_group: "{{ azure_resource_group | default('postgres-cluster-resource-group' ~ '-' ~ server_location) }}"
-        name: "{{ server_name | lower }}{{ '%02d' % (idx + 1) }}"
+        resource_group: "{{ azure_resource_group_name }}"
+        name: "{{ item.name }}"
         state: present
         started: true
-        location: "{{ server_location }}"
+        location: "{{ azure_region }}"
         vm_size: "{{ server_type }}"
+        zones: "{{ [item.zone] if item.zone | length > 0 and item.name not in zones_existing else omit }}"
         priority: "{{ 'Spot' if server_spot | default(false) | bool else 'None' }}"
         eviction_policy: "{{ 'Deallocate' if server_spot | default(false) | bool else omit }}"
         admin_username: "{{ azure_admin_username | default('azureadmin') }}"
         ssh_public_keys:
-          - path: /home/azureadmin/.ssh/authorized_keys
+          - path: "/home/{{ azure_admin_username | default('azureadmin') }}/.ssh/authorized_keys"
             key_data: "{{ ssh_key_content }}"
         ssh_password_enabled: false
         image:
@@ -196,20 +319,19 @@
         os_type: Linux
         os_disk_size_gb: "{{ system_volume_size | default('80') }}" # system disk size
         managed_disk_type: "{{ system_volume_type | default('StandardSSD_LRS', true) }}"
-        data_disks: "{{ [] if use_local_disk | bool else [data_disk] }}"
+        data_disks: "{{ omit if item.name in zones_existing else ([] if use_local_disk | bool else [data_disk]) }}"
         network_interface_names:
-          - "{{ server_name | lower }}{{ '%02d' % (idx + 1) }}-network-interface"
+          - "{{ item.name }}-network-interface"
         tags: >-
           {{
             cloud_provider_tags | combine({'Cluster': patroni_cluster_name})
-            if (azure_rm_virtualmachine_info.results[idx].vms | default([]) | length == 0)
+            if item.name not in zones_existing
             else omit
           }}
         append_tags: true
-      loop: "{{ range(0, server_count | int) | list }}"
+      loop: "{{ server_zone_placement }}"
       loop_control:
-        index_var: idx
-        label: "{{ server_name | lower }}{{ '%02d' % (idx + 1) }}"
+        label: "{{ item.name }} ({{ item.zone | default('regional', true) }})"
       register: server_result
       vars:
         data_disk:
@@ -220,9 +342,9 @@
     # Required to allow data disk size to be changed after deployment without deallocating the VM.
     - name: "Azure: Ensure data disk size"
       azure.azcollection.azure_rm_manageddisk:
-        resource_group: "{{ azure_resource_group | default('postgres-cluster-resource-group' ~ '-' ~ server_location) }}"
+        resource_group: "{{ azure_resource_group_name }}"
         name: "{{ item.ansible_facts.azure_vm.storage_profile.data_disks[0].name }}"
-        location: "{{ server_location }}"
+        location: "{{ azure_region }}"
         disk_size_gb: "{{ volume_size | int }}"
         state: present
       loop: "{{ server_result.results | selectattr('ansible_facts.azure_vm', 'defined') | list }}"
@@ -234,112 +356,234 @@
         - item.ansible_facts.azure_vm.storage_profile.data_disks | length > 0
         - item.ansible_facts.azure_vm.storage_profile.data_disks[0].managed_disk is defined
 
-    # Load Balancer
-    - name: "Azure: Create public IP address for Load Balancer"
-      azure.azcollection.azure_rm_publicipaddress:
-        resource_group: "{{ azure_resource_group | default('postgres-cluster-resource-group' ~ '-' ~ server_location) }}"
-        name: "{{ patroni_cluster_name }}-{{ item }}-public-ip"
-        allocation_method: "Static"
-        sku: "Standard"
-        tags: "{{ cloud_provider_tags | combine({'Cluster': patroni_cluster_name}) }}"
-        append_tags: true
-      loop:
-        - "primary"
-        - "replica"
-        - "sync"
-        - "async"
-      loop_control:
-        label: "{{ patroni_cluster_name }}-{{ item }}-public-ip"
-      register: azure_load_balancer_public_ip
-      when: database_public_access | bool and cloud_load_balancer | bool and
-        (item == 'primary' or
-        (item == 'replica' and cloud_load_balancer_replica | bool and server_count | int > 1) or
-        (item == 'sync' and cloud_load_balancer_replica_sync | bool and server_count | int > 1 and synchronous_mode | bool) or
-        (item == 'async' and cloud_load_balancer_replica_async | bool and server_count | int > 1 and synchronous_mode | bool))
-
-    - name: "Azure: Create or modify Load Balancer"
-      azure.azcollection.azure_rm_loadbalancer:
-        resource_group: "{{ azure_resource_group | default('postgres-cluster-resource-group' ~ '-' ~ server_location) }}"
-        name: "{{ patroni_cluster_name }}-{{ item }}"
-        location: "{{ server_location }}"
-        frontend_ip_configurations:
-          - name: "{{ patroni_cluster_name }}-{{ item }}-frontend"
-            public_ip_address: "{{ database_public_access | bool | ternary(patroni_cluster_name ~ '-' ~ item ~ '-public-ip', omit) }}"
-            subnet: "{{ database_public_access | bool | ternary(omit, network_info.virtualnetworks[0].subnets[0].id) }}"
-        backend_address_pools:
-          - name: "{{ patroni_cluster_name }}-{{ item }}-backend"
-        probes:
-          - name: "{{ patroni_cluster_name }}-{{ item }}-health-probe"
-            protocol: "{{ patroni_restapi_protocol | capitalize }}"
-            port: "{{ patroni_restapi_port }}"
-            request_path: "/{{ item }}"
-            interval: 5
-            fail_count: 2
-        load_balancing_rules:
-          - name: "{{ patroni_cluster_name }}-{{ item }}-rule"
-            frontend_ip_configuration: "{{ patroni_cluster_name }}-{{ item }}-frontend"
-            frontend_port: "{{ pgbouncer_listen_port | default('6432') if pgbouncer_install | bool else postgresql_port | default('5432') }}"
-            backend_address_pool: "{{ patroni_cluster_name }}-{{ item }}-backend"
-            backend_port: "{{ pgbouncer_listen_port | default('6432') if pgbouncer_install | bool else postgresql_port | default('5432') }}"
-            probe: "{{ patroni_cluster_name }}-{{ item }}-health-probe"
-            protocol: "Tcp"
-            idle_timeout: 10 # in minutes
-            enable_floating_ip: false
-            disable_outbound_snat: true
-        sku: "Standard"
-        tags: "{{ cloud_provider_tags | combine({'Cluster': patroni_cluster_name}) }}"
-        append_tags: true
-      loop:
-        - "primary"
-        - "replica"
-        - "sync"
-        - "async"
-      loop_control:
-        label: "{{ patroni_cluster_name }}-{{ item }}"
-      register: azure_load_balancer
-      when: cloud_load_balancer | bool and
-        (item == 'primary' or
-        (item == 'replica' and cloud_load_balancer_replica | bool and server_count | int > 1) or
-        (item == 'sync' and cloud_load_balancer_replica_sync | bool and server_count | int > 1 and synchronous_mode | bool) or
-        (item == 'async' and cloud_load_balancer_replica_async | bool and server_count | int > 1 and synchronous_mode | bool))
-
-    - name: Extract virtual machine private IPs
+    # Each endpoint has its own pool and Patroni health probe.
+    - name: "Set variable: azure_lb_roles, azure_load_balancer_endpoints, azure_existing_lbs, azure_lb_ids"
       ansible.builtin.set_fact:
-        private_ips: >-
-          {{
-            private_ips | default([]) +
-            [item.ansible_facts.azure_vm.network_profile.network_interfaces[0].properties.ip_configurations[0].private_ip_address]
-          }}
-      loop: "{{ server_result.results | selectattr('ansible_facts.azure_vm', 'defined') | list }}"
-      loop_control:
-        label: "{{ item.ansible_facts.azure_vm.network_profile.network_interfaces[0].properties.ip_configurations[0].private_ip_address }}"
+        azure_lb_roles: >-
+          {{ (['primary']
+            + (['replica'] if cloud_load_balancer_replica | bool and server_count | int > 1 else [])
+            + (['sync'] if cloud_load_balancer_replica_sync | bool and server_count | int > 1 and synchronous_mode | bool else [])
+            + (['async'] if cloud_load_balancer_replica_async | bool and server_count | int > 1 and synchronous_mode | bool else []))
+            if cloud_load_balancer | bool else [] }}
+        azure_load_balancer_endpoints: {}
+        azure_existing_lbs: {}
+        azure_lb_ids: {}
 
-    # Note: We use Azure CLI here because there is no ansible module available to manage the list of IP addresses within a backend pool.
-    - name: "Azure: Add virtual machine IP addresses to Load Balancer backend pool"
-      ansible.builtin.shell: |
-        {% for ip in private_ips %}
-        az network lb address-pool address add \
-        --resource-group {{ azure_resource_group | default('postgres-cluster-resource-group-' ~ server_location) }} \
-        --lb-name {{ patroni_cluster_name }}-{{ item }} \
-        --pool-name {{ patroni_cluster_name }}-{{ item }}-backend \
-        --vnet {{ azure_virtual_network | default('postgres-cluster-network') }} \
-        --name address-{{ ip }} \
-        --ip-address {{ ip }}
-        {% endfor %}
-      args:
-        executable: /bin/bash
-      loop:
-        - "primary"
-        - "replica"
-        - "sync"
-        - "async"
+    - name: "Azure: Gather information about Load Balancers"
+      azure.azcollection.azure_rm_resource_info:
+        resource_group: "{{ azure_resource_group_name }}"
+        provider: Network
+        resource_type: loadBalancers
+        resource_name: "{{ patroni_cluster_name }}-{{ azure_lb_role }}"
+        api_version: "2024-05-01"
+      loop: "{{ azure_lb_roles }}"
       loop_control:
-        label: "{{ patroni_cluster_name }}-{{ item }}-backend"
-      when: cloud_load_balancer | bool and
-        (item == 'primary' or
-        (item == 'replica' and cloud_load_balancer_replica | bool and server_count | int > 1) or
-        (item == 'sync' and cloud_load_balancer_replica_sync | bool and server_count | int > 1 and synchronous_mode | bool) or
-        (item == 'async' and cloud_load_balancer_replica_async | bool and server_count | int > 1 and synchronous_mode | bool))
+        loop_var: azure_lb_role
+      register: azure_lb_info
+
+    - name: "Azure: Record existing Load Balancer configurations"
+      ansible.builtin.set_fact:
+        azure_existing_lbs: "{{ azure_existing_lbs | combine({item.azure_lb_role: (item.response | first if item.status_code == 200 else {})}) }}"
+        azure_lb_ids: "{{ azure_lb_ids | combine({item.azure_lb_role: item.url}) }}"
+      loop: "{{ azure_lb_info.results }}"
+      loop_control:
+        label: "{{ item.azure_lb_role }}"
+
+    - name: "Azure: WARNING: an existing Load Balancer frontend needs zone redundancy"
+      ansible.builtin.debug:
+        msg: >-
+          Load Balancer '{{ patroni_cluster_name }}-{{ azure_lb_role }}' has a zonal frontend or an internal frontend
+          without explicit zone redundancy.
+          Its address and placement are preserved. Migrate this frontend to zone redundancy separately
+          before relying on the load balancer to survive a zone failure.
+      loop: "{{ azure_lb_roles }}"
+      loop_control:
+        loop_var: azure_lb_role
+      when:
+        - azure_zone_info.region_zones | length > 1
+        - >-
+          (not database_public_access | bool and existing_frontend | length > 0
+          and existing_frontend.zones | default([], true) | length < 3)
+          or (azure_existing_lbs[azure_lb_role].properties.frontendIPConfigurations | default([])
+          | selectattr('zones', 'defined') | selectattr('zones', '!=', None)
+          | map(attribute='zones') | map('length') | select('equalto', 1) | list | length > 0)
+          or (azure_existing_public_ips.publicipaddresses
+          | selectattr('name', 'equalto', patroni_cluster_name ~ '-' ~ azure_lb_role ~ '-public-ip')
+          | selectattr('zones', 'defined') | selectattr('zones', '!=', None)
+          | map(attribute='zones') | map('length') | select('equalto', 1) | list | length > 0)
+      vars:
+        existing_frontend: "{{ azure_existing_lbs[azure_lb_role].properties.frontendIPConfigurations | default([])
+          | selectattr('name', 'equalto', patroni_cluster_name ~ '-' ~ azure_lb_role ~ '-frontend') | first | default({}) }}"
+
+    - name: "Azure: Create public IP addresses for Load Balancers"
+      azure.azcollection.azure_rm_publicipaddress:
+        resource_group: "{{ azure_resource_group_name }}"
+        name: "{{ ip_name }}"
+        location: "{{ azure_region }}"
+        allocation_method: Static
+        sku: Standard
+        zones: "{{ azure_zone_info.region_zones if azure_zone_info.region_zones | length >= 3
+          and ip_name not in existing_ip_names else omit }}"
+        tags: "{{ cloud_provider_tags | combine({'Cluster': patroni_cluster_name}) }}"
+        append_tags: true
+      loop: "{{ azure_lb_roles }}"
+      loop_control:
+        loop_var: azure_lb_role
+      vars:
+        ip_name: "{{ patroni_cluster_name }}-{{ azure_lb_role }}-public-ip"
+        existing_ip_names: "{{ azure_existing_public_ips.publicipaddresses | map(attribute='name') | list }}"
+      register: azure_lb_public_ips
+      when: database_public_access | bool
+
+    # The parent LB module sends empty pool stubs on updates. Preserve the full ARM pool
+    # configuration here so updating probes, rules or tags never clears live backends.
+    - name: "Azure: Create or modify Load Balancers"
+      azure.azcollection.azure_rm_resource:
+        url: "{{ azure_lb_ids[azure_lb_role] }}"
+        api_version: "2024-05-01"
+        method: PUT
+        idempotency: true
+        polling_timeout: 600
+        polling_interval: 5
+        body: "{{ lb_body_json | from_json }}"
+      loop: "{{ azure_lb_roles }}"
+      loop_control:
+        loop_var: azure_lb_role
+      vars:
+        lb_body_json: >-
+          {%- macro upsert_named(items, desired) -%}
+          {%-   set ns = namespace(items=[], found=false) -%}
+          {%-   for item in items -%}
+          {%-     if item.name == desired.name and not ns.found -%}
+          {%-       set properties = item.properties | default({}) | combine(desired.properties | default({})) -%}
+          {%-       set ns.items = ns.items + [item | combine(desired) | combine({'properties': properties})] -%}
+          {%-       set ns.found = true -%}
+          {%-     else -%}
+          {%-       set ns.items = ns.items + [item] -%}
+          {%-     endif -%}
+          {%-   endfor -%}
+          {{ (ns.items if ns.found else ns.items + [desired]) | to_json }}
+          {%- endmacro -%}
+          {%- set existing = azure_existing_lbs[azure_lb_role] -%}
+          {%- set properties = existing.properties | default({}) -%}
+          {%- set name = patroni_cluster_name ~ '-' ~ azure_lb_role -%}
+          {%- set frontend_name = name ~ '-frontend' -%}
+          {%- set pool_name = name ~ '-backend' -%}
+          {%- set probe_name = name ~ '-health-probe' -%}
+          {%- set frontends = properties.frontendIPConfigurations | default([]) -%}
+          {%- set existing_frontend = frontends | selectattr('name', 'equalto', frontend_name) | first | default({}) -%}
+          {%- set frontend = existing_frontend if existing_frontend else {'name': frontend_name, 'properties': {}} -%}
+          {%- if lb_config.public_ip_id -%}
+          {%-   set frontend_properties = frontend.properties | combine({'publicIPAddress': {'id': lb_config.public_ip_id}}) -%}
+          {%- else -%}
+          {%-   set frontend_properties = frontend.properties | combine({
+                  'subnet': {'id': lb_config.subnet_id},
+                  'privateIPAllocationMethod': frontend.properties.privateIPAllocationMethod | default('Dynamic')
+                }) -%}
+          {%-   if not existing_frontend and lb_config.region_zones | length >= 3 -%}
+          {%-     set frontend = frontend | combine({'zones': lb_config.region_zones}) -%}
+          {%-   endif -%}
+          {%- endif -%}
+          {%- set frontend = frontend | combine({'properties': frontend_properties}) -%}
+          {%- set pools = properties.backendAddressPools | default([]) -%}
+          {%- if pools | selectattr('name', 'equalto', pool_name) | list | length == 0 -%}
+          {%-   set pools = pools + [{'name': pool_name, 'properties': {}}] -%}
+          {%- endif -%}
+          {%- set probe = {'name': probe_name, 'properties': {
+                'protocol': lb_config.probe_protocol, 'port': lb_config.probe_port,
+                'requestPath': '/' ~ azure_lb_role, 'intervalInSeconds': 5, 'numberOfProbes': 2
+              }} -%}
+          {%- set rule = {'name': name ~ '-rule', 'properties': {
+                'frontendIPConfiguration': {'id': lb_config.id ~ '/frontendIPConfigurations/' ~ frontend_name},
+                'backendAddressPool': {'id': lb_config.id ~ '/backendAddressPools/' ~ pool_name},
+                'probe': {'id': lb_config.id ~ '/probes/' ~ probe_name},
+                'protocol': 'Tcp', 'frontendPort': lb_config.port, 'backendPort': lb_config.port,
+                'idleTimeoutInMinutes': 10, 'enableFloatingIP': false, 'disableOutboundSnat': true
+              }} -%}
+          {{ {
+            'location': lb_config.location, 'sku': {'name': 'Standard', 'tier': 'Regional'},
+            'tags': existing.tags | default({}) | combine(lb_config.tags),
+            'properties': properties | combine({
+              'frontendIPConfigurations': upsert_named(frontends, frontend) | from_json,
+              'backendAddressPools': pools,
+              'probes': upsert_named(properties.probes | default([], true), probe) | from_json,
+              'loadBalancingRules': upsert_named(properties.loadBalancingRules | default([], true), rule) | from_json
+            })
+          } | to_json }}
+        lb_config:
+          id: "{{ azure_lb_ids[azure_lb_role] }}"
+          location: "{{ azure_region }}"
+          role: "{{ azure_lb_role }}"
+          subnet_id: "{{ azure_subnet_id }}"
+          public_ip_id: >-
+            {{ (azure_lb_public_ips.results | selectattr('azure_lb_role', 'equalto', azure_lb_role)
+              | map(attribute='state.id') | first) if database_public_access | bool else '' }}
+          region_zones: "{{ azure_zone_info.region_zones }}"
+          port: "{{ (pgbouncer_listen_port | default(6432) if pgbouncer_install | bool else postgresql_port | default(5432)) | int }}"
+          probe_port: "{{ patroni_restapi_port | int }}"
+          probe_protocol: "{{ patroni_restapi_protocol | capitalize }}"
+          tags: "{{ cloud_provider_tags | combine({'Cluster': patroni_cluster_name}) }}"
+
+    - name: "Azure: Read allocated Load Balancer frontend addresses"
+      azure.azcollection.azure_rm_resource_info:
+        url: "{{ azure_lb_ids[azure_lb_role] }}"
+        api_version: "2024-05-01"
+      loop: "{{ azure_lb_roles }}"
+      loop_control:
+        loop_var: azure_lb_role
+      register: azure_lb_current
+
+    - name: "Azure: Record Load Balancer connection addresses"
+      ansible.builtin.set_fact:
+        azure_load_balancer_endpoints: >-
+          {{ azure_load_balancer_endpoints | combine({item.azure_lb_role: {
+            'public_ip': (azure_lb_public_ips.results | selectattr('azure_lb_role', 'equalto', item.azure_lb_role)
+              | map(attribute='state.ip_address') | first) if database_public_access | bool else '',
+            'private_ip': (item.response[0].properties.frontendIPConfigurations
+              | selectattr('name', 'equalto', patroni_cluster_name ~ '-' ~ item.azure_lb_role ~ '-frontend')
+              | first).properties.privateIPAddress | default('')
+          }}) }}
+      loop: "{{ azure_lb_current.results }}"
+      loop_control:
+        label: "{{ item.azure_lb_role }}"
+
+    - name: "Azure: Gather existing backend addresses"
+      azure.azcollection.azure_rm_loadbalancerbackendaddresspool_info:
+        resource_group: "{{ azure_resource_group_name }}"
+        load_balancer_name: "{{ patroni_cluster_name }}-{{ azure_lb_role }}"
+        name: "{{ patroni_cluster_name }}-{{ azure_lb_role }}-backend"
+      loop: "{{ azure_lb_roles }}"
+      loop_control:
+        loop_var: azure_lb_role
+      register: azure_backend_pool_info
+
+    - name: "Azure: Configure Load Balancer backend pools"
+      azure.azcollection.azure_rm_loadbalancerbackendaddresspool:
+        resource_group: "{{ azure_resource_group_name }}"
+        load_balancer_name: "{{ patroni_cluster_name }}-{{ azure_lb_role }}"
+        name: "{{ patroni_cluster_name }}-{{ azure_lb_role }}-backend"
+        load_balancer_backend_addresses: "{{ backend_addresses_json | from_json }}"
+      loop: "{{ azure_lb_roles }}"
+      loop_control:
+        loop_var: azure_lb_role
+      vars:
+        backend_addresses_json: >-
+          {%- set ns = namespace(addresses={}) -%}
+          {%- for address in existing_pool.load_balancer_backend_addresses | default([], true) -%}
+          {%-   set ns.addresses = ns.addresses | combine({address.name: address}) -%}
+          {%- endfor -%}
+          {%- for vm in server_result.results | map(attribute='ansible_facts.azure_vm') -%}
+          {%-   set ip = vm.network_profile.network_interfaces[0].properties.ip_configurations[0].private_ip_address -%}
+          {%-   set name = 'address-' ~ ip -%}
+          {%-   set address = ns.addresses[name] | default({}) | combine({
+                  'name': name, 'ip_address': ip, 'virtual_network': network_info.virtualnetworks[0].id
+                }) -%}
+          {%-   set ns.addresses = ns.addresses | combine({name: address}) -%}
+          {%- endfor -%}
+          {{ ns.addresses.values() | sort(attribute='name') | to_json }}
+        existing_pool: >-
+          {{ (azure_backend_pool_info.results | selectattr('azure_lb_role', 'equalto', azure_lb_role)
+            | map(attribute='backend_address_pools') | first | first) | default({}) }}
 
   when: state == 'present'
 
@@ -351,21 +595,21 @@
       name: "{{ item.ansible_facts.azure_vm.name | default('N/A', true) }}"
       image: "{{ item.ansible_facts.azure_vm.storage_profile.image_reference | default('N/A', true) }}"
       type: "{{ item.ansible_facts.azure_vm.hardware_profile.vm_size | default('N/A', true) }}"
+      zone: "{{ item.ansible_facts.azure_vm.zones | default([], true) | first | default('regional') }}"
       volume_size: "{{ item.ansible_facts.azure_vm.storage_profile.data_disks[0].disk_size_gb | default('N/A', true) }} GB"
       volume_type: "{{ item.ansible_facts.azure_vm.storage_profile.data_disks[0].managed_disk.storage_account_type | default('N/A', true) }}"
       public_ip: >-
         {{
           (public_ip_address.results if public_ip_address is defined else [])
-          | selectattr('idx', 'equalto', item.idx) | map(attribute='state.ip_address') | first | default('N/A', true)
+          | selectattr('item.name', 'equalto', item.ansible_facts.azure_vm.name) | map(attribute='state.ip_address') | first | default('N/A', true)
         }}
       private_ip: >-
         {{
           item.ansible_facts.azure_vm.network_profile.network_interfaces[0].properties.ip_configurations[0].private_ip_address | default('N/A', true)
         }}
-  loop: "{{ server_result.results }}"
+  loop: "{{ server_result.results | default([]) | selectattr('ansible_facts.azure_vm', 'defined') | list }}"
   loop_control:
-    index_var: idx
-    label: "{{ server_name | lower }}{{ '%02d' % (idx + 1) }}"
+    label: "{{ item.ansible_facts.azure_vm.name }}"
   when:
     - server_result.results is defined
     - item.ansible_facts is defined
@@ -374,13 +618,12 @@
 - name: "Wait for host to be available via SSH"
   ansible.builtin.wait_for:
     host: "{{ item.state.ip_address }}"
-    port: 22
+    port: "{{ ansible_ssh_port | default(22) }}"
     delay: 5
     timeout: 300
-  loop: "{{ public_ip_address.results }}"
+  loop: "{{ public_ip_address.results | default([]) | selectattr('state.ip_address', 'defined') | list }}"
   loop_control:
-    index_var: idx
-    label: "{{ server_name | lower }}{{ '%02d' % (idx + 1) }}"
+    label: "{{ item.item.name }}"
   when:
     - public_ip_address.results | default([]) | length > 0
     - server_public_ip | bool
@@ -391,13 +634,12 @@
 - name: "Wait for host to be available via SSH"
   ansible.builtin.wait_for:
     host: "{{ item.ansible_facts.azure_vm.network_profile.network_interfaces[0].properties.ip_configurations[0].private_ip_address }}"
-    port: 22
+    port: "{{ ansible_ssh_port | default(22) }}"
     delay: 5
     timeout: 300
-  loop: "{{ server_result.results }}"
+  loop: "{{ server_result.results | default([]) | selectattr('ansible_facts.azure_vm', 'defined') | list }}"
   loop_control:
-    index_var: idx
-    label: "{{ server_name | lower }}{{ '%02d' % (idx + 1) }}"
+    label: "{{ item.ansible_facts.azure_vm.name }}"
   when:
     - not (server_public_ip | bool and ssh_public_access | bool)
     - server_result.results is defined
@@ -410,23 +652,28 @@
         ip_addresses: >-
           {{ ip_addresses | default([]) +
             [{
-              'public_ip': (public_ip_address.results if public_ip_address is defined else []) | selectattr('idx', 'equalto', item.idx) | map(attribute='state.ip_address') | first | default(''),
+              'public_ip': (public_ip_address.results if public_ip_address is defined else []) | selectattr('item.name', 'equalto', item.ansible_facts.azure_vm.name) | map(attribute='state.ip_address') | first | default(''),
               'private_ip': item.ansible_facts.azure_vm.network_profile.network_interfaces[0].properties.ip_configurations[0].private_ip_address | default(''),
+              'name': item.ansible_facts.azure_vm.name,
+              'zone': item.ansible_facts.azure_vm.zones | default([], true) | first | default('') | string,
               'new_node': (cluster_scaling | default(false) | bool and item.ansible_facts.azure_vm.id not in existing_vm_ids)
             }]
           }}
       vars:
         existing_vm_ids: >-
           {{
-            azure_rm_virtualmachine_info.results | default([])
-            | map(attribute='vms') | map('default', []) | list | flatten
-            | selectattr('id','defined') | map(attribute='id') | list
+            azure_existing_vms | map(attribute='id') | list
           }}
       loop: "{{ server_result.results | selectattr('ansible_facts.azure_vm', 'defined') | list }}"
       loop_control:
         label: >-
-          public_ip: {{ (public_ip_address.results if public_ip_address is defined else []) | selectattr('idx', 'equalto', item.idx) | map(attribute='state.ip_address') | first | default('') }},
+          public_ip: {{ (public_ip_address.results if public_ip_address is defined else []) | selectattr('item.name', 'equalto', item.ansible_facts.azure_vm.name) | map(attribute='state.ip_address') | first | default('') }},
           private_ip: {{ item.ansible_facts.azure_vm.network_profile.network_interfaces[0].properties.ip_configurations[0].private_ip_address | default('') }}
+
+    - name: "Inventory | Keep existing Azure servers before new servers"
+      ansible.builtin.set_fact:
+        ip_addresses: "{{ (ip_addresses | selectattr('name', 'in', zones_existing) | sort(attribute='name'))
+          + (ip_addresses | rejectattr('name', 'in', zones_existing) | sort(attribute='name')) }}"
 
     - name: "Inventory | Generate in-memory inventory"
       ansible.builtin.import_tasks: inventory.yml
@@ -439,7 +686,7 @@
 - block:
     - name: "Azure: Delete virtual machine"
       azure.azcollection.azure_rm_virtualmachine:
-        resource_group: "{{ azure_resource_group | default('postgres-cluster-resource-group' ~ '-' ~ server_location) }}"
+        resource_group: "{{ azure_resource_group | default('postgres-cluster-resource-group-' ~ server_location, true) }}"
         name: "{{ server_name | lower }}{{ '%02d' % (idx + 1) }}"
         state: absent
       loop: "{{ range(0, server_count | int) | list }}"
@@ -449,7 +696,7 @@
 
     - name: "Azure: Delete network interface"
       azure.azcollection.azure_rm_networkinterface:
-        resource_group: "{{ azure_resource_group | default('postgres-cluster-resource-group' ~ '-' ~ server_location) }}"
+        resource_group: "{{ azure_resource_group | default('postgres-cluster-resource-group-' ~ server_location, true) }}"
         name: "{{ server_name | lower }}{{ '%02d' % (idx + 1) }}-network-interface"
         state: absent
       loop: "{{ range(0, server_count | int) | list }}"
@@ -459,7 +706,7 @@
 
     - name: "Azure: Delete public IP address"
       azure.azcollection.azure_rm_publicipaddress:
-        resource_group: "{{ azure_resource_group | default('postgres-cluster-resource-group' ~ '-' ~ server_location) }}"
+        resource_group: "{{ azure_resource_group | default('postgres-cluster-resource-group-' ~ server_location, true) }}"
         name: "{{ server_name | lower }}{{ '%02d' % (idx + 1) }}-public-ip"
         state: absent
       loop: "{{ range(0, server_count | int) | list }}"
@@ -470,7 +717,7 @@
 
     - name: "Azure: Delete Load Balancer"
       azure.azcollection.azure_rm_loadbalancer:
-        resource_group: "{{ azure_resource_group | default('postgres-cluster-resource-group' ~ '-' ~ server_location) }}"
+        resource_group: "{{ azure_resource_group | default('postgres-cluster-resource-group-' ~ server_location, true) }}"
         name: "{{ patroni_cluster_name }}-{{ item }}"
         location: "{{ server_location }}"
         state: absent
@@ -488,7 +735,7 @@
 
     - name: "Azure: Delete Load Balancer public IP address"
       azure.azcollection.azure_rm_publicipaddress:
-        resource_group: "{{ azure_resource_group | default('postgres-cluster-resource-group' ~ '-' ~ server_location) }}"
+        resource_group: "{{ azure_resource_group | default('postgres-cluster-resource-group-' ~ server_location, true) }}"
         name: "{{ patroni_cluster_name }}-{{ item }}-public-ip"
         state: absent
       loop:
@@ -505,7 +752,7 @@
 
     - name: "Azure: Delete Security Group"
       azure.azcollection.azure_rm_securitygroup:
-        resource_group: "{{ azure_resource_group | default('postgres-cluster-resource-group' ~ '-' ~ server_location) }}"
+        resource_group: "{{ azure_resource_group | default('postgres-cluster-resource-group-' ~ server_location, true) }}"
         name: "{{ patroni_cluster_name }}-security-group"
         state: absent
 
