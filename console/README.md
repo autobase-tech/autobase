@@ -18,7 +18,7 @@ The Console stack includes the following core components:
 ### Architecture
 
 ```
-             +-------------------------- Autobase ---------------------------+
+             +---------------------- Autobase Platform ----------------------+
 +------+     | +------------+    +-------------+    +----------------------+ |     +---------------------+
 | User | --> | | Console UI | -> | Console API | -> | Automation (Ansible) | | --> | PostgreSQL Clusters |
 +------+     | +------------+    +-------------+    +----------------------+ |     |        1..N         |
