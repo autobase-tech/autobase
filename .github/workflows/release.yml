@@ -52,6 +52,12 @@ jobs:
           sed -i "s/autobase\/automation:${VERSION_PATTERN}/autobase\/automation:${TAG}/g" \
             console/README.md
 
+          # Keep public Platform deployment files in sync with the release
+          for IMAGE in console_api console_ui console_db; do
+            sed -i "s|autobase/${IMAGE}:${VERSION_PATTERN}|autobase/${IMAGE}:${TAG}|g" \
+              console/docker-compose.yml console/docker-compose.ssl.yml
+          done
+
       - name: Commit version changes to main branch
         run: |
           TAG="${{ steps.tag.outputs.tag }}"
@@ -62,7 +68,9 @@ jobs:
           git add \
             automation/galaxy.yml \
             automation/README.md \
-            console/README.md
+            console/README.md \
+            console/docker-compose.yml \
+            console/docker-compose.ssl.yml
 
           # Check if there are changes to commit
           if ! git diff --staged --quiet; then
