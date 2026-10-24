@@ -35,7 +35,7 @@ jobs:
         id: tag
         run: echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
 
-      - name: Update all version references
+      - name: Update automation version references
         run: |
           TAG="${{ steps.tag.outputs.tag }}"
           VERSION_PATTERN="[0-9]\+\.[0-9]\+\.[0-9]\+"
@@ -48,73 +48,21 @@ jobs:
           sed -i "s/version: ${VERSION_PATTERN}/version: ${TAG}/" \
             automation/README.md
 
-          # Update console docker-compose image tags
-          sed -i "s/autobase\/console_api:${VERSION_PATTERN}/autobase\/console_api:${TAG}/g" \
-            console/docker-compose.yml
-          sed -i "s/autobase\/console_ui:${VERSION_PATTERN}/autobase\/console_ui:${TAG}/g" \
-            console/docker-compose.yml
-          sed -i "s/autobase\/console_db:${VERSION_PATTERN}/autobase\/console_db:${TAG}/g" \
-            console/docker-compose.yml
-
-          sed -i "s/autobase\/console_api:${VERSION_PATTERN}/autobase\/console_api:${TAG}/g" \
-            console/docker-compose.caddy.yml
-          sed -i "s/autobase\/console_ui:${VERSION_PATTERN}/autobase\/console_ui:${TAG}/g" \
-            console/docker-compose.caddy.yml
-          sed -i "s/autobase\/console_db:${VERSION_PATTERN}/autobase\/console_db:${TAG}/g" \
-            console/docker-compose.caddy.yml
-
-          sed -i "s/autobase\/console_api_ee:${VERSION_PATTERN}/autobase\/console_api_ee:${TAG}/g" \
-            console/docker-compose.enterprise.yml
-          sed -i "s/autobase\/console_ui_ee:${VERSION_PATTERN}/autobase\/console_ui_ee:${TAG}/g" \
-            console/docker-compose.enterprise.yml
-          sed -i "s/autobase\/console_db:${VERSION_PATTERN}/autobase\/console_db:${TAG}/g" \
-            console/docker-compose.enterprise.yml
-
-          sed -i "s/autobase\/console_api_ee:${VERSION_PATTERN}/autobase\/console_api_ee:${TAG}/g" \
-            console/docker-compose.enterprise.ssl.yml
-          sed -i "s/autobase\/console_ui_ee:${VERSION_PATTERN}/autobase\/console_ui_ee:${TAG}/g" \
-            console/docker-compose.enterprise.ssl.yml
-          sed -i "s/autobase\/console_db:${VERSION_PATTERN}/autobase\/console_db:${TAG}/g" \
-            console/docker-compose.enterprise.ssl.yml
-
-          # Update console service VERSION file
-          echo "${TAG}" > console/service/VERSION
-
-          # Update console service README version
+          # Update the Platform automation image default in the public README
           sed -i "s/autobase\/automation:${VERSION_PATTERN}/autobase\/automation:${TAG}/g" \
-            console/service/README.md
-
-          # Update swagger.yaml version
-          sed -i "s/^  version: ${VERSION_PATTERN}/  version: ${TAG}/" \
-            console/service/api/swagger.yaml
-
-          # Update config.go version
-          sed -i "s/autobase\/automation:${VERSION_PATTERN}/autobase\/automation:${TAG}/g" \
-            console/service/internal/configuration/config.go
-
-          # Update package.json version
-          sed -i "s/\"version\": \"${VERSION_PATTERN}\"/\"version\": \"${TAG}\"/" \
-            console/ui/package.json
+            console/README.md
 
       - name: Commit version changes to main branch
         run: |
           TAG="${{ steps.tag.outputs.tag }}"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          
+
           # Add all changed files
           git add \
             automation/galaxy.yml \
             automation/README.md \
-            console/docker-compose.yml \
-            console/docker-compose.caddy.yml \
-            console/docker-compose.enterprise.yml \
-            console/docker-compose.enterprise.ssl.yml \
-            console/service/VERSION \
-            console/service/README.md \
-            console/service/api/swagger.yaml \
-            console/service/internal/configuration/config.go \
-            console/ui/package.json
+            console/README.md
 
           # Check if there are changes to commit
           if ! git diff --staged --quiet; then

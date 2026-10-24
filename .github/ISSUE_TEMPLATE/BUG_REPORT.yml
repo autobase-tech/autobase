@@ -50,7 +50,7 @@ body:
         Select the installation method you used.
         If "other", provide details in the "Additional info" section.
       options:
-        - "Console (UI)"
+        - "Autobase Platform (UI)"
         - "Command line"
         - "GitOps"
         - "Other"

@@ -10,13 +10,11 @@
 [![Molecule](https://github.com/autobase-tech/autobase/actions/workflows/molecule.yml/badge.svg)](https://github.com/autobase-tech/autobase/actions/workflows/molecule.yml)
 [![GitHub license](https://img.shields.io/github/license/autobase-tech/autobase)](https://github.com/autobase-tech/autobase/blob/main/LICENSE)
 
-Autobase is an Internal Database Platform for PostgreSQL, bringing the managed database experience of DBaaS into your own infrastructure.
+> This repository contains the open-source automation core, built with Ansible and licensed under the MIT License.
 
-Create and manage production-ready, highly available PostgreSQL clusters. Autobase simplifies deployment, reduces operational costs, and makes database management accessible, even for teams without specialized expertise.
+Autobase automates the deployment and management of highly available PostgreSQL clusters in your own infrastructure. It reduces operational costs and makes database management accessible, even for teams without specialized expertise.
 
-![Cluster creation demo](images/autobase_create_cluster_demo.gif)
-
-**Automate deployment, failover, backups, restore, upgrades, scaling, and more with ease.**
+**Automate deployment, failover, backup and restore, upgrades, scaling, and more with ease.**
 
 Say goodbye to manual database management 👋
 
@@ -26,47 +24,35 @@ Autobase documentation can be found [here](https://autobase.tech/docs).
 
 ## Architecture
 
-![pg_cluster_scheme](images/autobase-postgres.light.png#gh-light-mode-only)
-![pg_cluster_scheme](images/autobase-postgres.dark.png#gh-dark-mode-only)
+![PostgreSQL cluster architecture](images/autobase-postgres.light.png#gh-light-mode-only)
+![PostgreSQL cluster architecture](images/autobase-postgres.dark.png#gh-dark-mode-only)
 
 For a detailed description of the cluster components, visit the [Architecture](https://autobase.tech/docs/overview/architecture) page.
 
 ## Getting Started
 
-You can deploy PostgreSQL clusters using the Console (UI), command line (Ansible), or GitOps.
+You can deploy PostgreSQL clusters using Autobase Platform (UI), the command line (Ansible), or GitOps.
 
-### Console (UI)
+### Autobase Platform (UI)
 
-#### Self-Hosted Installation
-
-Install the Autobase Console in your own environment:
-
-- [Community Edition](./console/README.md) - Free license for individual developers and hobby projects; includes lightweight cluster deployment.
-- [Enterprise Edition](https://autobase.tech/docs#getting-started) - Commercial license for production environments; includes extended cluster management features and support.
-
-#### One-Click Deploy
-
-Quickly launch the Autobase Console using a deployment platform or hosting provider:
-
-- [Coolify](https://coolify.io/services) · [Dokploy](https://dokploy.com/templates/autobase) · [Hostinger](https://www.hostinger.com/my/applications/autobase) · [OnetSolutions](https://onetsolutions.net/en/one-click-apps) · [RepoCloud](https://repocloud.io/details/Autobase/) · [Kubeara](https://kubeara.dev/services/autobase/) · [MapleDeploy](https://mapledeploy.ca/one-click-services) · [DTR Hosting](https://dtrhosting.com/en/hebergement/application/autobase) · [CloudLinux](https://www.cloudlinux.ro/en/aplicatii/autobase) · [b9design](https://b9design.co.za/templates/autobase)
-- [HeroXHost](https://www.heroxhost.com/applications/autobase) · [OpenZapps](https://openzapps.com/templates/autobase) · [GoLetro](https://goletro.com/apps/autobase) · [Dinao](https://dinao.com/en/conteneur/autobase) · [SiliconKiwi](https://siliconkiwi.nz/app-catalogue/autobase)
+- [Autobase Platform](./console/README.md) - an internal database platform for PostgreSQL, bringing the managed database experience of DBaaS into your own infrastructure.
 
 ### Ansible Collection
 
-- [Ansible Collection](./automation/README.md) - The automation layer for those who prefer Ansible playbooks instead of the database platform.
+- [Ansible Collection](./automation/README.md) - an Ansible collection for deploying and managing PostgreSQL clusters from the command line.
 
-### GitOps
+### GitOps (CI/CD)
 
-- [GitOps (CI/CD)](https://autobase.tech/docs/management/gitops) - Manage cluster configuration in Git and apply changes through CI/CD pipelines.
+- [GitOps](https://autobase.tech/docs/management/gitops) - manage cluster configuration in Git and apply changes through CI/CD pipelines.
 
 > [!TIP]
-> 📩 Contact us at info@autobase.tech, and our team will help you implement Autobase into your infrastructure.
+> 📩 Contact us at info@autobase.tech, and our team will help you integrate Autobase into your infrastructure.
 
 ## Compatibility
 
-Red Hat and Debian-based distributions.
+Autobase supports the following Linux distributions and CPU architectures.
 
-###### Supported Linux Distributions:
+### Supported Linux Distributions
 
 - **Debian**: 11, 12, 13
 - **Ubuntu**: 22.04, 24.04, 26.04
@@ -75,37 +61,40 @@ Red Hat and Debian-based distributions.
 - **Rocky Linux**: 8, 9, 10
 - **AlmaLinux**: 8, 9, 10
 
-Architecture: x86_64 (amd64), aarch64 (arm64).
+**CPU architectures:** x86_64 (amd64), aarch64 (arm64).
 
-###### PostgreSQL versions:
+### PostgreSQL Versions
 
-All supported PostgreSQL versions.
+Supported PostgreSQL major versions: 10, 11, 12, 13, 14, 15, 16, 17, 18.
 
-:white_check_mark: tested, works fine: PostgreSQL 10, 11, 12, 13, 14, 15, 16, 17, 18
+Available PostgreSQL versions depend on the operating system and package repositories.
 
-_Table of results of daily automated testing of cluster deployment:_
-| Distribution | Test result |
-|--------------|:----------:|
-| Debian 12 | [![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/autobase-tech/autobase/schedule_pg_debian12.yml?branch=main)](https://github.com/autobase-tech/autobase/actions/workflows/schedule_pg_debian12.yml) |
-| Debian 13 | [![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/autobase-tech/autobase/schedule_pg_debian13.yml?branch=main)](https://github.com/autobase-tech/autobase/actions/workflows/schedule_pg_debian13.yml) |
-| Ubuntu 24.04 | [![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/autobase-tech/autobase/schedule_pg_ubuntu2404.yml?branch=main)](https://github.com/autobase-tech/autobase/actions/workflows/schedule_pg_ubuntu2404.yml) |
-| Ubuntu 26.04 | [![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/autobase-tech/autobase/schedule_pg_ubuntu2604.yml?branch=main)](https://github.com/autobase-tech/autobase/actions/workflows/schedule_pg_ubuntu2604.yml) |
-| CentOS Stream 9 | [![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/autobase-tech/autobase/schedule_pg_centosstream9.yml?branch=main)](https://github.com/autobase-tech/autobase/actions/workflows/schedule_pg_centosstream9.yml) |
+### Automated Deployment Tests
+
+The following workflows run daily deployment tests:
+
+| Distribution     |                                                                                                                   Test result                                                                                                                    |
+| ---------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------: |
+| Debian 12        |       [![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/autobase-tech/autobase/schedule_pg_debian12.yml?branch=main)](https://github.com/autobase-tech/autobase/actions/workflows/schedule_pg_debian12.yml)       |
+| Debian 13        |       [![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/autobase-tech/autobase/schedule_pg_debian13.yml?branch=main)](https://github.com/autobase-tech/autobase/actions/workflows/schedule_pg_debian13.yml)       |
+| Ubuntu 24.04     |     [![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/autobase-tech/autobase/schedule_pg_ubuntu2404.yml?branch=main)](https://github.com/autobase-tech/autobase/actions/workflows/schedule_pg_ubuntu2404.yml)     |
+| Ubuntu 26.04     |     [![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/autobase-tech/autobase/schedule_pg_ubuntu2604.yml?branch=main)](https://github.com/autobase-tech/autobase/actions/workflows/schedule_pg_ubuntu2604.yml)     |
+| CentOS Stream 9  |  [![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/autobase-tech/autobase/schedule_pg_centosstream9.yml?branch=main)](https://github.com/autobase-tech/autobase/actions/workflows/schedule_pg_centosstream9.yml)  |
 | CentOS Stream 10 | [![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/autobase-tech/autobase/schedule_pg_centosstream10.yml?branch=main)](https://github.com/autobase-tech/autobase/actions/workflows/schedule_pg_centosstream10.yml) |
-| Oracle Linux 9 | [![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/autobase-tech/autobase/schedule_pg_oracle_linux9.yml?branch=main)](https://github.com/autobase-tech/autobase/actions/workflows/schedule_pg_oracle_linux9.yml) |
-| Oracle Linux 10 | [![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/autobase-tech/autobase/schedule_pg_oracle_linux10.yml?branch=main)](https://github.com/autobase-tech/autobase/actions/workflows/schedule_pg_oracle_linux10.yml) |
-| Rocky Linux 9 | [![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/autobase-tech/autobase/schedule_pg_rockylinux9.yml?branch=main)](https://github.com/autobase-tech/autobase/actions/workflows/schedule_pg_rockylinux9.yml) |
-| Rocky Linux 10 | [![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/autobase-tech/autobase/schedule_pg_rockylinux10.yml?branch=main)](https://github.com/autobase-tech/autobase/actions/workflows/schedule_pg_rockylinux10.yml) |
-| AlmaLinux 9 | [![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/autobase-tech/autobase/schedule_pg_almalinux9.yml?branch=main)](https://github.com/autobase-tech/autobase/actions/workflows/schedule_pg_almalinux9.yml) |
-| AlmaLinux 10 | [![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/autobase-tech/autobase/schedule_pg_almalinux10.yml?branch=main)](https://github.com/autobase-tech/autobase/actions/workflows/schedule_pg_almalinux10.yml) |
+| Oracle Linux 9   |  [![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/autobase-tech/autobase/schedule_pg_oracle_linux9.yml?branch=main)](https://github.com/autobase-tech/autobase/actions/workflows/schedule_pg_oracle_linux9.yml)  |
+| Oracle Linux 10  | [![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/autobase-tech/autobase/schedule_pg_oracle_linux10.yml?branch=main)](https://github.com/autobase-tech/autobase/actions/workflows/schedule_pg_oracle_linux10.yml) |
+| Rocky Linux 9    |    [![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/autobase-tech/autobase/schedule_pg_rockylinux9.yml?branch=main)](https://github.com/autobase-tech/autobase/actions/workflows/schedule_pg_rockylinux9.yml)    |
+| Rocky Linux 10   |   [![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/autobase-tech/autobase/schedule_pg_rockylinux10.yml?branch=main)](https://github.com/autobase-tech/autobase/actions/workflows/schedule_pg_rockylinux10.yml)   |
+| AlmaLinux 9      |     [![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/autobase-tech/autobase/schedule_pg_almalinux9.yml?branch=main)](https://github.com/autobase-tech/autobase/actions/workflows/schedule_pg_almalinux9.yml)     |
+| AlmaLinux 10     |    [![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/autobase-tech/autobase/schedule_pg_almalinux10.yml?branch=main)](https://github.com/autobase-tech/autobase/actions/workflows/schedule_pg_almalinux10.yml)    |
 
 ## Project Status
 
-Autobase has been actively developed for over 7 years (since 2019) and is trusted by companies worldwide, including in production environments with high loads and demanding reliability requirements. Our mission is to provide an open-source DBaaS that delivers reliability, flexibility, and cost-efficiency.
+Autobase has been actively developed since 2019 and is trusted by companies worldwide, including in production environments with high loads and demanding reliability requirements. Our mission is to provide a self-hosted DBaaS that delivers reliability, flexibility, and cost efficiency.
 
-**The project will remain open-source forever**, but to ensure its continuous growth and development, we rely on [sponsorship](https://autobase.tech/docs/sponsor) and [support packages](https://autobase.tech/docs/support). Support packages provide access to personalized support from the project authors and PostgreSQL experts.
+**Autobase is production-ready.**
 
-## Star us
+## Star Us
 
 If you find our project helpful, consider giving it a star on GitHub! Your support helps us grow and motivates us to keep improving. Starring the project is a simple yet effective way to show your appreciation and help others discover it.
 
@@ -123,5 +112,5 @@ Licensed under the MIT License. See the [LICENSE](./LICENSE) file for details.
 
 ## Author
 
-Vitaliy Kukharik (PostgreSQL Expert, Founder Autobase.tech) \
+Vitaliy Kukharik (PostgreSQL expert, founder of Autobase.tech) \
 vitaliy@autobase.tech

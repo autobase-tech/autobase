@@ -1,0 +1,111 @@
+Copyright (c) 2026 Autobase. All rights reserved.
+
+PROPRIETARY SOFTWARE LICENSE
+
+This License applies only to the Autobase Platform (Console) application
+software, including its source code, object code, binaries, container images,
+updates, and related proprietary materials (collectively, the "Software").
+The Software is proprietary to Autobase.
+
+This License does not apply to the Autobase automation core or to the public
+Docker Compose files, deployment instructions, and other MIT-licensed files
+in the autobase-tech/autobase repository. Those components and files remain
+governed by the MIT License in that repository's root LICENSE file.
+
+Third-party components and components provided under separate licenses remain
+governed by their respective licenses. This License does not replace those
+licenses, restrict rights granted under them, or claim ownership of those
+components on behalf of Autobase.
+
+1. License Grant
+   Subject to your compliance with this License and the applicable terms for
+   your plan, Autobase grants you a limited, non-exclusive,
+   non-transferable, non-sublicensable, revocable license to use the Software
+   for your own internal business, personal, educational, or research purposes
+   under an active Autobase Platform (Console) plan, including the free Starter
+   plan, within that plan's cluster allowance and subject to Sections 2 and 3.
+   You may install and run the Software and make copies reasonably necessary
+   for that authorized use, including deployment and backup copies. Those
+   copies do not increase your plan's cluster allowance and must retain all
+   applicable proprietary notices.
+   This License grants a right to use the Software only and does not transfer
+   any ownership or intellectual property rights in the Software.
+
+2. Subscription Requirement
+   Your right to use the Software requires an active Starter plan or an active
+   paid subscription in good standing, subject to Section 3. Canceling automatic
+   renewal does not by itself end your right to use the Software during the
+   remaining active paid period.
+   When a paid subscription expires or is canceled, continued use under Starter
+   is permitted only as set out in Section 3. Suspension for non-payment or
+   breach does not by itself grant Starter access or waive outstanding charges.
+   If you have neither an active paid subscription nor authorized Starter
+   access, your right to use the Software is suspended until access is restored,
+   unless this License has been terminated under Section 6.
+
+3. Starter Plan
+   Starter is the default plan and is provided at no charge for up to two
+   clusters, without a fixed expiration date, subject to this License.
+   A plan applies to the registered billing organization associated with a
+   Platform installation. Its cluster allowance is shared across all projects
+   and environments in that installation. Each managed PostgreSQL cluster counts
+   once, regardless of its number of nodes or databases. Deleted clusters are
+   excluded from the count.
+   After a paid subscription expires or is canceled, you may continue under
+   Starter only if your cluster count is within the Starter allowance and the
+   Autobase Billing service authorizes Starter access. If your cluster count
+   exceeds that allowance, you must renew or obtain an appropriate paid
+   subscription to continue using the Software. A switch to Starter does not
+   waive outstanding charges or override termination for breach of this License.
+   Use beyond the Starter cluster allowance requires an active paid subscription
+   with a sufficient cluster allowance. Support services are governed by their
+   separate terms.
+
+4. Restrictions
+   Except as permitted by this License, a separate applicable component license,
+   or express written authorization from Autobase, you must not:
+   - copy, distribute, publish, sublicense, rent, lease, sell, or otherwise
+     make the Software available to any third party;
+   - modify, adapt, create derivative works of, reverse engineer, decompile,
+     or disassemble the Software;
+   - operate, provide, market, or resell the Software itself as a hosted,
+     managed, timesharing, service bureau, DBaaS, or similar service for third
+     parties;
+   - use the Software to develop, support, or operate a competing product or service;
+   - remove, alter, or obscure any proprietary notices, labels, or marks.
+   These restrictions apply only to the extent permitted by applicable law and
+   do not limit any rights that cannot lawfully be excluded by contract.
+
+5. Reservation of Rights
+   Autobase reserves all rights not expressly granted under this License.
+
+6. Termination
+   Autobase may terminate this License immediately if you breach any provision
+   of this License. Upon expiration or termination of this License for any
+   reason, you must immediately cease all use of the Software and delete all
+   copies of the Software in your possession or control. Upon request, you must
+   certify such deletion in writing.
+   Expiration or cancellation of a paid subscription does not by itself
+   terminate this License if continued use is authorized under Starter as
+   described in Section 3. Termination of this License does not require deleting
+   your database contents or separately licensed third-party components.
+
+7. Disclaimer of Warranties
+   The Software is provided "as is" and "as available," without warranties of
+   any kind, whether express, implied, statutory, or otherwise, including any
+   implied warranties of merchantability, fitness for a particular purpose,
+   title, and non-infringement, to the maximum extent permitted by law.
+
+8. Limitation of Liability
+   To the maximum extent permitted by law, Autobase will not be liable for any
+   indirect, incidental, special, consequential, exemplary, or punitive damages,
+   or for any loss of profits, revenues, data, goodwill, or business
+   interruption, arising out of or related to the Software or this License.
+   Autobase's total aggregate liability arising out of or related to the
+   Software or this License will not exceed the amounts paid by you to Autobase
+   for the Software during the 12 months preceding the event giving rise to the
+   claim.
+
+9. Contact
+   For commercial licensing, exceptions, or other permissions, contact Autobase at:
+   info@autobase.tech

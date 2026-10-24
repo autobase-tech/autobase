@@ -6,18 +6,6 @@
   "schedule": ["before 4am on Monday"],
   "packageRules": [
     {
-      "description": "Group and schedule npm dependencies for bi-weekly updates",
-      "matchManagers": ["npm"],
-      "groupName": "npm dependencies",
-      "schedule": ["before 4am every 2 weeks on Monday"]
-    },
-    {
-      "description": "Group and schedule Go dependencies for bi-weekly updates",
-      "matchManagers": ["gomod"],
-      "groupName": "go dependencies",
-      "schedule": ["before 4am every 2 weeks on Monday"]
-    },
-    {
       "description": "Group and schedule Python dependencies for bi-weekly updates",
       "matchManagers": ["pip_requirements", "pip_setup", "pipenv", "poetry"],
       "groupName": "python dependencies",
@@ -43,9 +31,7 @@
   "customManagers": [
     {
       "customType": "regex",
-      "managerFilePatterns": [
-        "/^automation\\/roles\\/common\\/defaults\\/main\\.yml$/"
-      ],
+      "managerFilePatterns": ["/^automation\\/roles\\/common\\/defaults\\/main\\.yml$/"],
       "matchStrings": [
         "^\\s*datasource=(?<datasource>\\S+)\\s+depName=(?<depName>\\S+)(\\s+registryUrls=(?<registryUrls>\\S+))?(\\s+versioning=(?<versioning>\\S+))?(\\s+extractVersion=(?<extractVersion>\\S+))?\\s+.*?_version:\\s+(?<currentValue>.+)$"
       ],

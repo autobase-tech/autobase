@@ -1,5 +1,7 @@
 # Contributing Guide
 
+This repository contains the MIT-licensed [automation core](./automation/) and [Autobase Platform deployment files](./console/).
+
 You can help improve this project by:
 
 - [Creating an issue](https://docs.github.com/issues/tracking-your-work-with-issues/creating-an-issue) after checking [open issues](https://github.com/autobase-tech/autobase/issues)
@@ -33,6 +35,7 @@ Install [make](https://www.gnu.org/software/make/), [Python](https://www.python.
 Run `make` to see the available commands.
 
 > **Resource requirements**:
+>
 > - `make molecule-converge` — creates 3 containers and deploys a PostgreSQL cluster. **Minimum: 4 GB RAM, 2 CPU cores, 10 GB disk** (8 GB RAM recommended).
 > - `make tests` — runs all test scenarios and is significantly more resource-intensive. **Minimum: 8 GB RAM, 4 CPU cores, 20 GB disk** (16 GB RAM recommended).
 >
