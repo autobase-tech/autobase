@@ -31,7 +31,7 @@ For a detailed description of the cluster components, visit the [Architecture](h
 
 ## Getting Started
 
-You can deploy PostgreSQL clusters using Autobase Platform (UI), the command line (Ansible), or GitOps.
+You can deploy PostgreSQL clusters using Autobase Platform (UI), the Ansible Collection, or GitOps.
 
 ### Autobase Platform (UI)
 
