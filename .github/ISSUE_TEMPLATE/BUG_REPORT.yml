@@ -51,8 +51,8 @@ body:
         If "other", provide details in the "Additional info" section.
       options:
         - "Autobase Platform (UI)"
-        - "Command line"
-        - "GitOps"
+        - "Ansible Collection"
+        - "GitOps (CI/CD)"
         - "Other"
     validations:
       required: true
