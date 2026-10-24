@@ -91,16 +91,70 @@ For more deployment options, see the [Deployment](https://autobase.tech/docs/cat
 - Docker Compose creates the required networks automatically.
 - All services are configured to restart automatically unless stopped manually.
 
+## Configure Secrets Before Production
+
+The default authorization token (`auth_token`), encryption key (`super_secret`), and database password (`postgres-pass`) are intended only for evaluation. Replace them with unique random values before production use or storing real credentials.
+
+Add your values to `.env`:
+
+```dotenv
+AUTH_TOKEN=replace-with-a-unique-random-token
+PG_CONSOLE_ENCRYPTIONKEY=replace-with-a-unique-random-key
+PG_CONSOLE_DB_PASSWORD=replace-with-a-unique-random-password
+```
+
+Generate a separate value for each secret, for example:
+
+```sh
+openssl rand -hex 32
+```
+
+The supplied Compose files pass `AUTH_TOKEN` to the API and its healthcheck, `PG_CONSOLE_ENCRYPTIONKEY` to the API, and `PG_CONSOLE_DB_PASSWORD` to both the API and database container. Keep `.env` private and restrict access:
+
+```sh
+chmod 600 .env
+```
+
+Do not commit `.env` or secret files to Git. These settings do not replace the user credentials created during the initial UI setup.
+
+> [!IMPORTANT]
+> Set the encryption key before storing credentials. Keep a secure backup of it and preserve the same key across updates and restores. Changing only `PG_CONSOLE_ENCRYPTIONKEY` does not re-encrypt existing secrets and prevents them from being decrypted with the new key. For an existing installation, keep the current key until stored secrets have been explicitly re-encrypted.
+
+## Updating
+
+The supplied Compose files use `latest` for Autobase images. Before updating, back up the Console database, your configuration, and the encryption key, and review the release notes.
+
+For the basic setup, pull the current images and recreate the affected services:
+
+```sh
+docker compose pull
+docker pull autobase/automation:latest
+docker compose up -d
+```
+
+For the SSL setup:
+
+```sh
+docker compose -f docker-compose.ssl.yml pull
+docker pull autobase/automation:latest
+docker compose -f docker-compose.ssl.yml up -d
+```
+
+The Automation image is pulled separately because it is started by the API and is not a service in the Compose stack. When using Docker Secrets or other overrides, include the same `-f` options used for deployment in both Compose commands.
+
+[docker compose pull](https://docs.docker.com/reference/cli/docker/compose/pull/) downloads images without updating running containers. [docker compose up](https://docs.docker.com/reference/cli/docker/compose/up/) recreates services whose images changed while preserving their mounted volumes. The API applies database migrations at startup.
+
 ## Using Docker Secrets
 
-Sensitive values, such as the authorization token and database password, can be supplied through files mounted under `/run/secrets` instead of being stored as plain text in `.env`. The API supports the `_FILE` convention for all `PG_CONSOLE_*` variables, and the UI supports it for `PG_CONSOLE_AUTHORIZATION_TOKEN`. As with the official `postgres` image: if `FOO_FILE` is set, the contents of that file are used as the value of `FOO`. Setting both `FOO` and `FOO_FILE` to non-empty values is an error.
+Sensitive values, such as the authorization token, encryption key, and database password, can be supplied through files mounted under `/run/secrets` instead of being stored as plain text in `.env`. The API supports the `_FILE` convention for all `PG_CONSOLE_*` variables, and the UI supports it for `PG_CONSOLE_AUTHORIZATION_TOKEN`. As with the official `postgres` image: if `FOO_FILE` is set, the contents of that file are used as the value of `FOO`. Setting both `FOO` and `FOO_FILE` to non-empty values is an error.
 
-Use the provided `docker-compose.secrets.yml` override:
+Use the provided `docker-compose.secrets.yml` override. Replace the example values with your own secrets. For an existing installation, the encryption key file must contain the current key:
 
 ```sh
 mkdir -p ./secrets && chmod 700 ./secrets
 printf '%s' 'your-secret-token' > ./secrets/auth_token
 printf '%s' 'your-db-password'  > ./secrets/db_password
+printf '%s' 'your-encryption-key' > ./secrets/encryption_key
 chmod 600 ./secrets/*
 
 docker compose -f docker-compose.yml -f docker-compose.secrets.yml up -d
@@ -132,46 +186,46 @@ The UI refresh setting controls browser requests; cluster status updates are col
 
 ### Console API
 
-| Variable                             | Default                           | Description                                                                       |
-| ------------------------------------ | --------------------------------- | --------------------------------------------------------------------------------- |
-| `PG_CONSOLE_LOGGER_LEVEL`            | `INFO`                            | Log level. Accepted values: [TRACE, DEBUG, INFO, WARN, ERROR, FATAL, PANIC].      |
-| `PG_CONSOLE_HTTP_HOST`               | `0.0.0.0`                         | HTTP listening address. `0.0.0.0` accepts connections on all interfaces.          |
-| `PG_CONSOLE_HTTP_PORT`               | `8080`                            | HTTP listening port inside the API container.                                     |
-| `PG_CONSOLE_HTTP_WRITETIMEOUT`       | `10s`                             | Maximum HTTP response write duration. Set to `0` to disable.                      |
-| `PG_CONSOLE_HTTP_READTIMEOUT`        | `10s`                             | Maximum HTTP request read duration.                                               |
-| `PG_CONSOLE_HTTPS_ISUSED`            | `false`                           | Enable the API's own HTTPS listener. Not needed when Caddy terminates HTTPS.      |
-| `PG_CONSOLE_HTTPS_HOST`              | `0.0.0.0`                         | HTTPS listening address.                                                          |
-| `PG_CONSOLE_HTTPS_PORT`              | `8081`                            | HTTPS listening port inside the API container.                                    |
-| `PG_CONSOLE_HTTPS_CACERT`            | `/etc/pg_console/cacert.pem`      | Path to the CA certificate for mutual TLS.                                        |
-| `PG_CONSOLE_HTTPS_SERVERCERT`        | `/etc/pg_console/server-cert.pem` | Path to the HTTPS server certificate.                                             |
-| `PG_CONSOLE_HTTPS_SERVERKEY`         | `/etc/pg_console/server-key.pem`  | Path to the HTTPS server private key.                                             |
-| `PG_CONSOLE_AUTHORIZATION_TOKEN`     | `auth_token`                      | Static bearer token for internal and service API requests.                        |
-| `PG_CONSOLE_AUTH_SESSION_TTL`        | `8h`                              | Browser session lifetime.                                                         |
-| `PG_CONSOLE_AUTH_COOKIE_SECURE`      | `true`                            | Send session cookies over HTTPS only. The HTTP Compose file sets this to `false`. |
-| `PG_CONSOLE_DB_HOST`                 | `localhost`                       | Console database host. The supplied Compose files use `autobase-console-db`.      |
-| `PG_CONSOLE_DB_PORT`                 | `5432`                            | Console database port.                                                            |
-| `PG_CONSOLE_DB_DBNAME`               | `postgres`                        | Console database name.                                                            |
-| `PG_CONSOLE_DB_USER`                 | `postgres`                        | Console database user.                                                            |
-| `PG_CONSOLE_DB_PASSWORD`             | `postgres-pass`                   | Console database password. Must match the database container configuration.       |
-| `PG_CONSOLE_DB_MAXCONNS`             | `10`                              | Maximum number of database connections in the pool.                               |
-| `PG_CONSOLE_DB_MAXCONNLIFETIME`      | `60s`                             | Maximum lifetime of a pooled database connection.                                 |
-| `PG_CONSOLE_DB_MAXCONNIDLETIME`      | `60s`                             | Maximum idle time of a pooled database connection.                                |
-| `PG_CONSOLE_DB_MIGRATIONDIR`         | `/etc/db/migrations`              | Directory containing database migration scripts inside the API container.         |
-| `PG_CONSOLE_ENCRYPTIONKEY`           | `super_secret`                    | Encryption key for stored secrets.                                                |
-| `PG_CONSOLE_DOCKER_HOST`             | `unix:///var/run/docker.sock`     | Docker daemon endpoint used to start Automation containers.                       |
-| `PG_CONSOLE_DOCKER_LOGDIR`           | `/tmp/ansible`                    | Shared directory for Ansible operation logs. Must match the mounted volume.       |
-| `PG_CONSOLE_DOCKER_IMAGE`            | `autobase/automation:2.11.0`      | Automation container image.                                                       |
-| `PG_CONSOLE_LOGWATCHER_RUNEVERY`     | `5s`                              | Interval between operation log checks.                                            |
-| `PG_CONSOLE_LOGWATCHER_ANALYZEPAST`  | `48h`                             | Age limit for operations considered by the log watcher.                           |
-| `PG_CONSOLE_CLUSTERWATCHER_RUNEVERY` | `60s`                             | Interval between cluster status collection runs.                                  |
-| `PG_CONSOLE_CLUSTERWATCHER_POOLSIZE` | `4`                               | Number of concurrent cluster watcher requests.                                    |
-| `PG_CONSOLE_DBDESK_STUDIO_ENABLED`   | `true`                            | Enable automatic dbdesk-studio registration after successful cluster deploy.      |
-| `PG_CONSOLE_DBDESK_STUDIO_API_URL`   | `http://dbdesk-studio:6789`       | dbdesk-studio API base URL.                                                       |
-| `PG_CONSOLE_DBDESK_STUDIO_SSLMODE`   | `require`                         | SSL mode for dbdesk-studio postgres connection profiles.                          |
-| `PG_CONSOLE_DBDESK_STUDIO_TIMEOUT`   | `5s`                              | HTTP timeout for dbdesk-studio health and registration requests.                  |
-| `PG_CONSOLE_MONITORING_HTTP_TIMEOUT` | `2s`                              | Timeout for one Netdata HTTP request.                                             |
-| `PG_CONSOLE_MONITORING_NODE_TIMEOUT` | `5s`                              | Monitoring collection timeout per node.                                           |
-| `PG_CONSOLE_MONITORING_TIMEOUT`      | `8s`                              | Total monitoring collection timeout, including queued nodes.                      |
+| Variable                             | Default                           | Description                                                                                        |
+| ------------------------------------ | --------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `PG_CONSOLE_LOGGER_LEVEL`            | `INFO`                            | Log level. Accepted values: [TRACE, DEBUG, INFO, WARN, ERROR, FATAL, PANIC].                       |
+| `PG_CONSOLE_HTTP_HOST`               | `0.0.0.0`                         | HTTP listening address. `0.0.0.0` accepts connections on all interfaces.                           |
+| `PG_CONSOLE_HTTP_PORT`               | `8080`                            | HTTP listening port inside the API container.                                                      |
+| `PG_CONSOLE_HTTP_WRITETIMEOUT`       | `10s`                             | Maximum HTTP response write duration. Set to `0` to disable.                                       |
+| `PG_CONSOLE_HTTP_READTIMEOUT`        | `10s`                             | Maximum HTTP request read duration.                                                                |
+| `PG_CONSOLE_HTTPS_ISUSED`            | `false`                           | Enable the API's own HTTPS listener. Not needed when Caddy terminates HTTPS.                       |
+| `PG_CONSOLE_HTTPS_HOST`              | `0.0.0.0`                         | HTTPS listening address.                                                                           |
+| `PG_CONSOLE_HTTPS_PORT`              | `8081`                            | HTTPS listening port inside the API container.                                                     |
+| `PG_CONSOLE_HTTPS_CACERT`            | `/etc/pg_console/cacert.pem`      | Path to the CA certificate for mutual TLS.                                                         |
+| `PG_CONSOLE_HTTPS_SERVERCERT`        | `/etc/pg_console/server-cert.pem` | Path to the HTTPS server certificate.                                                              |
+| `PG_CONSOLE_HTTPS_SERVERKEY`         | `/etc/pg_console/server-key.pem`  | Path to the HTTPS server private key.                                                              |
+| `PG_CONSOLE_AUTHORIZATION_TOKEN`     | `auth_token`                      | Static bearer token for internal and service API requests.                                         |
+| `PG_CONSOLE_AUTH_SESSION_TTL`        | `8h`                              | Browser session lifetime.                                                                          |
+| `PG_CONSOLE_AUTH_COOKIE_SECURE`      | `true`                            | Send session cookies over HTTPS only. The HTTP Compose file sets this to `false`.                  |
+| `PG_CONSOLE_DB_HOST`                 | `localhost`                       | Console database host. The supplied Compose files use `autobase-console-db`.                       |
+| `PG_CONSOLE_DB_PORT`                 | `5432`                            | Console database port.                                                                             |
+| `PG_CONSOLE_DB_DBNAME`               | `postgres`                        | Console database name.                                                                             |
+| `PG_CONSOLE_DB_USER`                 | `postgres`                        | Console database user.                                                                             |
+| `PG_CONSOLE_DB_PASSWORD`             | `postgres-pass`                   | Console database password. Must match the database container configuration.                        |
+| `PG_CONSOLE_DB_MAXCONNS`             | `10`                              | Maximum number of database connections in the pool.                                                |
+| `PG_CONSOLE_DB_MAXCONNLIFETIME`      | `60s`                             | Maximum lifetime of a pooled database connection.                                                  |
+| `PG_CONSOLE_DB_MAXCONNIDLETIME`      | `60s`                             | Maximum idle time of a pooled database connection.                                                 |
+| `PG_CONSOLE_DB_MIGRATIONDIR`         | `/etc/db/migrations`              | Directory containing database migration scripts inside the API container.                          |
+| `PG_CONSOLE_ENCRYPTIONKEY`           | `super_secret`                    | Encryption key for stored secrets. Replace before storing credentials and preserve across updates. |
+| `PG_CONSOLE_DOCKER_HOST`             | `unix:///var/run/docker.sock`     | Docker daemon endpoint used to start Automation containers.                                        |
+| `PG_CONSOLE_DOCKER_LOGDIR`           | `/tmp/ansible`                    | Shared directory for Ansible operation logs. Must match the mounted volume.                        |
+| `PG_CONSOLE_DOCKER_IMAGE`            | `autobase/automation:latest`      | Automation container image; the supplied Compose files default to `latest`.                        |
+| `PG_CONSOLE_LOGWATCHER_RUNEVERY`     | `5s`                              | Interval between operation log checks.                                                             |
+| `PG_CONSOLE_LOGWATCHER_ANALYZEPAST`  | `48h`                             | Age limit for operations considered by the log watcher.                                            |
+| `PG_CONSOLE_CLUSTERWATCHER_RUNEVERY` | `60s`                             | Interval between cluster status collection runs.                                                   |
+| `PG_CONSOLE_CLUSTERWATCHER_POOLSIZE` | `4`                               | Number of concurrent cluster watcher requests.                                                     |
+| `PG_CONSOLE_DBDESK_STUDIO_ENABLED`   | `true`                            | Enable automatic dbdesk-studio registration after successful cluster deploy.                       |
+| `PG_CONSOLE_DBDESK_STUDIO_API_URL`   | `http://dbdesk-studio:6789`       | dbdesk-studio API base URL.                                                                        |
+| `PG_CONSOLE_DBDESK_STUDIO_SSLMODE`   | `require`                         | SSL mode for dbdesk-studio postgres connection profiles.                                           |
+| `PG_CONSOLE_DBDESK_STUDIO_TIMEOUT`   | `5s`                              | HTTP timeout for dbdesk-studio health and registration requests.                                   |
+| `PG_CONSOLE_MONITORING_HTTP_TIMEOUT` | `2s`                              | Timeout for one Netdata HTTP request.                                                              |
+| `PG_CONSOLE_MONITORING_NODE_TIMEOUT` | `5s`                              | Monitoring collection timeout per node.                                                            |
+| `PG_CONSOLE_MONITORING_TIMEOUT`      | `8s`                              | Total monitoring collection timeout, including queued nodes.                                       |
 
 Timeouts must satisfy `1ms <= PG_CONSOLE_MONITORING_HTTP_TIMEOUT <= PG_CONSOLE_MONITORING_NODE_TIMEOUT <= PG_CONSOLE_MONITORING_TIMEOUT`. The HTTP write timeout must exceed the total monitoring timeout unless disabled with `0`.
 
