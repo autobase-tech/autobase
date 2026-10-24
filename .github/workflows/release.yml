@@ -7,7 +7,7 @@ on:
       - "*"
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   release:
@@ -35,48 +35,10 @@ jobs:
         id: tag
         run: echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
 
-      - name: Update automation version references
+      - name: Set collection build version
         run: |
           TAG="${{ steps.tag.outputs.tag }}"
-          VERSION_PATTERN="[0-9]\+\.[0-9]\+\.[0-9]\+"
-
-          # Update galaxy.yml version
-          sed -i "s/^version:.*/version: ${TAG}/" \
-            automation/galaxy.yml
-
-          # Update automation README version
-          sed -i "s/version: ${VERSION_PATTERN}/version: ${TAG}/" \
-            automation/README.md
-
-          # Update the Platform automation image default in the public README
-          sed -i "s/autobase\/automation:${VERSION_PATTERN}/autobase\/automation:${TAG}/g" \
-            console/README.md
-
-          # Keep public Platform deployment files in sync with the release
-          for IMAGE in console_api console_ui console_db; do
-            sed -i "s|autobase/${IMAGE}:${VERSION_PATTERN}|autobase/${IMAGE}:${TAG}|g" \
-              console/docker-compose.yml console/docker-compose.ssl.yml
-          done
-
-      - name: Commit version changes to main branch
-        run: |
-          TAG="${{ steps.tag.outputs.tag }}"
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          # Add all changed files
-          git add \
-            automation/galaxy.yml \
-            automation/README.md \
-            console/README.md \
-            console/docker-compose.yml \
-            console/docker-compose.ssl.yml
-
-          # Check if there are changes to commit
-          if ! git diff --staged --quiet; then
-            git commit -m "chore: release ${TAG}"
-            git push origin HEAD:${{ github.event.repository.default_branch }}
-          fi
+          sed -i "s/^version:.*/version: ${TAG}/" automation/galaxy.yml
 
       - name: Build Ansible collection
         run: |
