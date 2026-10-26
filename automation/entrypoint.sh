@@ -20,8 +20,6 @@ if [[ -n "${ANSIBLE_INVENTORY_JSON}" ]]; then
   fi
   # Set ANSIBLE_INVENTORY environment variable
   export ANSIBLE_INVENTORY=/autobase/inventory.json
-  # Set ANSIBLE_SSH_ARGS environment variable
-  export ANSIBLE_SSH_ARGS="-o StrictHostKeyChecking=no"
 fi
 
 # Check if SSH_PRIVATE_KEY_CONTENT is set and create the SSH private key file if it is
