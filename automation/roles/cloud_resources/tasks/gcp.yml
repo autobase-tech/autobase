@@ -638,24 +638,7 @@
     - server_result.results is defined
     - item.networkInterfaces is defined
 
-# Check SSH access
-- name: Wait for host to be available via SSH
-  ansible.builtin.wait_for:
-    host: "{{ item.networkInterfaces[0].accessConfigs[0].natIP if (server_public_ip | bool and ssh_public_access | bool) else item.networkInterfaces[0].networkIP }}" # yamllint disable rule:line-length
-    port: 22
-    delay: 5
-    timeout: "{{ 1800 if server_type is search('metal') else 300 }}" # 30 min for bare metal, 5 min for VMs
-  loop: "{{ server_result.results }}"
-  loop_control:
-    index_var: idx
-    label: "{{ server_name | lower }}{{ '%02d' % (idx + 1) }}"
-  when:
-    - server_result.results is defined
-    - item.networkInterfaces is defined
-    - item.networkInterfaces[0].accessConfigs[0].natIP is defined or
-      item.networkInterfaces[0].networkIP is defined
-
-# Inventory
+# Inventory (includes the SSH access check)
 - block:
     - name: "Inventory | Extract IP addresses"
       ansible.builtin.set_fact:

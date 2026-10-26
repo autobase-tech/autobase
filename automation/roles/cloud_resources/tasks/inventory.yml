@@ -94,3 +94,14 @@
     label: "{{ item[(server_public_ip | bool and ssh_public_access | bool) | ternary('public_ip', 'private_ip')] }}"
   changed_when: false
   when: dcs_type == "consul"
+
+# Check SSH access using the Ansible connection settings of each host (user, key, port, 'ansible_ssh_common_args'),
+# so servers that are reachable only through a jump host (bastion) are supported.
+- name: "Inventory | Wait for hosts to be available via SSH"
+  ansible.builtin.wait_for_connection:
+    delay: 5
+    timeout: "{{ 1800 if (cloud_provider | lower == 'gcp' and server_type is search('metal')) else 300 }}" # 30 min for GCP bare metal, 5 min for VMs
+  delegate_to: "{{ item.private_ip }}"
+  loop: "{{ ip_addresses }}"
+  loop_control:
+    label: "{{ item[(server_public_ip | bool and ssh_public_access | bool) | ternary('public_ip', 'private_ip')] }}"

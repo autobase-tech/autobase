@@ -681,22 +681,7 @@
     - server_result.results is defined
     - item.hcloud_server is defined
 
-# Check SSH access
-- name: Wait for host to be available via SSH
-  ansible.builtin.wait_for:
-    host: "{{ item.hcloud_server.ipv4_address if (server_public_ip | bool and ssh_public_access | bool) else item.hcloud_server.private_networks_info[0].ip }}"
-    port: 22
-    delay: 5
-    timeout: 300
-  loop: "{{ server_result.results }}"
-  loop_control:
-    index_var: idx
-    label: "{{ server_name | lower }}{{ '%02d' % (idx + 1) }}"
-  when:
-    - server_result.results is defined
-    - item.hcloud_server is defined
-
-# Inventory
+# Inventory (includes the SSH access check)
 - block:
     - name: "Inventory | Extract IP addresses"
       ansible.builtin.set_fact:

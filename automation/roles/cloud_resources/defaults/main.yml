@@ -17,7 +17,7 @@ server_image: "" # (required) OS image for the server. For Azure, use variables 
 server_location: "" # (required) Server location or region.
 server_network: "" # (optional) If provided, the server will be added to this network (needs to be created beforehand).
 server_spot: false # Spot instance. Applicable for AWS, GCP, Azure.
-server_public_ip: true # Assign public IPs; set false only when the control host can reach private IPs and outbound egress is provided separately (for example, NAT).
+server_public_ip: true # Assign public IPs; set false only when the control host can reach private IPs (directly or via a jump host) and outbound egress is provided separately (for example, NAT).
 
 # Zones (multi-AZ). Currently supported for AWS, GCP and Azure.
 server_zones_count: 3 # Number of zones to distribute servers across. Set to 1 to place all servers in a single zone. AWS, GCP and Azure only.

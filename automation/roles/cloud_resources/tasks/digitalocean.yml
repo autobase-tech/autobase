@@ -590,28 +590,7 @@
     - droplet_result.results is defined
     - item.data is defined
 
-# Check SSH access
-- name: Wait for host to be available via SSH
-  ansible.builtin.wait_for:
-    host: >-
-      {{
-        (item.data.droplet.networks.v4
-         | selectattr('type', 'equalto',
-           'public' if (server_public_ip | bool and ssh_public_access | bool) else 'private')
-         | first).ip_address
-      }}
-    port: 22
-    delay: 5
-    timeout: 300
-  loop: "{{ droplet_result.results }}"
-  loop_control:
-    index_var: idx
-    label: "{{ server_name | lower }}{{ '%02d' % (idx + 1) }}"
-  when:
-    - droplet_result.results is defined
-    - item.data is defined
-
-# Inventory
+# Inventory (includes the SSH access check)
 - block:
     - name: "Inventory | Extract IP addresses"
       ansible.builtin.set_fact:

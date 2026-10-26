@@ -582,38 +582,7 @@
     - server_result.results is defined
     - item.ansible_facts is defined
 
-# Check SSH access - via a public IP address
-- name: "Wait for host to be available via SSH"
-  ansible.builtin.wait_for:
-    host: "{{ item.state.ip_address }}"
-    port: "{{ ansible_ssh_port | default(22) }}"
-    delay: 5
-    timeout: 300
-  loop: "{{ public_ip_address.results | default([]) | selectattr('state.ip_address', 'defined') | list }}"
-  loop_control:
-    label: "{{ item.item.name }}"
-  when:
-    - public_ip_address.results | default([]) | length > 0
-    - server_public_ip | bool
-    - ssh_public_access | bool
-    - item.state.ip_address is defined
-
-# Check SSH access - via a private IP address (if public IP is not defined)
-- name: "Wait for host to be available via SSH"
-  ansible.builtin.wait_for:
-    host: "{{ item.ansible_facts.azure_vm.network_profile.network_interfaces[0].properties.ip_configurations[0].private_ip_address }}"
-    port: "{{ ansible_ssh_port | default(22) }}"
-    delay: 5
-    timeout: 300
-  loop: "{{ server_result.results | default([]) | selectattr('ansible_facts.azure_vm', 'defined') | list }}"
-  loop_control:
-    label: "{{ item.ansible_facts.azure_vm.name }}"
-  when:
-    - not (server_public_ip | bool and ssh_public_access | bool)
-    - server_result.results is defined
-    - item.ansible_facts.azure_vm.network_profile.network_interfaces[0].properties.ip_configurations[0].private_ip_address is defined
-
-# Inventory
+# Inventory (includes the SSH access check)
 - block:
     - name: "Inventory | Extract IP addresses"
       ansible.builtin.set_fact: # yamllint disable rule:line-length

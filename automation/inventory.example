@@ -60,3 +60,5 @@ ansible_ssh_user=root
 #ansible_ssh_pass='secretpassword'  # "sshpass" package is required for use "ansible_ssh_pass"
 ansible_ssh_private_key_file=/home/ubuntu/.ssh/id_rsa
 ansible_python_interpreter=/usr/bin/python3
+# Connect to the servers through a jump host (bastion). The key for the jump host is taken from ssh-agent or ~/.ssh.
+#ansible_ssh_common_args='-o ProxyCommand="ssh -W %h:%p -q -o StrictHostKeyChecking=no user@bastion.example.com"'

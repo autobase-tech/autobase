@@ -659,22 +659,7 @@
     - server_result.results is defined
     - item.instances is defined
 
-# Check SSH access
-- name: Wait for host to be available via SSH
-  ansible.builtin.wait_for:
-    host: "{{ item.instances[0][ip_address_type] }}"
-    port: 22
-    delay: 5
-    timeout: 300
-  loop: "{{ server_result.results | default([]) }}"
-  loop_control:
-    index_var: idx
-    label: "{{ server_name | lower }}{{ '%02d' % (idx + 1) }}"
-  when:
-    - server_result.results is defined
-    - item.instances is defined
-
-# Inventory
+# Inventory (includes the SSH access check)
 - block:
     - name: "Inventory | Extract IP addresses"
       ansible.builtin.set_fact:
