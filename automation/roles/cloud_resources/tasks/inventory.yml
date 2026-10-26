@@ -101,7 +101,7 @@
   ansible.builtin.wait_for_connection:
     delay: 5
     timeout: "{{ 1800 if (cloud_provider | lower == 'gcp' and server_type is search('metal')) else 300 }}" # 30 min for GCP bare metal, 5 min for VMs
-  delegate_to: "{{ item.private_ip }}"
+  delegate_to: "{{ item.private_ip | default(inventory_hostname) }}"
   loop: "{{ ip_addresses }}"
   loop_control:
     label: "{{ item[(server_public_ip | bool and ssh_public_access | bool) | ternary('public_ip', 'private_ip')] }}"
