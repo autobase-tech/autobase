@@ -5,7 +5,6 @@ on:
   push:
     branches:
       - main
-      - ssh-jump-host # build for testing (TODO: remove after testing)
   pull_request:
     branches:
       - main
