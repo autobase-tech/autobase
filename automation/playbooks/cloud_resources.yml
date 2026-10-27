@@ -24,12 +24,20 @@
       tags: always
 
 - name: vitabaks.autobase.cloud_resources | Resize filesystem
-  hosts: "{{ 'postgres_cluster' if (state | default('present')) != 'absent' else [] }}"
+  hosts: postgres_cluster
   become: true
   become_method: sudo
-  gather_facts: true
+  gather_facts: false # gathered in pre_tasks only when resize is needed
   any_errors_fatal: true
+  pre_tasks:
+    - name: Skip filesystem resize if it is disabled or the cluster is being deleted
+      ansible.builtin.meta: end_host
+      when: not (resizefs_enabled | default(false) | bool) or (state | default('present')) == 'absent'
+      tags: always
+
+    - name: Gathering Facts
+      ansible.builtin.setup:
+      tags: always
   roles:
     - role: vitabaks.autobase.resizefs
-      when: resizefs_enabled | default(false) | bool
       tags: always
