@@ -30,7 +30,7 @@
   gather_facts: false # gathered in pre_tasks only when resize is needed
   any_errors_fatal: true
   pre_tasks:
-    - name: Skip filesystem resize if it is disabled or the cluster is being deleted
+    - name: Skip if resizefs is disabled or state is absent
       ansible.builtin.meta: end_host
       when: not (resizefs_enabled | default(false) | bool) or (state | default('present')) == 'absent'
       tags: always
