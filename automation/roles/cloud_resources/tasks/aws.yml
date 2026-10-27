@@ -347,7 +347,6 @@
             imds_v2_options:
               http_endpoint: enabled
               http_tokens: required # IMDSv2 only
-              http_put_response_hop_limit: 2 # allow IMDS access from containers on the host
             system_volume:
               device_name: "{{ system_volume_name | default('/dev/sda1', true) }}"
               ebs:
