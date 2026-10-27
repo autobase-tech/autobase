@@ -332,6 +332,7 @@
                 assign_public_ip: "{{ server_public_ip | bool }}"
                 delete_on_termination: true
             volumes: "{{ [system_volume] + ([] if use_local_disk | bool else [data_volume]) }}"
+            metadata_options: "{{ imds_v2_options if aws_ec2_imds_v2_required | default(true) | bool else omit }}"
             tags: "{{ cloud_provider_tags | combine({'Name': server_name | lower ~ '%02d' % (idx + 1), 'Cluster': patroni_cluster_name}) }}"
             purge_tags: false
           loop: "{{ range(0, server_count | int) | list }}"
@@ -343,6 +344,10 @@
           delay: 10
           when: ec2_instance_info.results[idx].instances | length == 0 # only if instance does not exist
           vars:
+            imds_v2_options:
+              http_endpoint: enabled
+              http_tokens: required # IMDSv2 only
+              http_put_response_hop_limit: 2 # allow IMDS access from containers on the host
             system_volume:
               device_name: "{{ system_volume_name | default('/dev/sda1', true) }}"
               ebs:
@@ -366,6 +371,9 @@
       when: not server_spot | default(aws_ec2_spot_instance | default(false)) | bool
 
     # Spot instance (if 'server_spot' is 'true')
+    # Note: 'aws_ec2_imds_v2_required' is not applied to Spot instances, because the 'ec2_spot_instance' module
+    # (RequestSpotInstances API) does not support metadata options. To enforce IMDSv2 for Spot instances,
+    # set the account-level default: 'aws ec2 modify-instance-metadata-defaults --http-tokens required --region <region>'
     - block:
         # if spot instances are still created, create them
         - name: "AWS: Create a request for EC2 Spot instance"

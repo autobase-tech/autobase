@@ -112,6 +112,7 @@ Set `cloud_backup_provider` when backup storage should be provisioned in a diffe
 | AWS | aws_security_group_ids | list | [] | Additional Security Group IDs to attach to AWS EC2 instances. |
 | AWS | aws_ec2_spot_instance | string | "" | Fallback for `server_spot`. |
 | AWS | aws_ebs_encrypted | bool | true | Encrypt AWS EBS system and data volumes. |
+| AWS | aws_ec2_imds_v2_required | bool | true | Require IMDSv2 (session tokens) for the instance metadata service on new EC2 instances (IMDSv1 disabled, hop limit 2). Not applied to Spot instances. |
 | AWS | aws_ebs_kms_key_id | string | "" | Customer-managed AWS KMS key ID or ARN for EBS encryption. If empty, AWS uses the default EBS encryption key. |
 | GCP | gcp_project | string | "" | Falls back to `project_id` from the service account credentials. |
 | GCP | gcp_subnetwork | string | "" | Name of a private subnetwork in `server_network` and the selected region. Defaults to the existing VMs' subnetwork, or the only private subnetwork in the region. Required when multiple private subnetworks exist and there are no existing VMs. |
