@@ -56,7 +56,7 @@
 
 - name: Perform pre-checks for extensions
   ansible.builtin.import_tasks: extensions.yml
-  when: inventory_hostname == groups['master'][0]
+  when: inventory_hostname in groups['postgres_cluster'] # all nodes: the Patroni leader can be any of them
 
 - name: Perform pre-checks for standby cluster configuration
   ansible.builtin.import_tasks: standby_cluster.yml
