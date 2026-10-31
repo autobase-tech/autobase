@@ -1,0 +1,73 @@
+---
+# yamllint disable rule:line-length
+# Keep passwords out of sudo logs using a dedicated passfile.
+# Prepare it even in --check so read-only SQL probes can authenticate.
+- name: Prepare PostgreSQL CLI password file when credentials change
+  check_mode: false
+  block:
+    - name: Check PostgreSQL CLI password file directory
+      become: true
+      become_user: root
+      ansible.builtin.stat:
+        path: "{{ _pgpass_path | dirname }}"
+      register: _postgresql_cli_passfile_directory
+
+    - name: Create PostgreSQL CLI password file directory if missing
+      become: true
+      become_user: root
+      ansible.builtin.file:
+        path: "{{ _pgpass_path | dirname }}"
+        state: directory
+        owner: postgres
+        group: postgres
+        mode: "0700"
+      when: not _postgresql_cli_passfile_directory.stat.exists
+
+    - name: Configure PostgreSQL CLI password file
+      become: true
+      become_user: root
+      ansible.builtin.copy:
+        content: |
+          *:*:*:{{ _pgpass_username | regex_replace('([:\\])', '\\\1') }}:{{ _pgpass_password | regex_replace('([:\\])', '\\\1') }}
+        dest: "{{ _pgpass_path }}"
+        owner: postgres
+        group: postgres
+        mode: "0600"
+      register: _postgresql_cli_passfile_write
+      no_log: true
+      diff: false
+
+    - name: Remember prepared PostgreSQL CLI password file
+      ansible.builtin.set_fact:
+        _postgresql_cli_passfile_signature: "{{ _pgpass_signature }}"
+        _postgresql_cli_passfile_path: "{{ _pgpass_path }}"
+      delegate_facts: true
+      no_log: true
+      when: _postgresql_cli_passfile_write is succeeded
+  vars:
+    _pgpass_username: "{{ patroni_superuser_username }}"
+    _pgpass_password: "{{ patroni_superuser_password }}"
+    _pgpass_host: "{{ postgresql_cli_passfile_host | default(inventory_hostname) }}"
+    _pgpass_path: >-
+      {{ postgresql_cli_passfile if _pgpass_host == inventory_hostname else
+         hostvars[_pgpass_host].postgresql_cli_passfile | default(postgresql_cli_passfile) }}
+    _pgpass_signature: "{{ [_pgpass_path, _pgpass_username, _pgpass_password] | to_json | hash('sha256') }}"
+  when:
+    - (hostvars[_pgpass_host]._postgresql_cli_passfile_signature | default('')) != _pgpass_signature
+
+# SQL and PgBouncer SSH commands may still reach hosts excluded by --limit.
+# Clear the list in the nested include so it prepares only that destination.
+- name: Prepare PostgreSQL CLI password files on hosts outside the play limit
+  ansible.builtin.include_tasks:
+    file: "{{ role_path }}/../pgpass/tasks/automation.yml"
+    apply:
+      delegate_to: "{{ pgpass_host }}"
+      tags: always
+      vars:
+        postgresql_cli_passfile_hosts: []
+  vars:
+    postgresql_cli_passfile_host: "{{ pgpass_host }}"
+  loop: "{{ postgresql_cli_passfile_hosts | default([]) | difference(ansible_play_hosts_all) }}"
+  loop_control:
+    loop_var: pgpass_host
+  run_once: true # noqa run-once

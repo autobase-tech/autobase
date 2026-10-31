@@ -81,5 +81,5 @@
       register: vacuumdb_analyze
       ignore_errors: true # ignore errors if the task runs for over an 'vacuumdb_analyze_timeout'.
   environment:
-    PGPASSWORD: "{{ patroni_superuser_password }}"
+    PGPASSFILE: "{{ postgresql_cli_passfile }}"
   when: inventory_hostname in groups['primary']

@@ -29,7 +29,7 @@
   ansible.builtin.command: >-
     {{ postgresql_bin_dir }}/psql -h 127.0.0.1 -p {{ postgresql_port }} -U {{ patroni_superuser_username }} -d postgres -tAXc 'select 1'
   environment:
-    PGPASSWORD: "{{ patroni_superuser_password }}"
+    PGPASSFILE: "{{ postgresql_cli_passfile }}"
   changed_when: false
   check_mode: false
 
@@ -39,7 +39,7 @@
     "select count(*) from pg_stat_replication
     where application_name != 'pg_basebackup'"
   environment:
-    PGPASSWORD: "{{ patroni_superuser_password }}"
+    PGPASSFILE: "{{ postgresql_cli_passfile }}"
   register: pg_replication_state
   changed_when: false
   check_mode: false
@@ -64,7 +64,7 @@
     from pg_stat_replication
     order by pg_lag_bytes desc limit 1"
   environment:
-    PGPASSWORD: "{{ patroni_superuser_password }}"
+    PGPASSFILE: "{{ postgresql_cli_passfile }}"
   register: pg_lag_bytes
   changed_when: false
   failed_when: false
@@ -102,7 +102,7 @@
       and backend_type = 'client backend' and pid <> pg_backend_pid()
       order by xact_age desc limit 10"
   environment:
-    PGPASSWORD: "{{ patroni_superuser_password }}"
+    PGPASSFILE: "{{ postgresql_cli_passfile }}"
   register: pg_long_transactions
   changed_when: false
   failed_when: false

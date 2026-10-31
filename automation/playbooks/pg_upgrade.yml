@@ -80,6 +80,13 @@
         source_group: primary
         postgresql_cluster_maintenance: true
       when: patroni_superuser_password | default('') | length < 1
+
+    - name: "[Prepare] PostgreSQL CLI password files"
+      ansible.builtin.import_role:
+        name: vitabaks.autobase.pgpass
+        tasks_from: automation
+      vars:
+        postgresql_cli_passfile_hosts: "{{ groups['postgres_cluster'] }}"
   tags:
     - always
 

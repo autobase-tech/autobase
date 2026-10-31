@@ -7,7 +7,7 @@
   vars:
     psql_command: "{{ pg_old_bindir }}/psql -h 127.0.0.1 -p {{ postgresql_port }} -U {{ patroni_superuser_username }} -d postgres"
   environment:
-    PGPASSWORD: "{{ patroni_superuser_password }}"
+    PGPASSFILE: "{{ postgresql_cli_passfile }}"
   when: inventory_hostname in groups['primary']
 
 - name: Get the current cron.database_name settings
@@ -18,7 +18,7 @@
   vars:
     psql_command: "{{ pg_old_bindir }}/psql -h 127.0.0.1 -p {{ postgresql_port }} -U {{ patroni_superuser_username }} -d postgres"
   environment:
-    PGPASSWORD: "{{ patroni_superuser_password }}"
+    PGPASSFILE: "{{ postgresql_cli_passfile }}"
   when:
     - inventory_hostname in groups['primary']
     - "'pg_cron' in pg_shared_preload_libraries.stdout"
@@ -29,15 +29,6 @@
   failed_when: false
   changed_when: false
   when: inventory_hostname in groups['primary']
-
-- name: Create temporary .pgpass entry for install user
-  ansible.builtin.lineinfile:
-    path: "{{ postgresql_home_dir }}/.pgpass"
-    line: "localhost:*:*:{{ hostvars[groups['primary'][0]].pg_install_user.stdout }}:{{ pg_install_user_password }}"
-  no_log: true
-  when:
-    - inventory_hostname in groups['primary']
-    - pg_install_user_password is defined
 
 - name: "Start new PostgreSQL on port {{ schema_compatibility_check_port | default('5433') }} to check the schema compatibility"
   ansible.builtin.command: >-
@@ -84,7 +75,7 @@
   args:
     executable: /bin/bash
   environment:
-    PGPASSWORD: "{{ pg_install_user_password | default(patroni_superuser_password) }}"
+    PGPASSFILE: "{{ postgresql_cli_passfile }}.upgrade"
   async: "{{ schema_compatibility_check_timeout }}" # run the command asynchronously
   poll: 0
   register: pg_dumpall_result

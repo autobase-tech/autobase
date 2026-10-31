@@ -25,6 +25,13 @@
 
 # if pgbouncer_auth_user is 'false'
 - block:
+    - name: Prepare PostgreSQL CLI password file on the master
+      ansible.builtin.import_tasks: "{{ role_path }}/../pgpass/tasks/automation.yml"
+      delegate_to: "{{ groups.master[0] }}"
+      run_once: true # noqa run-once
+      vars:
+        postgresql_cli_passfile_host: "{{ groups.master[0] }}"
+
     - name: Get users and password md5 from pg_shadow
       run_once: true
       become: true
@@ -33,7 +40,7 @@
         {{ postgresql_bin_dir }}/psql -h 127.0.0.1 -p {{ postgresql_port }} -U {{ patroni_superuser_username }} -d postgres -tAXc
         "SELECT concat('\"', usename, '\" \"', passwd, '\"') FROM pg_shadow where usename != '{{ patroni_replication_username }}'"
       environment:
-        PGPASSWORD: "{{ patroni_superuser_password }}"
+        PGPASSFILE: "{{ hostvars[groups.master[0]]._postgresql_cli_passfile_path }}"
       register: pg_shadow_result
       changed_when: false
       delegate_to: "{{ groups.master[0] }}"
@@ -55,6 +62,9 @@
 
 # if pgbouncer_auth_user is 'true'
 - block:
+    - name: Prepare PostgreSQL CLI password file
+      ansible.builtin.import_tasks: "{{ role_path }}/../pgpass/tasks/automation.yml"
+
     - name: "Check if 'user_search' function exists"
       become: true
       become_user: postgres
@@ -62,7 +72,7 @@
         {{ postgresql_bin_dir }}/psql -h 127.0.0.1 -p {{ postgresql_port }} -U {{ patroni_superuser_username }} -d {{ pgbouncer_auth_dbname }} -tAXc
         "select exists(select proname from pg_proc where proname='user_search')"
       environment:
-        PGPASSWORD: "{{ patroni_superuser_password }}"
+        PGPASSFILE: "{{ postgresql_cli_passfile }}"
       register: exists_func_user
       changed_when: false
 
@@ -94,7 +104,7 @@
         REVOKE ALL ON FUNCTION user_search(uname TEXT) FROM public;
         GRANT EXECUTE ON FUNCTION user_search(uname TEXT) TO {{ pgbouncer_auth_username }}"
       environment:
-        PGPASSWORD: "{{ patroni_superuser_password }}"
+        PGPASSFILE: "{{ postgresql_cli_passfile }}"
       when: exists_func_user.stdout == "f"
   when:
     - pgbouncer_auth_user | bool

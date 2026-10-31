@@ -98,6 +98,12 @@
         postgresql_cluster_maintenance: true
       when: patroni_superuser_password | default('') | length < 1
 
+    - name: Prepare PostgreSQL CLI password file
+      ansible.builtin.import_role:
+        name: vitabaks.autobase.pgpass
+        tasks_from: automation
+      when: inventory_hostname in (groups.get('primary', []) + groups.get('secondary', []))
+
 - name: vitabaks.autobase.stop_pgcluster | Stop Patroni on secondaries
   hosts: secondary
   gather_facts: false

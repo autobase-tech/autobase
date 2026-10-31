@@ -35,5 +35,5 @@
     psql_command: "psql -p {{ postgresql_port }} -U {{ patroni_superuser_username }}"
   environment:
     PATH: "{{ ansible_env.PATH }}:{{ pg_new_bindir }}:{{ pg_old_bindir }}"
-    PGPASSWORD: "{{ patroni_superuser_password }}"
+    PGPASSFILE: "{{ postgresql_cli_passfile }}"
   when: inventory_hostname in groups.get('primary', [])

@@ -68,7 +68,7 @@
     pgb_servers="$pg_servers"
     pgb_servers_count="$pg_servers_count"
     pgb_count="{{ (groups['primary'] | length + groups.get('secondary', []) | length) * (pgbouncer_processes | default(1) | int) }}"
-    pgb_pause_command="printf '%s\n' {{ pgb_unix_socket_dirs }} | xargs -I {} -P {{ pgbouncer_processes | default(1) | int }} -n 1 env PGPASSWORD='{{ patroni_superuser_password }}' timeout {{ pgbouncer_pool_pause_timeout }} psql -h {} -p {{ pgbouncer_listen_port }} -U {{ patroni_superuser_username }} -d pgbouncer -tAXc 'PAUSE'"
+    pgb_pause_command="export PGPASSFILE="{{ postgresql_cli_passfile | quote | quote }}"; printf '%s\n' {{ pgb_unix_socket_dirs }} | xargs -I {} -P {{ pgbouncer_processes | default(1) | int }} -n 1 timeout {{ pgbouncer_pool_pause_timeout }} psql -h {} -p {{ pgbouncer_listen_port }} -U {{ patroni_superuser_username }} -d pgbouncer -tAXc 'PAUSE'"
     pgb_resume_command='kill -SIGUSR2 $(pidof pgbouncer)'
 
     start_time=$(date +%s)
@@ -78,7 +78,7 @@
       pgb_paused_count=0
 
       # wait for the active queries to complete on pg_servers
-      IFS=$'\n' pg_slow_active_counts=($(echo -e "$pg_servers" | xargs -I {} -P "$pg_servers_count" -n 1 ssh -o StrictHostKeyChecking=no {} "PGPASSWORD='{{ patroni_superuser_password }}' psql -h 127.0.0.1 -p {{ postgresql_port }} -U {{ patroni_superuser_username }} -d postgres -tAXc \"$pg_slow_active_count_query\""))
+      IFS=$'\n' pg_slow_active_counts=($(echo -e "$pg_servers" | xargs -I {} -P "$pg_servers_count" -n 1 ssh -o StrictHostKeyChecking=no {} "PGPASSFILE="{{ postgresql_cli_passfile | quote | quote }}" psql -h 127.0.0.1 -p {{ postgresql_port }} -U {{ patroni_superuser_username }} -d postgres -tAXc \"$pg_slow_active_count_query\""))
 
       # sum up all the values in the array
       total_pg_slow_active_count=0
@@ -109,7 +109,7 @@
       # after 30 seconds of waiting, terminate active sessions on pg_servers and try pausing again
       if (( current_time - start_time >= {{ pgbouncer_pool_pause_terminate_after }} )); then
         echo "$(date): terminate active queries"
-        echo -e "$pg_servers" | xargs -I {} -P "$pg_servers_count" -n 1 ssh -o StrictHostKeyChecking=no {} "PGPASSWORD='{{ patroni_superuser_password }}' psql -h 127.0.0.1 -p {{ postgresql_port }} -U {{ patroni_superuser_username }} -d postgres -tAXc \"$pg_slow_active_terminate_query\""
+        echo -e "$pg_servers" | xargs -I {} -P "$pg_servers_count" -n 1 ssh -o StrictHostKeyChecking=no {} "PGPASSFILE="{{ postgresql_cli_passfile | quote | quote }}" psql -h 127.0.0.1 -p {{ postgresql_port }} -U {{ patroni_superuser_username }} -d postgres -tAXc \"$pg_slow_active_terminate_query\""
       fi
 
       # if it was not possible to pause for 60 seconds, exit with an error

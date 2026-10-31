@@ -1,4 +1,8 @@
 ---
+- name: Prepare PostgreSQL CLI password file
+  ansible.builtin.import_tasks: "{{ role_path }}/../pgpass/tasks/automation.yml"
+  tags: always
+
 - name: Make sure handlers are flushed immediately
   ansible.builtin.meta: flush_handlers
   when: not point_in_time_recovery | default(false) | bool
@@ -599,7 +603,7 @@
       ansible.builtin.command: >
         {{ postgresql_bin_dir }}/psql -h 127.0.0.1 -p {{ postgresql_port }} -U {{ patroni_superuser_username }} -d postgres -tAXc "CHECKPOINT"
       environment:
-        PGPASSWORD: "{{ patroni_superuser_password }}"
+        PGPASSFILE: "{{ postgresql_cli_passfile }}"
       register: checkpoint_result
       until: checkpoint_result.rc == 0
       retries: 300
@@ -754,7 +758,7 @@
             {{ postgresql_bin_dir }}/psql -h 127.0.0.1 -p {{ postgresql_port }} -U {{ patroni_superuser_username }} -d postgres
             -tAXc "select pg_is_in_recovery()"
           environment:
-            PGPASSWORD: "{{ patroni_superuser_password }}"
+            PGPASSFILE: "{{ postgresql_cli_passfile }}"
           register: pg_is_in_recovery
           until: pg_is_in_recovery.stdout == "f"
           retries: "{{ (cluster_restore_timeout | default(86400)) | int // 30 }}" # timeout 24 hours
@@ -862,7 +866,7 @@
         {{ postgresql_bin_dir }}/psql -h 127.0.0.1 -p {{ postgresql_port }} -U {{ patroni_superuser_username }} -d postgres -tAXc
         "select pg_is_in_recovery()"
       environment:
-        PGPASSWORD: "{{ patroni_superuser_password }}"
+        PGPASSFILE: "{{ postgresql_cli_passfile }}"
       register: pg_is_in_recovery
       until: pg_is_in_recovery.stdout == "f"
       retries: "{{ (cluster_restore_timeout | default(86400)) | int // 30 }}" # timeout 24 hours
@@ -961,7 +965,7 @@
         {{ postgresql_bin_dir }}/psql -h 127.0.0.1 -p {{ postgresql_port }} -U {{ patroni_superuser_username }} -d postgres -tAXc
         "select pg_is_in_recovery()"
       environment:
-        PGPASSWORD: "{{ patroni_superuser_password }}"
+        PGPASSFILE: "{{ postgresql_cli_passfile }}"
       register: pg_is_in_recovery
       until: pg_is_in_recovery.stdout == "f"
       retries: "{{ (cluster_restore_timeout | default(86400)) | int // 30 }}" # timeout 24 hours

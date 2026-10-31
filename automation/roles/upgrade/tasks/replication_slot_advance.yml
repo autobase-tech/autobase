@@ -12,7 +12,7 @@
     psql_command: "{{ pg_old_bindir }}/psql -h 127.0.0.1 -p {{ postgresql_port }} -U {{ patroni_superuser_username }}"
     slot_name: "{{ (pg_subscription_slot_name ~ '_' ~ dbname) | lower | regex_replace('[^a-z0-9_]+', '_') }}"
   environment:
-    PGPASSWORD: "{{ patroni_superuser_password }}"
+    PGPASSFILE: "{{ postgresql_cli_passfile }}"
   when: pg_publication_count | int == 1
 
 # Multiple slots (if pg_publication_count > 1)
@@ -30,5 +30,5 @@
     psql_command: "{{ pg_old_bindir }}/psql -h 127.0.0.1 -p {{ postgresql_port }} -U {{ patroni_superuser_username }}"
     slot_name: "{{ (pg_subscription_slot_name ~ '_' ~ dbname) | lower | regex_replace('[^a-z0-9_]+', '_') }}"
   environment:
-    PGPASSWORD: "{{ patroni_superuser_password }}"
+    PGPASSFILE: "{{ postgresql_cli_passfile }}"
   when: pg_publication_count | int > 1

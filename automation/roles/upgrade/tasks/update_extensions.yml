@@ -11,7 +11,7 @@
   vars:
     psql_command: "{{ pg_new_bindir }}/psql -h 127.0.0.1 -p {{ postgresql_port }} -U {{ patroni_superuser_username }}"
   environment:
-    PGPASSWORD: "{{ patroni_superuser_password }}"
+    PGPASSFILE: "{{ postgresql_cli_passfile }}"
   when: inventory_hostname in groups['primary']
 
 - name: "Get list of old PostgreSQL extensions (database: {{ pg_target_dbname | default('') }})"
@@ -29,7 +29,7 @@
   vars:
     psql_command: "{{ pg_new_bindir }}/psql -h 127.0.0.1 -p {{ postgresql_port }} -U {{ patroni_superuser_username }}"
   environment:
-    PGPASSWORD: "{{ patroni_superuser_password }}"
+    PGPASSFILE: "{{ postgresql_cli_passfile }}"
   when: inventory_hostname in groups['primary']
 
 # if there are no old extensions
@@ -53,7 +53,7 @@
   vars:
     psql_command: "{{ pg_new_bindir }}/psql -h 127.0.0.1 -p {{ postgresql_port }} -U {{ patroni_superuser_username }}"
   environment:
-    PGPASSWORD: "{{ patroni_superuser_password }}"
+    PGPASSFILE: "{{ postgresql_cli_passfile }}"
   when:
     - inventory_hostname in groups['primary']
     - pg_old_extensions is success
@@ -81,7 +81,7 @@
   vars:
     psql_command: "{{ pg_new_bindir }}/psql -h 127.0.0.1 -p {{ postgresql_port }} -U {{ patroni_superuser_username }}"
   environment:
-    PGPASSWORD: "{{ patroni_superuser_password }}"
+    PGPASSFILE: "{{ postgresql_cli_passfile }}"
   when:
     - inventory_hostname in groups['primary']
     - pg_old_extensions is success
@@ -100,7 +100,7 @@
   vars:
     psql_command: "{{ pg_new_bindir }}/psql -h 127.0.0.1 -p {{ postgresql_port }} -U {{ patroni_superuser_username }}"
   environment:
-    PGPASSWORD: "{{ patroni_superuser_password }}"
+    PGPASSFILE: "{{ postgresql_cli_passfile }}"
   when:
     - inventory_hostname in groups['primary']
     - pg_old_extensions is success
