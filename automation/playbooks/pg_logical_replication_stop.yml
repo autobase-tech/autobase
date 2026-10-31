@@ -81,8 +81,6 @@
       ansible.builtin.import_role:
         name: vitabaks.autobase.pgpass
         tasks_from: automation
-      vars:
-        postgresql_cli_passfile_hosts: "{{ groups['source_cluster'] + groups['target_cluster'] }}"
 
     - name: "[Prepare] Get a list of databases"
       ansible.builtin.include_role:

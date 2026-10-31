@@ -54,20 +54,3 @@
     _pgpass_signature: "{{ [_pgpass_path, _pgpass_username, _pgpass_password] | to_json | hash('sha256') }}"
   when:
     - (hostvars[_pgpass_host]._postgresql_cli_passfile_signature | default('')) != _pgpass_signature
-
-# SQL and PgBouncer SSH commands may still reach hosts excluded by --limit.
-# Clear the list in the nested include so it prepares only that destination.
-- name: Prepare PostgreSQL CLI password files on hosts outside the play limit
-  ansible.builtin.include_tasks:
-    file: "{{ role_path }}/../pgpass/tasks/automation.yml"
-    apply:
-      delegate_to: "{{ pgpass_host }}"
-      tags: always
-      vars:
-        postgresql_cli_passfile_hosts: []
-  vars:
-    postgresql_cli_passfile_host: "{{ pgpass_host }}"
-  loop: "{{ postgresql_cli_passfile_hosts | default([]) | difference(ansible_play_hosts_all) }}"
-  loop_control:
-    loop_var: pgpass_host
-  run_once: true # noqa run-once
