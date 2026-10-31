@@ -27,9 +27,7 @@
     _pgpass_username: "{{ pg_install_user.stdout | default('') }}"
     _pgpass_password: "{{ pg_install_user_password | default(patroni_superuser_password) }}"
     _pgpass_host: "{{ postgresql_cli_passfile_host | default(inventory_hostname) }}"
-    _pgpass_path: >-
-      {{ postgresql_cli_passfile if _pgpass_host == inventory_hostname else
-         hostvars[_pgpass_host].postgresql_cli_passfile | default(postgresql_cli_passfile) }}
+    _pgpass_path: "{{ hostvars[_pgpass_host]._postgresql_cli_passfile_path }}"
     _pgpass_signature: "{{ [_pgpass_path ~ '.upgrade', _pgpass_username, _pgpass_password] | to_json | hash('sha256') }}"
   when:
     - pg_install_user.stdout | default('') | length > 0

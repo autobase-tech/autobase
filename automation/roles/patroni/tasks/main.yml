@@ -603,7 +603,7 @@
       ansible.builtin.command: >
         {{ postgresql_bin_dir }}/psql -h 127.0.0.1 -p {{ postgresql_port }} -U {{ patroni_superuser_username }} -d postgres -tAXc "CHECKPOINT"
       environment:
-        PGPASSFILE: "{{ postgresql_cli_passfile }}"
+        PGPASSFILE: "{{ _postgresql_cli_passfile_path }}"
       register: checkpoint_result
       until: checkpoint_result.rc == 0
       retries: 300
@@ -758,7 +758,7 @@
             {{ postgresql_bin_dir }}/psql -h 127.0.0.1 -p {{ postgresql_port }} -U {{ patroni_superuser_username }} -d postgres
             -tAXc "select pg_is_in_recovery()"
           environment:
-            PGPASSFILE: "{{ postgresql_cli_passfile }}"
+            PGPASSFILE: "{{ _postgresql_cli_passfile_path }}"
           register: pg_is_in_recovery
           until: pg_is_in_recovery.stdout == "f"
           retries: "{{ (cluster_restore_timeout | default(86400)) | int // 30 }}" # timeout 24 hours
@@ -866,7 +866,7 @@
         {{ postgresql_bin_dir }}/psql -h 127.0.0.1 -p {{ postgresql_port }} -U {{ patroni_superuser_username }} -d postgres -tAXc
         "select pg_is_in_recovery()"
       environment:
-        PGPASSFILE: "{{ postgresql_cli_passfile }}"
+        PGPASSFILE: "{{ _postgresql_cli_passfile_path }}"
       register: pg_is_in_recovery
       until: pg_is_in_recovery.stdout == "f"
       retries: "{{ (cluster_restore_timeout | default(86400)) | int // 30 }}" # timeout 24 hours
@@ -963,7 +963,7 @@
         {{ postgresql_bin_dir }}/psql -h 127.0.0.1 -p {{ postgresql_port }} -U {{ patroni_superuser_username }} -d postgres -tAXc
         "select pg_is_in_recovery()"
       environment:
-        PGPASSFILE: "{{ postgresql_cli_passfile }}"
+        PGPASSFILE: "{{ _postgresql_cli_passfile_path }}"
       register: pg_is_in_recovery
       until: pg_is_in_recovery.stdout == "f"
       retries: "{{ (cluster_restore_timeout | default(86400)) | int // 30 }}" # timeout 24 hours

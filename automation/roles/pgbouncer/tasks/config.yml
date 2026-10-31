@@ -72,7 +72,7 @@
         {{ postgresql_bin_dir }}/psql -h 127.0.0.1 -p {{ postgresql_port }} -U {{ patroni_superuser_username }} -d {{ pgbouncer_auth_dbname }} -tAXc
         "select exists(select proname from pg_proc where proname='user_search')"
       environment:
-        PGPASSFILE: "{{ postgresql_cli_passfile }}"
+        PGPASSFILE: "{{ _postgresql_cli_passfile_path }}"
       register: exists_func_user
       changed_when: false
 
@@ -104,7 +104,7 @@
         REVOKE ALL ON FUNCTION user_search(uname TEXT) FROM public;
         GRANT EXECUTE ON FUNCTION user_search(uname TEXT) TO {{ pgbouncer_auth_username }}"
       environment:
-        PGPASSFILE: "{{ postgresql_cli_passfile }}"
+        PGPASSFILE: "{{ _postgresql_cli_passfile_path }}"
       when: exists_func_user.stdout == "f"
   when:
     - pgbouncer_auth_user | bool

@@ -11,7 +11,7 @@
   vars:
     psql_command: "{{ pg_new_bindir }}/psql -h 127.0.0.1 -p {{ postgresql_port }} -U {{ patroni_superuser_username }}"
   environment:
-    PGPASSFILE: "{{ postgresql_cli_passfile }}"
+    PGPASSFILE: "{{ _postgresql_cli_passfile_path }}"
   when:
     - inventory_hostname in groups['primary']
 

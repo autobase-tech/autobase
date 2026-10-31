@@ -45,7 +45,7 @@
   vars:
     psql_command: "{{ pg_old_bindir }}/psql -h 127.0.0.1 -p {{ postgresql_port }} -U {{ patroni_superuser_username }}"
   environment:
-    PGPASSFILE: "{{ postgresql_cli_passfile }}"
+    PGPASSFILE: "{{ _postgresql_cli_passfile_path }}"
   when: inventory_hostname in groups['primary']
 
 - name: Prepare PostgreSQL upgrade password file
@@ -92,7 +92,7 @@
   vars:
     psql_command: "{{ pg_old_bindir }}/psql -h 127.0.0.1 -p {{ postgresql_port }} -U {{ patroni_superuser_username }}"
   environment:
-    PGPASSFILE: "{{ postgresql_cli_passfile }}"
+    PGPASSFILE: "{{ _postgresql_cli_passfile_path }}"
   when: inventory_hostname in groups['primary']
 
 - name: Set locale options for initializing the new PostgreSQL cluster

@@ -267,7 +267,7 @@
         -d postgres
         -tAXc "select current_setting('server_version')"
       environment:
-        PGPASSFILE: "{{ postgresql_cli_passfile }}"
+        PGPASSFILE: "{{ _postgresql_cli_passfile_path }}"
       register: postgres_version
       changed_when: false
       check_mode: false

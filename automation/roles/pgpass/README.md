@@ -26,10 +26,24 @@ This role depends on:
 
 ## PostgreSQL CLI authentication
 
-Automation tasks use `postgresql_cli_passfile` (default:
-`{{ postgresql_home_dir }}/.pgpass_autobase`) through `PGPASSFILE` instead of
-`PGPASSWORD`. This keeps authentication passwords out of command lines and sudo
-logs while supporting configurations without local `trust` or an existing `.pgpass`.
+Set `postgresql_cli_passfile` to configure the automation password file path
+(default: `{{ postgresql_home_dir }}/.pgpass_autobase`). Preparing the file with
+`tasks_from: automation` saves its path in the host fact
+`_postgresql_cli_passfile_path`, which remains available across plays.
+
+After preparation, CLI tasks must use the saved path:
+
+```yaml
+environment:
+  PGPASSFILE: "{{ _postgresql_cli_passfile_path }}"
+```
+
+For delegated tasks, use `hostvars[target_host]._postgresql_cli_passfile_path`.
+Install-user commands use `{{ _postgresql_cli_passfile_path }}.upgrade` after
+preparing it with `tasks_from: upgrade`.
+
+Using `PGPASSFILE` instead of `PGPASSWORD` keeps authentication passwords out of
+command lines and sudo logs without requiring local `trust` authentication.
 
 The file is owned by `postgres` with permissions `0600` and managed separately
 from the user's `~/.pgpass` and Patroni's `.pgpass_patroni`.

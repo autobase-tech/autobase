@@ -7,7 +7,7 @@
   vars:
     psql_command: "{{ pg_old_bindir }}/psql -h 127.0.0.1 -p {{ postgresql_port }} -U {{ patroni_superuser_username }} -d postgres"
   environment:
-    PGPASSFILE: "{{ postgresql_cli_passfile }}"
+    PGPASSFILE: "{{ _postgresql_cli_passfile_path }}"
   when: inventory_hostname in groups['primary']
 
 - name: Get the current cron.database_name settings
@@ -18,7 +18,7 @@
   vars:
     psql_command: "{{ pg_old_bindir }}/psql -h 127.0.0.1 -p {{ postgresql_port }} -U {{ patroni_superuser_username }} -d postgres"
   environment:
-    PGPASSFILE: "{{ postgresql_cli_passfile }}"
+    PGPASSFILE: "{{ _postgresql_cli_passfile_path }}"
   when:
     - inventory_hostname in groups['primary']
     - "'pg_cron' in pg_shared_preload_libraries.stdout"
@@ -75,7 +75,7 @@
   args:
     executable: /bin/bash
   environment:
-    PGPASSFILE: "{{ postgresql_cli_passfile }}.upgrade"
+    PGPASSFILE: "{{ _postgresql_cli_passfile_path }}.upgrade"
   async: "{{ schema_compatibility_check_timeout }}" # run the command asynchronously
   poll: 0
   register: pg_dumpall_result

@@ -44,7 +44,7 @@
   vars:
     psql_command: "{{ pg_new_bindir }}/psql -h 127.0.0.1 -p {{ postgresql_port }} -U {{ patroni_superuser_username }} -d postgres"
   environment:
-    PGPASSFILE: "{{ postgresql_cli_passfile }}"
+    PGPASSFILE: "{{ _postgresql_cli_passfile_path }}"
 
 # RedHat based
 - name: Delete the old PostgreSQL data directory
@@ -262,7 +262,7 @@
   vars:
     psql_command: "{{ pg_new_bindir }}/psql -h 127.0.0.1 -p {{ postgresql_port }} -U {{ patroni_superuser_username }} -d postgres"
   environment:
-    PGPASSFILE: "{{ postgresql_cli_passfile }}"
+    PGPASSFILE: "{{ _postgresql_cli_passfile_path }}"
 
 - name: List the Patroni cluster members
   run_once: true
@@ -282,5 +282,5 @@
   become: true
   become_user: root
   ansible.builtin.file:
-    path: "{{ postgresql_cli_passfile }}.upgrade"
+    path: "{{ _postgresql_cli_passfile_path }}.upgrade"
     state: absent
