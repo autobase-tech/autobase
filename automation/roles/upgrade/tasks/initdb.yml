@@ -45,7 +45,11 @@
   vars:
     psql_command: "{{ pg_old_bindir }}/psql -h 127.0.0.1 -p {{ postgresql_port }} -U {{ patroni_superuser_username }}"
   environment:
-    PGPASSWORD: "{{ patroni_superuser_password }}"
+    PGPASSFILE: "{{ postgresql_cli_passfile }}"
+  when: inventory_hostname in groups['primary']
+
+- name: Prepare PostgreSQL upgrade password file
+  ansible.builtin.import_tasks: "{{ role_path }}/../pgpass/tasks/upgrade.yml"
   when: inventory_hostname in groups['primary']
 
 - name: Get the current encoding, locale, and data_checksums settings
@@ -88,7 +92,7 @@
   vars:
     psql_command: "{{ pg_old_bindir }}/psql -h 127.0.0.1 -p {{ postgresql_port }} -U {{ patroni_superuser_username }}"
   environment:
-    PGPASSWORD: "{{ patroni_superuser_password }}"
+    PGPASSFILE: "{{ postgresql_cli_passfile }}"
   when: inventory_hostname in groups['primary']
 
 - name: Set locale options for initializing the new PostgreSQL cluster

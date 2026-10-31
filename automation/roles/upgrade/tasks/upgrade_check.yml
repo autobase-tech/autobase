@@ -7,7 +7,7 @@
   vars:
     psql_command: "{{ pg_old_bindir }}/psql -h 127.0.0.1 -p {{ postgresql_port }} -U {{ patroni_superuser_username }} -d postgres"
   environment:
-    PGPASSWORD: "{{ patroni_superuser_password }}"
+    PGPASSFILE: "{{ postgresql_cli_passfile }}"
   when: inventory_hostname in groups['primary']
 
 - name: "Set variable: pg_shared_preload_libraries_value"
@@ -38,7 +38,7 @@
   failed_when: false
   register: pg_upgrade_check_result
   environment:
-    PGPASSWORD: "{{ pg_install_user_password | default(patroni_superuser_password) }}"
+    PGPASSFILE: "{{ postgresql_cli_passfile }}.upgrade"
   when: inventory_hostname in groups['primary']
 
 - name: Print the result of the pg_upgrade check

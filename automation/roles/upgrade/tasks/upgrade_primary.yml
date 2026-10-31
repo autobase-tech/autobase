@@ -18,7 +18,7 @@
   args:
     chdir: "/tmp"
   environment:
-    PGPASSWORD: "{{ pg_install_user_password | default(patroni_superuser_password) }}"
+    PGPASSFILE: "{{ postgresql_cli_passfile }}.upgrade"
   vars:
     shared_preload_libraries: "-c shared_preload_libraries='{{ pg_shared_preload_libraries_value }}'"
     timescaledb_restoring: '{{ "-c timescaledb.restoring=''on''" if ''timescaledb'' in pg_shared_preload_libraries_value else '''' }}'

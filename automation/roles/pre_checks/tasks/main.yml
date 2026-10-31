@@ -69,6 +69,19 @@
   when: inventory_hostname in groups['postgres_cluster']
 
 # for standby cluster configuration (if 'patroni_standby_cluster_auto_hba' is 'true')
+- name: Prepare PostgreSQL CLI password file on the source cluster
+  ansible.builtin.include_tasks:
+    file: "{{ role_path }}/../pgpass/tasks/automation.yml"
+    apply:
+      delegate_to: "{{ item }}"
+  vars:
+    postgresql_cli_passfile_host: "{{ item }}"
+  loop: "{{ groups.get('source_cluster', []) }}"
+  when:
+    - patroni_standby_cluster_auto_hba | default(true) | bool
+    - (groups.get('source_cluster', []) | length) > 0
+    - inventory_hostname == groups['postgres_cluster'][0]
+
 - name: Update PostgreSQL configuration on source cluster to apply pg_hba.conf changes
   ansible.builtin.command: >-
     {{ pg_bin_dir }}/psql -h 127.0.0.1 -p {{ pg_port }} -U {{ patroni_superuser_username }} -d postgres -tAXc
@@ -79,7 +92,7 @@
     pg_bin_dir: "{{ source_cluster_postgresql_bin_dir | default(postgresql_bin_dir) }}"
     pg_port: "{{ source_cluster_postgresql_port | default(postgresql_port) }}"
   environment:
-    PGPASSWORD: "{{ patroni_superuser_password }}"
+    PGPASSFILE: "{{ hostvars[item]._postgresql_cli_passfile_path }}"
   when:
     - patroni_standby_cluster_auto_hba | default(true) | bool
     - (groups.get('source_cluster', []) | length) > 0

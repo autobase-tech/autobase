@@ -234,7 +234,7 @@
       vars:
         psql_command: "{{ postgresql_bin_dir }}/psql -h 127.0.0.1 -p {{ postgresql_port }} -U {{ patroni_superuser_username }} -d postgres"
       environment:
-        PGPASSWORD: "{{ patroni_superuser_password }}"
+        PGPASSFILE: "{{ postgresql_cli_passfile }}"
       register: postgresql_log_file_result
       changed_when: false
       failed_when: false

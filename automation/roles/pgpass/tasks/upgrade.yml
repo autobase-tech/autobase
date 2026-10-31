@@ -1,0 +1,36 @@
+---
+# yamllint disable rule:line-length
+- name: Prepare PostgreSQL upgrade password file when credentials change
+  check_mode: false
+  block:
+    - name: Configure PostgreSQL upgrade install-user password file
+      become: true
+      become_user: root
+      ansible.builtin.copy:
+        content: |
+          *:*:*:{{ _pgpass_username | regex_replace('([:\\])', '\\\1') }}:{{ _pgpass_password | regex_replace('([:\\])', '\\\1') }}
+        dest: "{{ _pgpass_path }}.upgrade"
+        owner: postgres
+        group: postgres
+        mode: "0600"
+      register: _postgresql_cli_upgrade_passfile_write
+      no_log: true
+      diff: false
+
+    - name: Remember prepared PostgreSQL upgrade password file
+      ansible.builtin.set_fact:
+        _postgresql_cli_upgrade_passfile_signature: "{{ _pgpass_signature }}"
+      delegate_facts: true
+      no_log: true
+      when: _postgresql_cli_upgrade_passfile_write is succeeded
+  vars:
+    _pgpass_username: "{{ pg_install_user.stdout | default('') }}"
+    _pgpass_password: "{{ pg_install_user_password | default(patroni_superuser_password) }}"
+    _pgpass_host: "{{ postgresql_cli_passfile_host | default(inventory_hostname) }}"
+    _pgpass_path: >-
+      {{ postgresql_cli_passfile if _pgpass_host == inventory_hostname else
+         hostvars[_pgpass_host].postgresql_cli_passfile | default(postgresql_cli_passfile) }}
+    _pgpass_signature: "{{ [_pgpass_path ~ '.upgrade', _pgpass_username, _pgpass_password] | to_json | hash('sha256') }}"
+  when:
+    - pg_install_user.stdout | default('') | length > 0
+    - (hostvars[_pgpass_host]._postgresql_cli_upgrade_passfile_signature | default('')) != _pgpass_signature

@@ -1,29 +1,32 @@
 ---
-
 # for blue-green upgrade method
 - block:
     - name: Reset wal_keep_segments to original state on the source primary
       ansible.builtin.command: >
         {{ psql_command }} -tAXc "alter system reset wal_keep_segments"
       delegate_to: "{{ delegate_host }}"
+      environment:
+        PGPASSFILE: "{{ hostvars[delegate_host]._postgresql_cli_passfile_path }}"
       when: pg_old_version | int < 13
 
     - name: Reset wal_keep_size to original state on the source primary
       ansible.builtin.command: >
         {{ psql_command }} -tAXc "alter system reset wal_keep_size"
       delegate_to: "{{ delegate_host }}"
+      environment:
+        PGPASSFILE: "{{ hostvars[delegate_host]._postgresql_cli_passfile_path }}"
       when: pg_old_version | int >= 13
 
     - name: Reload PostgreSQL configuration on the source primary
       ansible.builtin.command: >
         {{ psql_command }} -tAXc "select pg_reload_conf()"
       delegate_to: "{{ delegate_host }}"
+      environment:
+        PGPASSFILE: "{{ hostvars[delegate_host]._postgresql_cli_passfile_path }}"
   vars:
     source_primary_host: "{{ (groups.get('source_primary', []) | first) | default('') }}"
     delegate_host: "{{ (source_primary_host | length > 0) | ternary(source_primary_host, inventory_hostname) }}" # to avoid error with empty host
     psql_command: "{{ pg_old_bindir }}/psql -h 127.0.0.1 -p {{ postgresql_port }} -U {{ patroni_superuser_username }} -d postgres"
-  environment:
-    PGPASSWORD: "{{ patroni_superuser_password }}"
   when:
     - (pg_wal_keep_gigabytes | default('100') | string) != 'none'
     - (groups.get('target_cluster', []) | length) > 0
@@ -41,17 +44,7 @@
   vars:
     psql_command: "{{ pg_new_bindir }}/psql -h 127.0.0.1 -p {{ postgresql_port }} -U {{ patroni_superuser_username }} -d postgres"
   environment:
-    PGPASSWORD: "{{ patroni_superuser_password }}"
-
-- name: Delete the temporary .pgpass entry
-  ansible.builtin.lineinfile:
-    path: "{{ postgresql_home_dir }}/.pgpass"
-    search_string: "localhost:*:*:{{ pg_install_user.stdout }}"
-    state: absent
-  no_log: true
-  when:
-    - inventory_hostname in groups['primary']
-    - pg_install_user_password is defined
+    PGPASSFILE: "{{ postgresql_cli_passfile }}"
 
 # RedHat based
 - name: Delete the old PostgreSQL data directory
@@ -269,7 +262,7 @@
   vars:
     psql_command: "{{ pg_new_bindir }}/psql -h 127.0.0.1 -p {{ postgresql_port }} -U {{ patroni_superuser_username }} -d postgres"
   environment:
-    PGPASSWORD: "{{ patroni_superuser_password }}"
+    PGPASSFILE: "{{ postgresql_cli_passfile }}"
 
 - name: List the Patroni cluster members
   run_once: true
@@ -284,3 +277,10 @@
       - "PostgreSQL upgrade completed."
       - "Current version: {{ postgres_version.stdout }}"
   when: postgres_version.stdout is defined
+
+- name: Remove PostgreSQL upgrade install-user password file
+  become: true
+  become_user: root
+  ansible.builtin.file:
+    path: "{{ postgresql_cli_passfile }}.upgrade"
+    state: absent

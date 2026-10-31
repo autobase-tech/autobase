@@ -58,7 +58,7 @@
     psql_command: "psql -h 127.0.0.1 -p {{ postgresql_port }} -U {{ patroni_superuser_username }}"
   environment:
     PATH: "{{ ansible_env.PATH }}:{{ pg_new_bindir }}:{{ pg_old_bindir }}"
-    PGPASSWORD: "{{ patroni_superuser_password }}"
+    PGPASSFILE: "{{ postgresql_cli_passfile }}"
   when:
     - patroni_cluster_leader | default(false) | bool
     - pg_publication_count | int == 1
@@ -74,6 +74,7 @@
         user={{ patroni_superuser_username }} password={{ patroni_superuser_password }} dbname={{ dbname }}'
         publication {{ publication_name }}_{{ '%02d' % (idx + 1) }}
         with (copy_data = false, create_slot = false, slot_name = '{{ slot_name }}_{{ '%02d' % (idx + 1) }}')"
+      no_log: true
       loop: "{{ range(0, pg_publication_count | int) | list }}"
       loop_control:
         index_var: idx
@@ -131,7 +132,7 @@
     psql_command: "psql -h 127.0.0.1 -p {{ postgresql_port }} -U {{ patroni_superuser_username }}"
   environment:
     PATH: "{{ ansible_env.PATH }}:{{ pg_new_bindir }}:{{ pg_old_bindir }}"
-    PGPASSWORD: "{{ patroni_superuser_password }}"
+    PGPASSFILE: "{{ postgresql_cli_passfile }}"
   when:
     - patroni_cluster_leader | default(false) | bool
     - pg_publication_count | int > 1

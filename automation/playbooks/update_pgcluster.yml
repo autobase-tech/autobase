@@ -90,6 +90,12 @@
       when: patroni_superuser_password | default('') | length < 1
       tags: always
 
+    - name: Prepare PostgreSQL CLI password file
+      ansible.builtin.import_role:
+        name: vitabaks.autobase.pgpass
+        tasks_from: automation
+      tags: always
+
 - name: "(1/4) PRE-UPDATE: Perform pre-update tasks"
   hosts: "primary:secondary"
   gather_facts: true
@@ -261,7 +267,7 @@
         -d postgres
         -tAXc "select current_setting('server_version')"
       environment:
-        PGPASSWORD: "{{ patroni_superuser_password | default('') }}"
+        PGPASSFILE: "{{ postgresql_cli_passfile }}"
       register: postgres_version
       changed_when: false
       check_mode: false

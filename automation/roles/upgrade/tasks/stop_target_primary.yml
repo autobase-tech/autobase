@@ -1,11 +1,10 @@
 ---
-
 - name: "Pause WAL replay (recovery) on the target cluster replicas"
   ansible.builtin.command: "{{ psql_command }} -tAXc 'select pg_wal_replay_pause()'"
   vars:
     psql_command: "{{ pg_old_bindir }}/psql -h 127.0.0.1 -p {{ postgresql_port }} -U {{ patroni_superuser_username }} -d postgres"
   environment:
-    PGPASSWORD: "{{ patroni_superuser_password }}"
+    PGPASSFILE: "{{ postgresql_cli_passfile }}"
   when: inventory_hostname in groups.get('secondary', [])
 
 # Disable auto failover – we need this to be able to stop PostgreSQL
@@ -27,7 +26,7 @@
   vars:
     psql_command: "{{ pg_old_bindir }}/psql -h 127.0.0.1 -p {{ postgresql_port }} -U {{ patroni_superuser_username }} -d postgres"
   environment:
-    PGPASSWORD: "{{ patroni_superuser_password }}"
+    PGPASSFILE: "{{ postgresql_cli_passfile }}"
   when: inventory_hostname in groups['primary']
 
 - name: "Wait for the CHECKPOINT to complete"

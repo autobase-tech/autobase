@@ -42,7 +42,7 @@
     and backend_type = 'client backend'
     and state = 'active'"
   environment:
-    PGPASSWORD: "{{ patroni_superuser_password }}"
+    PGPASSFILE: "{{ postgresql_cli_passfile }}"
   register: pg_active_count
   until: pg_active_count.stdout|int == 0
   retries: 300

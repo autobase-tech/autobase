@@ -16,7 +16,7 @@
       ansible.builtin.command: >
         {{ postgresql_bin_dir }}/psql -h 127.0.0.1 -p {{ postgresql_port }} -U {{ patroni_superuser_username }} -d postgres -tAXc "CHECKPOINT"
       environment:
-        PGPASSWORD: "{{ patroni_superuser_password }}"
+        PGPASSFILE: "{{ postgresql_cli_passfile }}"
       when: pg_isready_result.rc == 0
 
     - name: "Stop Patroni service on the replica ({{ ansible_hostname | default('') }})"
@@ -35,7 +35,7 @@
       ansible.builtin.command: >
         {{ postgresql_bin_dir }}/psql -h 127.0.0.1 -p {{ postgresql_port }} -U {{ patroni_superuser_username }} -d postgres -tAXc "CHECKPOINT"
       environment:
-        PGPASSWORD: "{{ patroni_superuser_password }}"
+        PGPASSFILE: "{{ postgresql_cli_passfile }}"
       when: pg_isready_result.rc == 0
 
     - name: "Stop Patroni service on the leader ({{ ansible_hostname | default('') }})"

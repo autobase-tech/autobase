@@ -506,6 +506,10 @@ postgresql_pgpass:
   - "*:{{ pgbouncer_listen_port }}:*:{{ patroni_superuser_username }}:{{ patroni_superuser_password }}"
 #  - hostname:port:database:username:password
 
+# Dedicated password file for Ansible CLI tasks. Keep separate from the
+# operator's ~/.pgpass and Patroni's .pgpass_patroni; never export passwords.
+postgresql_cli_passfile: "{{ postgresql_home_dir }}/.pgpass_autobase"
+
 # Index maintenance
 # Automatic reindexing of PostgreSQL indexes (bloat cleanup) using pg_auto_reindexer
 postgresql_index_maintenance:

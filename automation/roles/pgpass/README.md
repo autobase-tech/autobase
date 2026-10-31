@@ -23,3 +23,15 @@ postgresql_pgpass:
 
 This role depends on:
 - `vitabaks.autobase.common` - Provides common variables and configurations
+
+## PostgreSQL CLI authentication
+
+Automation tasks use `postgresql_cli_passfile` (default:
+`{{ postgresql_home_dir }}/.pgpass_autobase`) through `PGPASSFILE` instead of
+`PGPASSWORD`. This keeps authentication passwords out of command lines and sudo
+logs while supporting configurations without local `trust` or an existing `.pgpass`.
+
+The file is owned by `postgres` with permissions `0600` and managed separately
+from the user's `~/.pgpass` and Patroni's `.pgpass_patroni`.
+
+PgBouncer pause requires the same `postgresql_cli_passfile` path on all database hosts.

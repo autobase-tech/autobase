@@ -17,7 +17,7 @@
     {{ postgresql_bin_dir }}/psql -h 127.0.0.1 -p {{ postgresql_port }} -U {{ patroni_superuser_username }} -d postgres -tAXc
     "select datname from pg_catalog.pg_database where datname <> 'template0'"
   environment:
-    PGPASSWORD: "{{ patroni_superuser_password }}"
+    PGPASSFILE: "{{ postgresql_cli_passfile }}"
   register: databases_list
   changed_when: false
   check_mode: false
