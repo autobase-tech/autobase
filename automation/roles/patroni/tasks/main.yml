@@ -948,7 +948,9 @@
       ansible.builtin.command: "{{ postgresql_bin_dir }}/pg_ctl reload -D {{ postgresql_data_dir }}"
       register: pg_ctl_reload_result
       changed_when: pg_ctl_reload_result.rc == 0
-      failed_when: false # exec 'reload' on all running postgres (to re-run with --tag pg_hba).
+      # PostgreSQL is already running on master; replicas may not be started yet.
+      # Keep reload best-effort on replicas (also when re-running with --tags pg_hba).
+      failed_when: pg_ctl_reload_result.rc != 0 and inventory_hostname == groups['master'][0]
       when: generate_pg_hba is changed
   when: cluster_scaling is not defined or not cluster_scaling | bool
   tags: patroni, pg_hba, pg_hba_generate
