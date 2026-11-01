@@ -897,13 +897,17 @@ pgbackrest_patroni_cluster_bootstrap_command: >-
            and '--target-timeline=' not in pgbackrest_patroni_cluster_restore_command else '') }}
 pgbackrest_patroni_replica_restore_command: >-
   {{ (pgbackrest_patroni_cluster_restore_command
-      | regex_replace('(^|\s)--target-action=\S+', ''))
+      | regex_replace('(^|\s)--target-action=\S+', '')
+      | regex_replace('(?<!\S)--type(?:=|\s+)default(?=\s|$)', '--type=standby'))
+     ~ (' --type=standby'
+        if pgbackrest_patroni_cluster_restore_command is not search('(^|\s)--type(?:=|\s)') else '')
      ~ (' --target-action=pause'
         if pgbackrest_patroni_cluster_restore_command
            is search('(^|\s)--type=(immediate|lsn|name|time|xid)(\s|$)') else '')
      ~ (' --target-timeline=' ~ pgbackrest_restore_target_timeline
-        if pgbackrest_patroni_cluster_restore_command
-           is search('(^|\s)--type=(default|lsn|name|standby|time|xid)(\s|$)')
+        if (pgbackrest_patroni_cluster_restore_command
+            is search('(^|\s)--type(?:=|\s+)(default|lsn|name|standby|time|xid)(\s|$)')
+            or pgbackrest_patroni_cluster_restore_command is not search('(^|\s)--type(?:=|\s)'))
            and '--target-timeline=' not in pgbackrest_patroni_cluster_restore_command else '') }}
 pgbackrest_patroni_cluster_bootstrap_recovery_conf:
   - restore_command: "{{ pgbackrest_restore_command }}"
@@ -966,7 +970,7 @@ pgbackrest_cron_jobs:
 # 2) And also the patroni cluster "{{ patroni_cluster_name }}" will be removed from the DCS (if exist) before recovery.
 cluster_restore_timeout: 86400 # backup and WAL restore timeout in seconds (24 hours)
 
-disable_archive_command: true # or 'false' to not disable archive_command after restore
+disable_archive_command: true # or 'false' to preserve archive_command during and after restore
 keep_patroni_dynamic_json: true # or 'false' to remove patroni.dynamic.json after restore (if exists)
 
 ############################################################

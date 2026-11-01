@@ -729,14 +729,17 @@
             {% if postgresql_version | int >= 12 %}
             -o '-c restore_command="pgbackrest --stanza={{ pgbackrest_stanza }} archive-get %f %p"'
             {% endif %}
+            {% if disable_archive_command | bool %}
             -o '-c archive_command=/bin/true'
+            {% endif %}
             -l /tmp/pg_recovery_{{ ansible_date_time.date }}.log
           async: "{{ pg_ctl_timeout | default(3600) }}" # run the command asynchronously
           poll: 0
           register: pg_ctl_start_result
           when: inventory_hostname == groups['master'][0] or
             ('replica' in groups and groups['replica'] | length > 0 and inventory_hostname in groups['replica']
-            and 'pgbackrest' in patroni_create_replica_methods)
+            and 'pgbackrest' in patroni_create_replica_methods
+            and pgbackrest_patroni_replica_restore_command is search('(^|\s)--type(?:=|\s+)standby(\s|$)'))
 
         - name: Wait for the PostgreSQL start command to complete
           ansible.builtin.async_status:
@@ -747,7 +750,8 @@
           delay: 10
           when: inventory_hostname == groups['master'][0] or
             ('replica' in groups and groups['replica'] | length > 0 and inventory_hostname in groups['replica']
-            and 'pgbackrest' in patroni_create_replica_methods)
+            and 'pgbackrest' in patroni_create_replica_methods
+            and pgbackrest_patroni_replica_restore_command is search('(^|\s)--type(?:=|\s+)standby(\s|$)'))
 
         - name: Wait for PostgreSQL recovery to complete (WAL apply)
           ansible.builtin.command: >-
