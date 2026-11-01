@@ -12,6 +12,8 @@ Auxiliary role that prints PostgreSQL cluster information and connection details
   - Consul-based DNS names
   - Cloud load balancers (AWS NLB, GCP, Azure, DigitalOcean, Hetzner)
 
+For clusters without a VIP or load balancer, connection details include multi-host libpq URIs with [`target_session_attrs=read-write` and `read-only`](https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNECT-TARGET-SESSION-ATTRS), using the PgBouncer port when installed or the PostgreSQL port otherwise. PgBouncer connects to the local PostgreSQL instance on each node, so libpq can select a suitable node through it.
+
 ## Dependencies
 
 This role depends on:

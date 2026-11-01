@@ -145,38 +145,35 @@
       register: connection_info_local_haproxy
       when: with_haproxy_load_balancing | bool
 
-    # if 'with_haproxy_load_balancing' is 'false' and 'pgbouncer_install' is 'true'
+    # if 'with_haproxy_load_balancing' is 'false'
     - name: Connection info
       run_once: true
       ansible.builtin.debug:
         msg:
           public_address: "{{ public_postgres_ip_addresses if database_public_access | default(false) | bool else omit }}"
           address: "{{ postgres_ip_addresses }}"
-          port: "{{ pgbouncer_listen_port }}"
-          superuser: "{{ superuser_username }}"
-          password: "{{ superuser_password }}"
-      register: connection_info_local_pgbouncer
-      when: not with_haproxy_load_balancing | bool and pgbouncer_install | bool
-
-    # if 'with_haproxy_load_balancing' is 'false' and 'pgbouncer_install' is 'false'
-    - name: Connection info
-      run_once: true
-      ansible.builtin.debug:
-        msg:
-          public_address: "{{ public_postgres_ip_addresses if database_public_access | default(false) | bool else omit }}"
-          address: "{{ postgres_ip_addresses }}"
-          port: "{{ postgresql_port }}"
+          port: "{{ database_port }}"
           superuser: "{{ superuser_username }}"
           password: "{{ superuser_password }}"
           connection_string:
             read_write: "postgresql://{{ superuser_username }}@{{ libpq_postgres_host_port }}/postgres?target_session_attrs=read-write"
             read_only: "postgresql://{{ superuser_username }}@{{ libpq_postgres_host_port }}/postgres?target_session_attrs=read-only{{ libpq_load_balance }}"
       register: connection_info_local_postgres
-      when: not with_haproxy_load_balancing | bool and not pgbouncer_install | bool
+      when: not with_haproxy_load_balancing | bool
   ignore_errors: true
   vars:
-    public_haproxy_ip_addresses: "{{ groups['balancers'] | default([]) | map('extract', hostvars, 'ansible_ssh_host') | join(', ') }}"
-    public_postgres_ip_addresses: "{{ groups['postgres_cluster'] | default([]) | map('extract', hostvars, 'ansible_ssh_host') | join(', ') }}"
+    public_haproxy_ip_addresses: >-
+      {{
+        (groups['balancers'] | default([]) | map('extract', hostvars, 'public_ip') | map('default', None, True) | list)
+        | zip(groups['balancers'] | default([]) | map('extract', hostvars, 'ansible_ssh_host') | map('default', None, True) | list)
+        | map('list') | map('select', 'truthy') | map('first') | unique | join(', ')
+      }}
+    public_postgres_ip_addresses: >-
+      {{
+        (groups['postgres_cluster'] | default([]) | map('extract', hostvars, 'public_ip') | map('default', None, True) | list)
+        | zip(groups['postgres_cluster'] | default([]) | map('extract', hostvars, 'ansible_ssh_host') | map('default', None, True) | list)
+        | map('list') | map('select', 'truthy') | map('first') | unique | join(', ')
+      }}
     haproxy_ip_addresses: >-
       {{
         (groups['balancers'] | default([]) | map('extract', hostvars, 'haproxy_bind_address') | map('default', None, True) | list)
@@ -191,7 +188,8 @@
       }}
     superuser_username: "{{ patroni_superuser_username }}"
     superuser_password: "{{ '********' if mask_password | default(false) | bool else patroni_superuser_password }}"
-    libpq_postgres_host_port: "{{ postgres_ip_addresses.split(',') | map('trim') | map('regex_replace', '$', ':' + postgresql_port | string) | join(',') }}"
+    database_port: "{{ pgbouncer_listen_port if pgbouncer_install | bool else postgresql_port }}"
+    libpq_postgres_host_port: "{{ postgres_ip_addresses.split(',') | map('trim') | map('regex_replace', '$', ':' + database_port | string) | join(',') }}"
     libpq_load_balance: "{{ '&load_balance_hosts=random' if postgresql_version | int >= 16 else '' }}"
   when:
     - (cluster_vip is not defined or cluster_vip | length < 1)
@@ -207,14 +205,15 @@
       address:
         primary: "master.{{ patroni_cluster_name }}.service.consul"
         replica: "replica.{{ patroni_cluster_name }}.service.consul"
-        replica_sync: "{{ 'sync-replica.' ~ patroni_cluster_name ~ '.service.consul' if synchronous_mode | bool else omit }}"
-        replica_async: "{{ 'async-replica.' ~ patroni_cluster_name ~ '.service.consul' if synchronous_mode | bool else omit }}"
+        replica_sync: "{{ 'sync-replica.' ~ patroni_cluster_name ~ '.service.consul' if synchronous_mode | bool and 'sync-replica' in consul_service_tags else omit }}"
+        replica_async: "{{ 'async-replica.' ~ patroni_cluster_name ~ '.service.consul' if synchronous_mode | bool and 'async-replica' in consul_service_tags else omit }}"
       port: "{{ pgbouncer_listen_port if pgbouncer_install | bool else postgresql_port }}"
       superuser: "{{ superuser_username }}"
       password: "{{ superuser_password }}"
   register: connection_info_consul
   ignore_errors: true
   vars:
+    consul_service_tags: "{{ consul_services | default([]) | selectattr('name', 'equalto', patroni_cluster_name) | map(attribute='tags', default=[]) | flatten }}"
     superuser_username: "{{ patroni_superuser_username }}"
     superuser_password: "{{ '********' if mask_password | default(false) | bool else patroni_superuser_password }}"
   when:
@@ -231,9 +230,9 @@
     msg:
       address:
         primary: "{{ load_balancer_primary }}"
-        replica: "{{ (load_balancer_replica if load_balancer_replica != 'N/A' else omit ) if cloud_load_balancer_replica | default(true) | bool else omit }}"
-        replica_sync: "{{ load_balancer_replica_sync if synchronous_mode | bool and cloud_load_balancer_replica_sync | default(false) | bool else omit }}"
-        replica_async: "{{ load_balancer_replica_async if synchronous_mode | bool and cloud_load_balancer_replica_async | default(false) | bool else omit }}"
+        replica: "{{ (load_balancer_replica if load_balancer_replica != 'N/A' else omit) if cloud_load_balancer_replica | default(true) | bool else omit }}"
+        replica_sync: "{{ load_balancer_replica_sync if synchronous_mode | bool and cloud_load_balancer_replica_sync | default(false) | bool and load_balancer_replica_sync != 'N/A' else omit }}"
+        replica_async: "{{ load_balancer_replica_async if synchronous_mode | bool and cloud_load_balancer_replica_async | default(false) | bool and load_balancer_replica_async != 'N/A' else omit }}"
       port: "{{ pgbouncer_listen_port if pgbouncer_install | bool else postgresql_port }}"
       superuser: "{{ superuser_username }}"
       password: "{{ superuser_password }}"
@@ -258,9 +257,9 @@
     msg:
       address:
         primary: "{{ load_balancer_primary }}"
-        replica: "{{ (load_balancer_replica if load_balancer_replica != 'N/A' else omit ) if cloud_load_balancer_replica | default(true) | bool else omit }}"
-        replica_sync: "{{ load_balancer_replica_sync if synchronous_mode | bool and cloud_load_balancer_replica_sync | default(false) | bool else omit }}"
-        replica_async: "{{ load_balancer_replica_async if synchronous_mode | bool and cloud_load_balancer_replica_async | default(false) | bool else omit }}"
+        replica: "{{ (load_balancer_replica if load_balancer_replica != 'N/A' else omit) if cloud_load_balancer_replica | default(true) | bool else omit }}"
+        replica_sync: "{{ load_balancer_replica_sync if synchronous_mode | bool and cloud_load_balancer_replica_sync | default(false) | bool and load_balancer_replica_sync != 'N/A' else omit }}"
+        replica_async: "{{ load_balancer_replica_async if synchronous_mode | bool and cloud_load_balancer_replica_async | default(false) | bool and load_balancer_replica_async != 'N/A' else omit }}"
       port: "{{ pgbouncer_listen_port if pgbouncer_install | bool else postgresql_port }}"
       superuser: "{{ superuser_username }}"
       password: "{{ superuser_password }}"
@@ -284,8 +283,8 @@
       address:
         primary: "{{ lb_primary_public if database_public_access | default(false) | bool else lb_primary_private }}"
         replica: "{{ ((lb_replica_public if lb_replica_public != 'N/A' else omit) if database_public_access | default(false) | bool else (lb_replica_private if lb_replica_private != 'N/A' else omit) ) if cloud_load_balancer_replica | default(true) | bool else omit }}"
-        replica_sync: "{{ (lb_sync_public if database_public_access | default(false) | bool else lb_sync_private) if synchronous_mode | bool and cloud_load_balancer_replica_sync | default(false) | bool else omit }}"
-        replica_async: "{{ (lb_async_public if database_public_access | default(false) | bool else lb_async_private) if synchronous_mode | bool and cloud_load_balancer_replica_async | default(false) | bool else omit }}"
+        replica_sync: "{{ (lb_sync_public if database_public_access | default(false) | bool else lb_sync_private) if synchronous_mode | bool and cloud_load_balancer_replica_sync | default(false) | bool and (lb_sync_public if database_public_access | default(false) | bool else lb_sync_private) != 'N/A' else omit }}"
+        replica_async: "{{ (lb_async_public if database_public_access | default(false) | bool else lb_async_private) if synchronous_mode | bool and cloud_load_balancer_replica_async | default(false) | bool and (lb_async_public if database_public_access | default(false) | bool else lb_async_private) != 'N/A' else omit }}"
       port: "{{ pgbouncer_listen_port if pgbouncer_install | bool else postgresql_port }}"
       superuser: "{{ superuser_username }}"
       password: "{{ superuser_password }}"
@@ -312,9 +311,9 @@
     msg:
       address:
         primary: "{{ load_balancer_primary }}"
-        replica: "{{ (load_balancer_replica if load_balancer_replica != 'N/A' else omit ) if cloud_load_balancer_replica | default(true) | bool else omit }}"
-        replica_sync: "{{ load_balancer_replica_sync if synchronous_mode | bool and cloud_load_balancer_replica_sync | default(false) | bool else omit }}"
-        replica_async: "{{ load_balancer_replica_async if synchronous_mode | bool and cloud_load_balancer_replica_async | default(false) | bool else omit }}"
+        replica: "{{ (load_balancer_replica if load_balancer_replica != 'N/A' else omit) if cloud_load_balancer_replica | default(true) | bool else omit }}"
+        replica_sync: "{{ load_balancer_replica_sync if synchronous_mode | bool and cloud_load_balancer_replica_sync | default(false) | bool and load_balancer_replica_sync != 'N/A' else omit }}"
+        replica_async: "{{ load_balancer_replica_async if synchronous_mode | bool and cloud_load_balancer_replica_async | default(false) | bool and load_balancer_replica_async != 'N/A' else omit }}"
       port: "{{ digital_ocean_load_balancer_port | default(database_port) }}"
       superuser: "{{ superuser_username }}"
       password: "{{ superuser_password }}"
@@ -328,7 +327,7 @@
     database_port: "{{ pgbouncer_listen_port if pgbouncer_install | bool else postgresql_port }}"
     superuser_username: "{{ patroni_superuser_username }}"
     superuser_password: "{{ '********' if mask_password | default(false) | bool else patroni_superuser_password }}"
-  when: cloud_provider | default('') | lower  == 'digitalocean' and cloud_load_balancer | default(true) | bool
+  when: cloud_provider | default('') | lower in ['digitalocean', 'do'] and cloud_load_balancer | default(true) | bool
   tags: conn_info, cluster_info, cluster_status, secrets
 
 # Hetzner Cloud
@@ -339,8 +338,8 @@
       address:
         primary: "{{ lb_primary_public if database_public_access | default(false) | bool else lb_primary_private }}"
         replica: "{{ ((lb_replica_public if lb_replica_public != 'N/A' else omit) if database_public_access | default(false) | bool else (lb_replica_private if lb_replica_private != 'N/A' else omit) ) if cloud_load_balancer_replica | default(true) | bool else omit }}"
-        replica_sync: "{{ (lb_replica_sync_public if database_public_access | default(false) | bool else lb_replica_sync_private) if synchronous_mode | bool and cloud_load_balancer_replica_sync | default(false) | bool else omit }}"
-        replica_async: "{{ (lb_replica_async_public if database_public_access | default(false) | bool else lb_replica_async_private) if synchronous_mode | bool and cloud_load_balancer_replica_async | default(false) | bool else omit }}"
+        replica_sync: "{{ (lb_replica_sync_public if database_public_access | default(false) | bool else lb_replica_sync_private) if synchronous_mode | bool and cloud_load_balancer_replica_sync | default(false) | bool and (lb_replica_sync_public if database_public_access | default(false) | bool else lb_replica_sync_private) != 'N/A' else omit }}"
+        replica_async: "{{ (lb_replica_async_public if database_public_access | default(false) | bool else lb_replica_async_private) if synchronous_mode | bool and cloud_load_balancer_replica_async | default(false) | bool and (lb_replica_async_public if database_public_access | default(false) | bool else lb_replica_async_private) != 'N/A' else omit }}"
       port: "{{ hetzner_load_balancer_port | default(database_port) }}"
       superuser: "{{ superuser_username }}"
       password: "{{ superuser_password }}"
@@ -387,7 +386,6 @@
       - "{{ connection_info_vip_haproxy | default({}) }}"
       - "{{ connection_info_vip_direct | default({}) }}"
       - "{{ connection_info_local_haproxy | default({}) }}"
-      - "{{ connection_info_local_pgbouncer | default({}) }}"
       - "{{ connection_info_local_postgres | default({}) }}"
       - "{{ connection_info_consul | default({}) }}"
       - "{{ connection_info_aws_nlb | default({}) }}"

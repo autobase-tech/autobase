@@ -25,6 +25,7 @@
     ansible_ssh_private_key_file: "{{ ssh_private_key_file | default(None) }}"
     new_node: "{{ item.new_node | default(omit) }}"
     bind_address: "{{ item.private_ip }}"
+    public_ip: "{{ item.public_ip | default(omit, true) }}"
     server_zone: "{{ item.zone | default(omit, true) }}"
   loop: "{{ [ip_addresses[0]] }}" # add the first item in the list
   loop_control:
@@ -41,6 +42,7 @@
     ansible_ssh_private_key_file: "{{ ssh_private_key_file | default(None) }}"
     new_node: "{{ item.new_node | default(omit) }}"
     bind_address: "{{ item.private_ip }}"
+    public_ip: "{{ item.public_ip | default(omit, true) }}"
     server_zone: "{{ item.zone | default(omit, true) }}"
   loop: "{{ ip_addresses[1:] }}" # start with the 2nd item of the list
   loop_control:
@@ -56,6 +58,7 @@
     ansible_ssh_private_key_file: "{{ ssh_private_key_file | default(None) }}"
     new_node: "{{ item.new_node | default(omit) }}"
     bind_address: "{{ item.private_ip }}"
+    public_ip: "{{ item.public_ip | default(omit, true) }}"
     server_zone: "{{ item.zone | default(omit, true) }}"
   loop: "{{ ip_addresses }}"
   loop_control:
