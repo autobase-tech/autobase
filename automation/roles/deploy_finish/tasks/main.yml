@@ -156,8 +156,8 @@
           superuser: "{{ superuser_username }}"
           password: "{{ superuser_password }}"
           connection_string:
-            read_write: "postgresql://{{ superuser_username }}@{{ libpq_postgres_host_port }}/postgres?target_session_attrs=read-write"
-            read_only: "postgresql://{{ superuser_username }}@{{ libpq_postgres_host_port }}/postgres?target_session_attrs=read-only{{ libpq_load_balance }}"
+            primary: "postgresql://{{ superuser_username }}@{{ libpq_postgres_host_port }}/postgres?target_session_attrs=primary"
+            replica: "postgresql://{{ superuser_username }}@{{ libpq_postgres_host_port }}/postgres?target_session_attrs=standby{{ libpq_load_balance }}"
       register: connection_info_local_postgres
       when: not with_haproxy_load_balancing | bool
   ignore_errors: true
