@@ -89,6 +89,7 @@
 # Export only passwords known in this run. Skipping an existing user with an empty
 # password preserves the value already stored in the external secrets provider.
 # A user with "secret" is stored in that secret (full name, without secrets_prefix) instead of secrets_postgresql_users_path.
+# A user with "secret: false" is not exported.
 - name: Collect successfully applied PostgreSQL users for secrets export
   ansible.builtin.set_fact:
     postgresql_users_for_secrets: >-
@@ -97,7 +98,8 @@
         {%- if not (result.failed | default(false) | bool)
           and not (result.skipped | default(false) | bool)
           and result.item.state | default('present') == 'present'
-          and result.item.password | default('', true) | string | length > 0 -%}
+          and result.item.password | default('', true) | string | length > 0
+          and result.item.secret | default(none) is not sameas false -%}
           {%- set _ = users.append({
             'name': result.item.secret if result.item.secret | default('', true) | length > 0
               else (secrets_postgresql_users_path | default('postgresql/users') | regex_replace('/+$', '')) ~ '/' ~ result.item.name,
@@ -120,7 +122,7 @@
   tags: postgresql_users, secrets
 
 # Used only by value-only secrets mode, where all users share one secret:
-# removed users are deleted from that secret. Users with their own "secret" are not in it.
+# removed users are deleted from that secret. Users with their own "secret" or "secret: false" are not in it.
 - name: Collect removed PostgreSQL users for secrets export
   ansible.builtin.set_fact:
     postgresql_users_removed_for_secrets: >-
@@ -129,7 +131,8 @@
         {%- if not (result.failed | default(false) | bool)
           and not (result.skipped | default(false) | bool)
           and result.item.state | default('present') == 'absent'
-          and result.item.secret | default('', true) | length == 0 -%}
+          and result.item.secret | default('', true) | length == 0
+          and result.item.secret | default(none) is not sameas false -%}
           {%- set _ = users.append(result.item.name) -%}
         {%- endif -%}
       {%- endfor -%}

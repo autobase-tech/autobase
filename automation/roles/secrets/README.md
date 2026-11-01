@@ -159,6 +159,23 @@ AWS treats `/backend/production/app-db` and `backend/production/app-db` as diffe
 - Users with `state: absent` and their own secret are not removed from any secret.
 - In value-only mode, a user that was stored in the shared users secret keeps its key there after it gets its own `secret`, and the key is no longer updated. Remove it from the shared secret manually.
 
+### PostgreSQL users excluded from the export
+
+Set `secret: false` on a `postgresql_users` entry to keep that user out of all secrets, for example a user whose password is shared by several clusters and must not reach the secrets of their applications. An empty or null `secret` still means that the user has no own secret:
+
+```yaml
+secrets_export_postgresql_users: true
+
+postgresql_users:
+  - { name: "app_user", password: "", secret: "/backend/production/app-db" }
+  - { name: "migrator", password: "{{ migrator_password }}", secret: false }
+# app_user: /backend/production/app-db
+# migrator: not exported
+```
+
+- The user is not written to its own secret or to the shared users secret, and is not removed from them with `state: absent`.
+- A user that was exported before keeps its secret, or its key in the shared users secret in value-only mode. Remove it manually.
+
 ## Secret content examples
 
 For a PostgreSQL user named `app_user`, the secret `autobase/postgres-cluster-01/postgresql/users/app_user` contains:
