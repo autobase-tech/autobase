@@ -21,7 +21,7 @@ Each user entry supports the following parameters:
 | `password` | No | User password (encrypted automatically). An empty value is handled according to `postgresql_users_password_generation`. | `"4eJyGyYoueEYlJQu8bL7CtbVx7cgcc5x"` |
 | `flags` | No | Role attributes (comma-separated) | `"CREATEDB,NOSUPERUSER"` |
 | `role` | No | Additional role to grant to user | `"pg_read_all_data"` |
-| `secret` | No | Full secret name for exporting this user, used as is: `secrets_prefix` is not added and the username is not appended. Used instead of `secrets_postgresql_users_path`. See the [secrets role](../secrets/README.md#postgresql-users-with-their-own-secret). | `"/backend/production/app-db"` |
+| `secret` | No | Full secret name for exporting this user, used as is: `secrets_prefix` is not added and the username is not appended. Used instead of `secrets_postgresql_users_path`. See the [secrets role](../secrets/README.md#postgresql-users-with-their-own-secret). `false` excludes the user from the export, see [PostgreSQL users excluded from the export](../secrets/README.md#postgresql-users-excluded-from-the-export). | `"/backend/production/app-db"` |
 
 ### Common Role Attributes
 
