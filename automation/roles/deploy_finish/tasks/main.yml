@@ -1,5 +1,13 @@
 # yamllint disable rule:line-length
 ---
+- name: Prepare PostgreSQL CLI password file
+  ansible.builtin.import_tasks: "{{ role_path }}/../pgpass/tasks/automation.yml"
+  delegate_to: "{{ groups.master[0] }}"
+  run_once: true # noqa run-once
+  vars:
+    postgresql_cli_passfile_host: "{{ groups.master[0] }}"
+  tags: always
+
 - name: Make sure handlers are flushed immediately
   ansible.builtin.meta: flush_handlers
 
@@ -16,7 +24,7 @@
     -d postgres
     -Xc '\du'
   environment:
-    PGPASSWORD: "{{ patroni_superuser_password }}"
+    PGPASSFILE: "{{ hostvars[groups.master[0]]._postgresql_cli_passfile_path }}"
   register: users_result
   delegate_to: "{{ groups.master[0] }}"
   changed_when: false
@@ -35,7 +43,7 @@
     -d postgres
     -Xc '\l'
   environment:
-    PGPASSWORD: "{{ patroni_superuser_password }}"
+    PGPASSFILE: "{{ hostvars[groups.master[0]]._postgresql_cli_passfile_path }}"
   register: dbs_result
   delegate_to: "{{ groups.master[0] }}"
   changed_when: false

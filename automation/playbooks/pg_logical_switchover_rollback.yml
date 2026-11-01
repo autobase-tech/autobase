@@ -141,6 +141,11 @@
         postgresql_cluster_maintenance: true
       when: patroni_superuser_password | default('') | length < 1
 
+    - name: "[Prepare] PostgreSQL CLI password files"
+      ansible.builtin.import_role:
+        name: vitabaks.autobase.pgpass
+        tasks_from: automation
+
     - name: "[Prepare] Get a list of databases"
       ansible.builtin.include_role:
         name: vitabaks.autobase.upgrade
