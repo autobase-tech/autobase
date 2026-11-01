@@ -4,9 +4,6 @@ name: Molecule pg_upgrade
 on:
   schedule:
     - cron: "0 0 * * 6"
-  pull_request:
-    branches:
-      - main
 
 jobs:
   test:
