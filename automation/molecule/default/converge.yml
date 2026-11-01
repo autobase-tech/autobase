@@ -57,7 +57,7 @@
 
     - name: Set variables for vip-manager test
       ansible.builtin.set_fact:
-        cluster_vip: "10.172.0.200"
+        cluster_vip: "{{ ['10.172.0.200', ''] | random }}" # Randomly test with and without VIP
         vip_manager_dcs_type: "{{ [dcs_type, 'patroni'] | random }}" # Randomly choose between dcs_type value or 'patroni'
       delegate_to: localhost
       run_once: true # noqa run-once
