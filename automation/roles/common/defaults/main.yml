@@ -970,7 +970,7 @@ pgbackrest_cron_jobs:
 # 2) And also the patroni cluster "{{ patroni_cluster_name }}" will be removed from the DCS (if exist) before recovery.
 cluster_restore_timeout: 86400 # backup and WAL restore timeout in seconds (24 hours)
 
-disable_archive_command: true # or 'false' to preserve archive_command during and after restore
+disable_archive_command: false # set to true when cloning to prevent archiving to the source repository
 keep_patroni_dynamic_json: true # or 'false' to remove patroni.dynamic.json after restore (if exists)
 
 ############################################################
