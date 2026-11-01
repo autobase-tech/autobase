@@ -288,7 +288,7 @@ The new data is merged into the current value of the secret instead of replacing
 - Other keys of the secret, for example those added by Terraform, are kept.
 - If the current value is not a JSON object, for example a placeholder string set by Terraform, it is replaced and the run shows a warning.
 
-Merging requires reading the current value, so `secrets_aws_value_compare: false` is rejected when users are exported to the shared secret: when any `postgresql_users` entry has no own `secret`, or when the users path equals the connection info path and connection info is exported. The shared users secret also requires `secrets_aws_secret_type: string`. Users with their own secret are written without merging and work with `secrets_aws_value_compare: false`.
+Merging requires reading the current value, so `secrets_aws_value_compare: false` is rejected when users are exported to the shared secret: when any `postgresql_users` entry has no own `secret` and no `secret: false`, or when the users path equals the connection info path and connection info is exported. The shared users secret also requires `secrets_aws_secret_type: string`. Users with their own secret are written without merging and work with `secrets_aws_value_compare: false`.
 
 Create the users secret before adding users. Secrets are written after the users are created in PostgreSQL, so if the secret is missing, the run fails and a password generated in that run is lost; the user then needs a new password.
 
