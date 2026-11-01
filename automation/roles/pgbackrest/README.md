@@ -28,12 +28,14 @@ Installs and configures [pgBackRest](https://github.com/pgbackrest/pgbackrest) f
 | `pgbackrest_restore_backup_name` | `""` | Optional backup set name added as `--set=...`. An empty value lets pgBackRest restore the latest backup set. |
 | `pgbackrest_patroni_cluster_restore_command` | `"/usr/bin/pgbackrest --stanza={{ pgbackrest_stanza }} --type=default --delta restore"` | Base restore command. Includes the configured backup set and recovery type. |
 | `pgbackrest_patroni_cluster_bootstrap_command` | Derived | Cluster bootstrap/master command with target action and timeline options. |
-| `pgbackrest_patroni_replica_restore_command` | Derived | Replica restore command. Uses pause only at a configured PITR target and applies the selected timeline. |
+| `pgbackrest_patroni_replica_restore_command` | Derived | Replica restore command. Uses standby mode for recovery to the end of the archive, or pause at a configured PITR target, and applies the selected timeline. |
 | `pgbackrest_patroni_cluster_bootstrap_recovery_conf` | [...] | List for Patroni recovery parameters (restore_command, recovery_target_action, etc.). |
 | `pgbackrest_patroni_cluster_clean_bootstrap` | `false` | Controls how Patroni bootstraps from a pgBackRest backup: false – delta restore into the existing data directory (faster, reuses unchanged files). true – clean restore into an empty data directory (wipes existing contents first). |
 | `pgbackrest_cron_jobs` | [...] | Cron jobs for backups (full/diff). Created on DB host by default, or on repo_host if defined. |
 
 Note: To bootstrap via backup set `patroni_cluster_bootstrap_method: "pgbackrest"`.
+
+During preliminary delta-restore recovery, PostgreSQL runs with `hot_standby=off` to allow replay with lower local settings, such as `max_connections`, than in the backup. Only the master and replicas restored in standby mode are started at this stage. Replicas with a PITR target are started later by Patroni, which configures them to follow the leader and accounts for the minimum settings recorded in `pg_controldata`.
 
 ### pgBackRest Configuration Structure
 

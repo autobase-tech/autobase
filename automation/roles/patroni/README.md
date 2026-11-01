@@ -84,6 +84,7 @@ This role installs and configures [Patroni](https://github.com/patroni/patroni),
 | ---------------------------------- | -------------- | ------------------------------------------------------------------ |
 | `patroni_cluster_bootstrap_method` | `"initdb"`     | Bootstrap method (`initdb`, `wal-g`, `pgbackrest`, `pg_probackup`) |
 | `patroni_create_replica_methods`   | `[basebackup]` | List of replica creation methods.                                  |
+| `disable_archive_command` | `false` | Disable WAL archiving during and after recovery. Set to `true` when cloning into an independent cluster. |
 
 ### Watchdog Configuration
 

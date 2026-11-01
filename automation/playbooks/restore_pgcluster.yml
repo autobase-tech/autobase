@@ -31,7 +31,6 @@
       {{ pgbackrest_restore_target_timeline
          if restore_pgcluster_selected_tool == 'pgbackrest'
          else wal_g_restore_target_timeline }}
-    disable_archive_command: false
     keep_patroni_dynamic_json: true
     point_in_time_recovery: true
 
