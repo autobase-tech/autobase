@@ -17,3 +17,6 @@
     - ansible_selinux.status is defined
     - ansible_selinux.status == "enabled"
   tags: selinux
+
+- name: SELinux | label the PostgreSQL directories
+  ansible.builtin.import_tasks: contexts.yml
