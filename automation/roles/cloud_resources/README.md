@@ -118,6 +118,10 @@ cloud_backup_storage_id: "8bc4111e-8a6d-4b1a-a3db-1ab9d2c6e705"
 The ID must be available to both `localhost` (which provisions storage) and the PostgreSQL/backup hosts.
 Setting it only in `group_vars/postgres_cluster.yml` is insufficient. Use a different ID for each independent backup storage.
 Platform integrations should persist the ID before the first deployment attempt and pass it to every subsequent Ansible operation.
+They can also pin `cloud_backup_storage_suffix`, `cloud_backup_bucket_name` and `cloud_backup_azure_account_name`
+in the same variables. Explicit common names are used by provisioning and standalone pgBackRest/WAL-G configuration;
+provider-specific names and backup-tool settings still take precedence. UI integrations can display the pinned names
+without reproducing the generation algorithm. Changing the ID alone does not change an explicitly pinned name.
 
 When the ID is non-empty, the first 12 hexadecimal characters of its SHA-256 hash form a deterministic suffix:
 
