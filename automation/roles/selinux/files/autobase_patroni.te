@@ -1,0 +1,116 @@
+policy_module(autobase_patroni, 1.0.0)
+
+########################################
+#
+# Patroni runs in its own domain (patroni_t) and starts PostgreSQL in the
+# distribution's postgresql_t domain. Without this module systemd starts
+# Patroni as unconfined_service_t, and PostgreSQL inherits that domain, so
+# SELinux does not restrict either of them even in enforcing mode.
+#
+
+require {
+	type postgresql_t;
+	type postgresql_exec_t;
+	type postgresql_db_t;
+	type postgresql_log_t;
+	type postgresql_var_run_t;
+	type krb5_keytab_t;
+}
+
+type patroni_t;
+type patroni_exec_t;
+init_daemon_domain(patroni_t, patroni_exec_t)
+
+type patroni_log_t;
+logging_log_file(patroni_log_t)
+
+type patroni_tmp_t;
+files_tmp_file(patroni_tmp_t)
+
+########################################
+#
+# Patroni: a Python program
+#
+
+allow patroni_t self:process { getsched setsched signal_perms };
+allow patroni_t self:fifo_file rw_fifo_file_perms;
+allow patroni_t self:unix_stream_socket { create_stream_socket_perms connectto };
+allow patroni_t self:unix_dgram_socket create_socket_perms;
+allow patroni_t self:tcp_socket create_stream_socket_perms;
+allow patroni_t self:udp_socket create_socket_perms;
+allow patroni_t self:netlink_route_socket r_netlink_socket_perms;
+
+corecmd_exec_bin(patroni_t)
+corecmd_exec_shell(patroni_t)
+libs_exec_ldconfig(patroni_t)
+
+files_read_etc_files(patroni_t)
+files_read_usr_files(patroni_t)
+files_search_var_lib(patroni_t)
+
+kernel_read_system_state(patroni_t)
+kernel_read_network_state(patroni_t)
+kernel_read_kernel_sysctls(patroni_t)
+
+# Patroni (psutil) reads /proc/<pid>/stat to tell whether the PID in postmaster.pid
+# still belongs to PostgreSQL, which can be any process after a restart.
+domain_read_all_domains_state(patroni_t)
+
+dev_read_sysfs(patroni_t)
+dev_read_urand(patroni_t)
+dev_rw_watchdog(patroni_t)
+
+fs_getattr_all_fs(patroni_t)
+
+auth_use_nsswitch(patroni_t)
+miscfiles_read_localization(patroni_t)
+miscfiles_read_generic_certs(patroni_t)
+sysnet_read_config(patroni_t)
+# libpq (Patroni, pg_basebackup) probes for Kerberos credentials; nothing is needed from there
+dontaudit patroni_t krb5_keytab_t:dir search;
+logging_send_syslog_msg(patroni_t)
+
+manage_dirs_pattern(patroni_t, patroni_log_t, patroni_log_t)
+manage_files_pattern(patroni_t, patroni_log_t, patroni_log_t)
+logging_log_filetrans(patroni_t, patroni_log_t, { dir file })
+
+manage_dirs_pattern(patroni_t, patroni_tmp_t, patroni_tmp_t)
+manage_files_pattern(patroni_t, patroni_tmp_t, patroni_tmp_t)
+files_tmp_filetrans(patroni_t, patroni_tmp_t, { dir file })
+
+########################################
+#
+# Network: REST API (8008/tcp is http_port_t) and the DCS
+# (etcd and Consul ports carry no dedicated type in the base policy)
+#
+
+corenet_tcp_bind_generic_node(patroni_t)
+corenet_tcp_bind_http_port(patroni_t)
+corenet_tcp_connect_all_ports(patroni_t)
+
+########################################
+#
+# PostgreSQL: Patroni writes the configuration into the data directory,
+# runs pg_basebackup/pg_rewind and starts the server in postgresql_t
+#
+
+manage_dirs_pattern(patroni_t, postgresql_db_t, postgresql_db_t)
+manage_files_pattern(patroni_t, postgresql_db_t, postgresql_db_t)
+manage_lnk_files_pattern(patroni_t, postgresql_db_t, postgresql_db_t)
+read_files_pattern(patroni_t, postgresql_log_t, postgresql_log_t)
+# Patroni checks that unix_socket_directories is writable by creating a file in it
+files_search_pids(patroni_t)
+manage_dirs_pattern(patroni_t, postgresql_var_run_t, postgresql_var_run_t)
+manage_files_pattern(patroni_t, postgresql_var_run_t, postgresql_var_run_t)
+
+domtrans_pattern(patroni_t, postgresql_exec_t, postgresql_t)
+ps_process_pattern(patroni_t, postgresql_t)
+allow patroni_t postgresql_t:process signal_perms;
+stream_connect_pattern(patroni_t, postgresql_var_run_t, postgresql_var_run_t, postgresql_t)
+
+# initdb reads the password file Patroni writes to /tmp
+read_files_pattern(postgresql_t, patroni_tmp_t, patroni_tmp_t)
+
+allow postgresql_t patroni_t:fd use;
+allow postgresql_t patroni_t:fifo_file rw_fifo_file_perms;
+allow postgresql_t patroni_t:process sigchld;

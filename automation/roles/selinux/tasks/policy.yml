@@ -1,0 +1,81 @@
+---
+# Confine the cluster services: build and load an autobase_<service> policy module for each
+# service that runs on this host, and label the executables the modules refer to. Processes
+# that are already running keep their domain until they restart; the role restarts nothing.
+- block:
+    # One entry per policy module in files/ (autobase_<name>.te and .fc).
+    - name: SELinux | select the policy modules for this host
+      ansible.builtin.set_fact:
+        selinux_policy_modules: >-
+          {{ (['autobase_patroni'] if inventory_hostname in groups['postgres_cluster'] | default([]) else []) }}
+
+    - name: SELinux | install the policy development tools
+      ansible.builtin.package:
+        name:
+          - selinux-policy-devel
+          - make
+        state: present
+      register: package_status
+      until: package_status is success
+      delay: 5
+      retries: 3
+      when: selinux_policy_modules | length > 0
+
+    - name: SELinux | make sure the policy module directory exists
+      ansible.builtin.file:
+        path: "{{ selinux_policy_module_dir }}"
+        state: directory
+        mode: "0755"
+      when: selinux_policy_modules | length > 0
+
+    - name: SELinux | copy the policy modules
+      ansible.builtin.copy:
+        src: "{{ item.0 }}.{{ item.1 }}"
+        dest: "{{ selinux_policy_module_dir }}/{{ item.0 }}.{{ item.1 }}"
+        mode: "0644"
+      loop: "{{ selinux_policy_modules | product(['te', 'fc']) | list }}"
+      register: selinux_module_source
+
+    - name: SELinux | list the loaded policy modules
+      ansible.builtin.command: semodule -l
+      register: selinux_loaded_modules
+      changed_when: false
+      when: selinux_policy_modules | length > 0
+
+    - name: SELinux | find policy modules that are changed or not loaded
+      ansible.builtin.set_fact:
+        selinux_modules_to_build: >-
+          {{ (selinux_module_source.results | selectattr('changed') | map(attribute='item') | map('first') | list)
+             + (selinux_policy_modules
+                | difference(selinux_loaded_modules.stdout_lines | default([]) | map('split') | map('first') | list)) }}
+
+    - name: SELinux | build and load the policy modules
+      ansible.builtin.shell: |
+        make -f /usr/share/selinux/devel/Makefile {{ item }}.pp
+        semodule -i {{ item }}.pp
+      args:
+        chdir: "{{ selinux_policy_module_dir }}"
+      loop: "{{ selinux_modules_to_build | unique }}"
+
+    # PGDG installs the server under /usr/pgsql-<version>/bin, which the base policy does not
+    # label as postgresql_exec_t, so Patroni would start PostgreSQL in its own domain.
+    - name: SELinux | add file context rules for the PostgreSQL server executables
+      community.general.sefcontext:
+        target: "{{ postgresql_bin_dir }}/(postgres|initdb|pg_ctl)"
+        ftype: f
+        setype: postgresql_exec_t
+        state: present
+      when: "'autobase_patroni' in selinux_policy_modules"
+
+    - name: SELinux | add file context rules for the Patroni log directory
+      community.general.sefcontext:
+        target: "{{ patroni_log_dir }}(/.*)?"
+        setype: patroni_log_t
+        state: present
+      when: "'autobase_patroni' in selinux_policy_modules"
+  when:
+    - ansible_os_family == "RedHat"
+    - ansible_selinux.status is defined
+    - ansible_selinux.status == "enabled"
+    - selinux_confine_services | bool
+  tags: selinux, selinux_policy
