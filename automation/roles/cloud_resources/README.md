@@ -67,6 +67,9 @@ The zone placement variables apply to AWS, GCP and Azure; see [Availability zone
 | aws_nlb_client_routing_policy | string | availability_zone_affinity | NLB DNS client routing policy: `availability_zone_affinity`, `partial_availability_zone_affinity` or `any_availability_zone` |
 | aws_nlb_replica_cross_zone | bool | false | Cross-zone load balancing for replica NLBs (replica, sync, async). Always enabled for the primary NLB |
 | cloud_backup_storage_id | string | "" | Stable, globally unique backup storage ID. Adds a deterministic suffix to generated bucket and Azure Storage Account names; see [Backup storage names](#backup-storage-names). |
+| cloud_backup_storage_suffix | string | First 12 hex characters of SHA-256 of the ID, or empty | Optional explicit suffix for generated names. |
+| cloud_backup_bucket_name | string | Generated bucket name | Optional common name for S3, GCS, Spaces and Hetzner buckets. Provider-specific names override it. |
+| cloud_backup_azure_account_name | string | Generated Azure Storage Account name | Optional common Azure account name. `azure_blob_storage_account_name` overrides it. |
 | aws_s3_bucket_create | bool | true | Create S3 bucket (if 'pgbackrest_install' or 'wal_g_install' is 'true') |
 | aws_s3_bucket_name | string | {{ patroni_cluster_name }}-backup | Bucket name |
 | aws_s3_bucket_region | string | {{ server_location }} | Bucket region |
@@ -137,7 +140,7 @@ Explicit provider names (`aws_s3_bucket_name`, `gcp_bucket_name`, `digital_ocean
 `hetzner_object_storage_name`, `azure_blob_storage_account_name`) still take precedence.
 pgBackRest and WAL-G use the same generated names even when run without `cloud_resources`.
 
-Keep the ID and cluster name unchanged for the lifetime of the backup storage, including retries, configuration changes,
+When relying on generated defaults, keep the ID and cluster name unchanged for the lifetime of the backup storage, including retries, configuration changes,
 scaling and deletion. Adding or changing the ID for an existing storage changes its generated name; it does not migrate backups.
 Keep the ID empty for existing installations, or explicitly pin their current storage names before setting it.
 The suffix reduces accidental collisions but does not guarantee that a name is available globally.
