@@ -11,7 +11,7 @@
         - { option: "repo1-path", value: "{{ pgbackrest_repo_path | default('/pgbackrest') }}" }
         - { option: "repo1-s3-key", value: "{{ pgbackrest_s3_key | default(lookup('ansible.builtin.env', 'AWS_ACCESS_KEY_ID')) }}" }
         - { option: "repo1-s3-key-secret", value: "{{ pgbackrest_s3_key_secret | default(lookup('ansible.builtin.env', 'AWS_SECRET_ACCESS_KEY')) }}" }
-        - { option: "repo1-s3-bucket", value: "{{ pgbackrest_s3_bucket | default(aws_s3_bucket_name | default(patroni_cluster_name + '-backup')) }}" }
+        - { option: "repo1-s3-bucket", value: "{{ pgbackrest_s3_bucket | default(aws_s3_bucket_name | default(pgbackrest_default_cloud_bucket_name)) }}" }
         - {
             option: "repo1-s3-endpoint",
             value: "{{ pgbackrest_s3_endpoint | default('s3.' + (aws_s3_bucket_region | default(server_location)) + '.amazonaws.com') }}",
@@ -47,7 +47,7 @@
         - { option: "repo1-type", value: "gcs" }
         - { option: "repo1-path", value: "{{ pgbackrest_repo_path | default('/pgbackrest') }}" }
         - { option: "repo1-gcs-key", value: "{{ pgbackrest_gcs_key | default(postgresql_home_dir + '/gcs-key.json') }}" }
-        - { option: "repo1-gcs-bucket", value: "{{ pgbackrest_gcs_bucket | default(gcp_bucket_name | default(patroni_cluster_name + '-backup')) }}" }
+        - { option: "repo1-gcs-bucket", value: "{{ pgbackrest_gcs_bucket | default(gcp_bucket_name | default(pgbackrest_default_cloud_bucket_name)) }}" }
         - { option: "repo1-retention-full", value: "{{ pgbackrest_retention_full | default('30') }}" }
         - { option: "repo1-retention-full-type", value: "{{ pgbackrest_retention_full_type | default('time') }}" }
         - { option: "repo1-bundle", value: "y" }
@@ -72,7 +72,7 @@
     - name: "Azure: Get Storage Account info"
       azure.azcollection.azure_rm_storageaccount_info:
         resource_group: "{{ azure_resource_group | default('postgres-cluster-resource-group-' ~ (azure_backup_location | default(server_location | default('')))) }}"
-        name: "{{ pgbackrest_azure_account | default(azure_blob_storage_account_name | default(patroni_cluster_name | lower | replace('-', '') | truncate(24, true, ''))) }}"
+        name: "{{ pgbackrest_azure_account | default(azure_blob_storage_account_name | default(pgbackrest_default_azure_account_name)) }}"
         show_connection_string: true
       register: azure_storage_account_info
 
@@ -100,7 +100,7 @@
         - { option: "repo1-azure-key-type", value: "{{ pgbackrest_azure_key_type | default('shared') }}" }
         - {
             option: "repo1-azure-account",
-            value: "{{ pgbackrest_azure_account | default(azure_blob_storage_account_name | default(patroni_cluster_name | lower | replace('-', '') | truncate(24, true, ''))) }}",
+            value: "{{ pgbackrest_azure_account | default(azure_blob_storage_account_name | default(pgbackrest_default_azure_account_name)) }}",
           }
         - {
             option: "repo1-azure-container",
@@ -136,7 +136,7 @@
         - { option: "repo1-path", value: "{{ pgbackrest_repo_path | default('/pgbackrest') }}" }
         - { option: "repo1-s3-key", value: "{{ pgbackrest_s3_key | default(digital_ocean_spaces_access_key | default(AWS_ACCESS_KEY_ID | default(''))) }}" }
         - { option: "repo1-s3-key-secret", value: "{{ pgbackrest_s3_key_secret | default(digital_ocean_spaces_secret_key | default(AWS_SECRET_ACCESS_KEY | default(''))) }}" }
-        - { option: "repo1-s3-bucket", value: "{{ pgbackrest_s3_bucket | default(digital_ocean_spaces_name | default(patroni_cluster_name + '-backup')) }}" }
+        - { option: "repo1-s3-bucket", value: "{{ pgbackrest_s3_bucket | default(digital_ocean_spaces_name | default(pgbackrest_default_cloud_bucket_name)) }}" }
         - {
             option: "repo1-s3-endpoint",
             value: "{{ pgbackrest_s3_endpoint | default('https://' + (digital_ocean_spaces_region | default(default_region)) + '.digitaloceanspaces.com') }}",
@@ -174,7 +174,7 @@
         - { option: "repo1-path", value: "{{ pgbackrest_repo_path | default('/pgbackrest') }}" }
         - { option: "repo1-s3-key", value: "{{ pgbackrest_s3_key | default(hetzner_object_storage_access_key | default('')) }}" }
         - { option: "repo1-s3-key-secret", value: "{{ pgbackrest_s3_key_secret | default(hetzner_object_storage_secret_key | default('')) }}" }
-        - { option: "repo1-s3-bucket", value: "{{ pgbackrest_s3_bucket | default(hetzner_object_storage_name | default(patroni_cluster_name + '-backup')) }}" }
+        - { option: "repo1-s3-bucket", value: "{{ pgbackrest_s3_bucket | default(hetzner_object_storage_name | default(pgbackrest_default_cloud_bucket_name)) }}" }
         - {
             option: "repo1-s3-endpoint",
             value: "{{ pgbackrest_s3_endpoint | default(hetzner_object_storage_endpoint | default('https://' + (hetzner_object_storage_region | default(default_region)) + '.your-objectstorage.com')) }}",

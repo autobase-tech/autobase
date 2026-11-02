@@ -91,6 +91,11 @@ postgresql_privs:
 
 If `cloud_backup_provider` (or its default, `cloud_provider`) is set, the role runs tasks/[auto_conf.yml](./tasks/auto_conf.yml) to automatically build `pgbackrest_conf` for the selected backend.
 
+Set a persistent `cloud_backup_storage_id` in `group_vars/all.yml` or inventory `all.vars` to use the same deterministic backup storage names
+as `cloud_resources`, including during standalone configuration runs. Explicit pgBackRest repository settings take precedence over provider names,
+which take precedence over generated names. Without an ID, the previous naming behavior is preserved.
+See [Backup storage names](../cloud_resources/README.md#backup-storage-names) before enabling this for an existing cluster.
+
 ## Dependencies
 
 This role depends on:

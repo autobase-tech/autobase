@@ -1,4 +1,20 @@
 ---
+# Fallback names for auto_conf.yml when cloud_resources defaults are not loaded.
+# Keep these expressions in sync with cloud_resources.
+pgbackrest_cloud_backup_storage_suffix: >-
+  {{ (cloud_backup_storage_id | default('') | hash('sha256'))[:12] if cloud_backup_storage_id | default('') | length > 0 else '' }}
+pgbackrest_default_cloud_bucket_name: >-
+  {{
+    ((patroni_cluster_name | lower | regex_replace('[^a-z0-9]+', '-') | regex_replace('^-+|-+$', '') | default('postgres', true))[:43]
+      | regex_replace('-+$', '')) ~ '-backup-' ~ pgbackrest_cloud_backup_storage_suffix
+    if pgbackrest_cloud_backup_storage_suffix | length > 0 else patroni_cluster_name ~ '-backup'
+  }}
+pgbackrest_default_azure_account_name: >-
+  {{
+    (patroni_cluster_name | lower | regex_replace('[^a-z0-9]', '') | default('postgres', true))[:12] ~ pgbackrest_cloud_backup_storage_suffix
+    if pgbackrest_cloud_backup_storage_suffix | length > 0 else patroni_cluster_name | lower | replace('-', '') | truncate(24, true, '')
+  }}
+
 pgdg_architecture_map:
   amd64: x86_64
   x86_64: x86_64
