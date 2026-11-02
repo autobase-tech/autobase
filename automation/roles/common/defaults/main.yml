@@ -137,7 +137,7 @@ dcs_exists: false # or 'true' if you do not want Autobase to deploy and manage e
 
 # if dcs_type: "etcd" and dcs_exists: false
 # renovate: datasource=github-releases depName=etcd-io/etcd extractVersion=^v(?<version>.*)$
-etcd_version: 3.6.13
+etcd_version: 3.6.16
 # Note: when etcd_installation_method: "rpm", the etcd package is installed from pgdg-rhel-extras,
 # unless install_postgresql_repo or install_postgresql_repo_extras are set to false.
 etcd_installation_method: "binary" # binary -> install from repo such as https://github.com, "{{ pkg_type }}" -> install from apt or yum repository
