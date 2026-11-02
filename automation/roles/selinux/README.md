@@ -5,6 +5,8 @@ Configures SELinux on RHEL-based hosts (RHEL, Rocky Linux, AlmaLinux, Oracle Lin
 ## Description
 
 - Sets the SELinux mode (`enforcing` or `permissive`) when `selinux_state` is set.
+- Labels the PostgreSQL data, WAL and log directories (`postgresql_db_t`, `postgresql_log_t`), including
+  custom locations such as `/pgdata` and their parent directories that have no file context of their own.
 - Does nothing on hosts where SELinux is disabled or not available (Debian, Ubuntu).
 - Never reboots. Enabling SELinux on a host where it is disabled requires a reboot and a relabel, which is left to the operator.
 
@@ -18,3 +20,4 @@ Configures SELinux on RHEL-based hosts (RHEL, Rocky Linux, AlmaLinux, Oracle Lin
 ## Tags
 
 - `selinux`
+- `selinux_contexts` (file contexts only)
