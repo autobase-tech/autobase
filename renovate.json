@@ -26,6 +26,11 @@
     {
       "matchPackageNames": ["boto3"],
       "schedule": ["every month"]
+    },
+    {
+      "description": "Require manual merging for dbdesk-studio updates",
+      "matchPackageNames": ["docker.io/bhavikagarwal2001/dbdesk-studio"],
+      "automerge": false
     }
   ],
   "customManagers": [
