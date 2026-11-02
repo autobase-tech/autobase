@@ -207,6 +207,7 @@
     - role: vitabaks.autobase.sudo
     - role: vitabaks.autobase.swap
     - role: vitabaks.autobase.sysctl
+    - role: vitabaks.autobase.selinux
     - role: vitabaks.autobase.transparent_huge_pages
     - role: vitabaks.autobase.pam_limits
     - role: vitabaks.autobase.io_scheduler
