@@ -1,0 +1,170 @@
+---
+name: SELinux (KVM)
+
+# Deploys a three-node cluster on virtual machines (libvirt/KVM on the GitHub-hosted runner)
+# with SELinux enabled, and fails if Patroni or PostgreSQL runs unconfined, if a PostgreSQL
+# directory is mislabelled, or if a denial was logged for them. Containers cannot test this:
+# SELinux belongs to the host kernel, and the Ubuntu runners use AppArmor.
+#
+# Run it with "permissive" to collect the complete list of denials in one pass
+# (the job fails, the report artifact lists them with audit2allow output).
+
+on:
+  workflow_dispatch:
+    inputs:
+      selinux:
+        description: "SELinux mode during the deployment"
+        type: choice
+        options: [enforcing, permissive]
+        default: enforcing
+  push:
+    branches:
+      - main
+    paths:
+      - "automation/roles/selinux/**"
+      - "automation/roles/patroni/**"
+      - "automation/molecule/selinux_kvm/**"
+      - ".github/workflows/selinux_kvm.yml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "automation/roles/selinux/**"
+      - "automation/roles/patroni/**"
+      - "automation/molecule/selinux_kvm/**"
+      - ".github/workflows/selinux_kvm.yml"
+
+jobs:
+  test:
+    name: ${{ matrix.config.distro }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          - distro: rockylinux9
+            image: "https://dl.rockylinux.org/pub/rocky/9/images/x86_64/Rocky-9-GenericCloud-Base.latest.x86_64.qcow2"
+          - distro: rockylinux10
+            image: "https://dl.rockylinux.org/pub/rocky/10/images/x86_64/Rocky-10-GenericCloud-Base.latest.x86_64.qcow2"
+    env:
+      IMAGE: ${{ matrix.config.image }}
+      SELINUX: ${{ inputs.selinux || 'enforcing' }}
+      INVENTORY: ${{ github.workspace }}/selinux-inventory
+      OUT: ${{ github.workspace }}/selinux-report
+      PY_COLORS: "1"
+      ANSIBLE_FORCE_COLOR: "1"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          ls -l /dev/kvm
+          nproc; free -g; df -h /
+
+      - name: Install libvirt
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q qemu-kvm qemu-utils libvirt-daemon-system virtinst
+          sudo systemctl start libvirtd
+          sudo virsh net-start default 2>/dev/null || true
+
+      - name: Boot VMs
+        run: bash automation/molecule/selinux_kvm/vms.sh "$IMAGE" "$INVENTORY"
+
+      # Cloud images lag behind the repos; an outdated gpgme cannot verify the PGDG repo
+      # signature ("Invalid crypto engine"). Upgrade and boot the current kernel.
+      - name: Update VMs
+        run: |
+          SSH="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=5"
+          ips=$(awk '/^\[master\]|^\[replica\]/{f=1;next} /^\[/{f=0} f && NF {print $1}' "$INVENTORY")
+          for ip in $ips; do $SSH "root@$ip" 'dnf -y -q upgrade' & done; wait
+          # Power off and start through libvirt: virt-install --cloud-init defines the first
+          # boot as an install phase, so a reboot from inside the guest leaves it shut off.
+          for ip in $ips; do $SSH "root@$ip" 'systemctl poweroff' || true; done
+          for vm in pgnode01 pgnode02 pgnode03; do
+            for _ in $(seq 1 60); do [ "$(sudo virsh domstate $vm)" = "shut off" ] && break; sleep 2; done
+            sudo virsh start $vm
+          done
+          sleep 20
+          for ip in $ips; do
+            for _ in $(seq 1 60); do $SSH "root@$ip" true 2>/dev/null && break; sleep 5; done
+            echo "$ip: $($SSH "root@$ip" 'getenforce; uname -r' | tr '\n' ' ')"
+          done
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.15"
+
+      - name: Install dependencies
+        run: |
+          make bootstrap
+          mkdir -p ~/.ansible/collections/ansible_collections/vitabaks
+          ln -sfn "$PWD/automation" ~/.ansible/collections/ansible_collections/vitabaks/autobase
+          . .venv/bin/activate
+          # Controller-side libraries for ansible.utils.ipaddr and json_query, not in requirements.txt
+          pip install -q netaddr jmespath
+          ansible-galaxy collection install -r automation/requirements.yml
+
+      - name: Deploy cluster
+        id: deploy
+        continue-on-error: true
+        working-directory: automation
+        run: |
+          . ../.venv/bin/activate
+          ansible-playbook -i "$INVENTORY" playbooks/deploy_pgcluster.yml -e @molecule/selinux_kvm/vars.yml \
+            -e selinux_state="$SELINUX"
+
+      - name: Collect after deploy
+        if: always()
+        run: bash automation/molecule/selinux_kvm/collect.sh "$INVENTORY" "$OUT" deploy
+
+      # With synchronous_mode, Patroni switches over only to the synchronous standby.
+      - name: Switchover
+        id: switchover
+        if: steps.deploy.outcome == 'success'
+        continue-on-error: true
+        run: |
+          leader=$(awk '/^\[master\]/{getline; print $1}' "$INVENTORY")
+          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR "root@$leader" '
+            set -e
+            cfg=/etc/patroni/patroni.yml
+            candidate=$(patronictl -c $cfg list -f json | python3 -c "import json,sys; print(next(m[\"Member\"] for m in json.load(sys.stdin) if m[\"Role\"] == \"Sync Standby\"))")
+            patronictl -c $cfg switchover --leader pgnode01 --candidate "$candidate" --force
+            sleep 20
+            patronictl -c $cfg list'
+
+      - name: Collect after switchover
+        if: steps.switchover.outcome != 'skipped'
+        run: bash automation/molecule/selinux_kvm/collect.sh "$INVENTORY" "$OUT" switchover
+
+      - name: Verify
+        id: verify
+        if: steps.deploy.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        run: bash automation/molecule/selinux_kvm/verify.sh "$INVENTORY" "${SELINUX^}" | tee -a "$OUT/summary.md"
+
+      - name: Job summary
+        if: always()
+        run: |
+          echo "Deploy: ${{ steps.deploy.outcome }}, switchover: ${{ steps.switchover.outcome }}, verify: ${{ steps.verify.outcome }}, SELinux: $SELINUX" >> "$GITHUB_STEP_SUMMARY"
+          cat "$OUT/summary.md" >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: selinux-report-${{ matrix.config.distro }}
+          path: selinux-report/
+
+      - name: Fail on a failed step
+        if: steps.deploy.outcome != 'success' || steps.switchover.outcome != 'success' || steps.verify.outcome != 'success'
+        run: exit 1

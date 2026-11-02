@@ -1,0 +1,27 @@
+---
+# Fixed (not randomised) settings, so two runs produce comparable AVC lists.
+dcs_type: "etcd"
+with_haproxy_load_balancing: true
+postgresql_version: 18
+firewall_enabled_at_boot: false
+swap_file_create: false
+# vm.overcommit_memory=2 with the default ratio of 50 leaves a 3 GB VM ~1.5 GB of
+# commit limit, and PostgreSQL fails with "out of memory". Same as the Molecule scenario.
+sysctl_set: false
+nameservers: ["8.8.8.8", "9.9.9.9"]
+timezone: "Etc/UTC"
+synchronous_mode: true
+patroni_failsafe_mode: true
+# Non-default directories: their SELinux file contexts are part of what is tested.
+postgresql_data_dir: "/pgdata/18/main"
+postgresql_wal_dir: "/pgwal/18/pg_wal"
+local_postgresql_parameters:
+  - { option: "shared_buffers", value: "128MB" }
+  - { option: "effective_cache_size", value: "512MB" }
+postgresql_users:
+  - { name: "pgbouncer", password: "pgbouncer-test-pass" }
+  - { name: "db1_user", password: "db1_user-test-pass" }
+postgresql_databases:
+  - { db: "db1", encoding: "UTF8", lc_collate: "en_US.UTF-8", lc_ctype: "en_US.UTF-8", owner: "db1_user" }
+# Confine the cluster services; the mode itself is passed per run (selinux_state).
+selinux_confine_services: true
