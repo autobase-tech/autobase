@@ -66,6 +66,10 @@ The zone placement variables apply to AWS, GCP and Azure; see [Availability zone
 | cloud_load_balancer_replica_async | bool | false | Create a Load Balancer for asynchronous replicas (requires synchronous_mode) |
 | aws_nlb_client_routing_policy | string | availability_zone_affinity | NLB DNS client routing policy: `availability_zone_affinity`, `partial_availability_zone_affinity` or `any_availability_zone` |
 | aws_nlb_replica_cross_zone | bool | false | Cross-zone load balancing for replica NLBs (replica, sync, async). Always enabled for the primary NLB |
+| cloud_backup_storage_id | string | "" | Stable, globally unique backup storage ID. Adds a deterministic suffix to generated bucket and Azure Storage Account names; see [Backup storage names](#backup-storage-names). |
+| cloud_backup_storage_suffix | string | First 12 hex characters of SHA-256 of the ID, or empty | Optional explicit suffix for generated names. |
+| cloud_backup_bucket_name | string | Generated bucket name | Optional common name for S3, GCS, Spaces and Hetzner buckets. Provider-specific names override it. |
+| cloud_backup_azure_account_name | string | Generated Azure Storage Account name | Optional common Azure account name. `azure_blob_storage_account_name` overrides it. |
 | aws_s3_bucket_create | bool | true | Create S3 bucket (if 'pgbackrest_install' or 'wal_g_install' is 'true') |
 | aws_s3_bucket_name | string | {{ patroni_cluster_name }}-backup | Bucket name |
 | aws_s3_bucket_region | string | {{ server_location }} | Bucket region |
@@ -103,6 +107,43 @@ The zone placement variables apply to AWS, GCP and Azure; see [Availability zone
 | hetzner_object_storage_absent | bool | false | Allow delete Object Storage on state=absent |
 
 Set `cloud_backup_provider` when backup storage should be provisioned in a different cloud than the database servers. In that case, also provide the credentials and region-related variables required by the selected backup provider (for example, `azure_backup_location` for Azure). The `server_location` value continues to describe the server provider and is not translated between clouds.
+
+### Backup storage names
+
+For a new backup storage, set a persistent, globally unique `cloud_backup_storage_id`, for example a UUID generated once with `uuidgen`:
+
+```yaml
+# group_vars/all.yml, or all.vars in inventory
+patroni_cluster_name: postgres-cluster-01
+cloud_backup_storage_id: "8bc4111e-8a6d-4b1a-a3db-1ab9d2c6e705"
+```
+
+The ID must be available to both `localhost` (which provisions storage) and the PostgreSQL/backup hosts.
+Setting it only in `group_vars/postgres_cluster.yml` is insufficient. Use a different ID for each independent backup storage.
+Platform integrations should persist the ID before the first deployment attempt and pass it to every subsequent Ansible operation.
+They can also pin `cloud_backup_storage_suffix`, `cloud_backup_bucket_name` and `cloud_backup_azure_account_name`
+in the same variables. Explicit common names are used by provisioning and standalone pgBackRest/WAL-G configuration;
+provider-specific names and backup-tool settings still take precedence. UI integrations can display the pinned names
+without reproducing the generation algorithm. Changing the ID alone does not change an explicitly pinned name.
+
+When the ID is non-empty, the first 12 hexadecimal characters of its SHA-256 hash form a deterministic suffix:
+
+- AWS S3, GCS, DigitalOcean Spaces and Hetzner Object Storage use `<cluster-prefix>-backup-<suffix>`.
+  The cluster prefix is converted to lowercase, characters other than `a-z0-9` are replaced with a hyphen,
+  and leading/trailing hyphens are removed. The prefix is limited to 43 characters so the full name fits within 63 characters.
+- Azure Storage Accounts use `<account-prefix><suffix>`. The prefix contains only lowercase letters and numbers
+  and is limited to 12 characters, keeping the full name within 24 characters. The Blob container name is unchanged.
+- If normalization leaves an empty prefix, `postgres` is used.
+
+Without an ID, all generated names retain their previous behavior, as shown in the variable table above.
+Explicit provider names (`aws_s3_bucket_name`, `gcp_bucket_name`, `digital_ocean_spaces_name`,
+`hetzner_object_storage_name`, `azure_blob_storage_account_name`) still take precedence.
+pgBackRest and WAL-G use the same generated names even when run without `cloud_resources`.
+
+When relying on generated defaults, keep the ID and cluster name unchanged for the lifetime of the backup storage, including retries, configuration changes,
+scaling and deletion. Adding or changing the ID for an existing storage changes its generated name; it does not migrate backups.
+Keep the ID empty for existing installations, or explicitly pin their current storage names before setting it.
+The suffix reduces accidental collisions but does not guarantee that a name is available globally.
 
 ### Provider-specific variables
 

@@ -60,8 +60,22 @@ aws_nlb_client_routing_policy: "availability_zone_affinity" # NLB DNS client rou
 aws_nlb_replica_cross_zone: false # Cross-zone load balancing for replica NLBs. 'false' keeps reads in the client's zone when it has a healthy replica. Always enabled for the primary NLB.
 
 # Bucket (if 'pgbackrest_install' or 'wal_g_install' is 'true')
+cloud_backup_storage_id: "" # Optional stable, globally unique ID (for example, a UUID). Keep it unchanged for the lifetime of the backup storage.
+cloud_backup_storage_suffix: "{{ (cloud_backup_storage_id | hash('sha256'))[:12] if cloud_backup_storage_id | length > 0 else '' }}"
+cloud_backup_bucket_name: >-
+  {{
+    ((patroni_cluster_name | lower | regex_replace('[^a-z0-9]+', '-') | regex_replace('^-+|-+$', '') | default('postgres', true))[:43]
+      | regex_replace('-+$', '')) ~ '-backup-' ~ cloud_backup_storage_suffix
+    if cloud_backup_storage_suffix | length > 0 else patroni_cluster_name ~ '-backup'
+  }}
+cloud_backup_azure_account_name: >-
+  {{
+    (patroni_cluster_name | lower | regex_replace('[^a-z0-9]', '') | default('postgres', true))[:12] ~ cloud_backup_storage_suffix
+    if cloud_backup_storage_suffix | length > 0 else patroni_cluster_name | lower | replace('-', '') | truncate(24, true, '')
+  }}
+
 aws_s3_bucket_create: true # if 'cloud_backup_provider=aws'
-aws_s3_bucket_name: "{{ patroni_cluster_name }}-backup" # Name of the S3 bucket. Bucket naming rules: https://docs.aws.amazon.com/AmazonS3/latest/userguide/bucketnamingrules.html
+aws_s3_bucket_name: "{{ cloud_backup_bucket_name }}" # Name of the S3 bucket. Bucket naming rules: https://docs.aws.amazon.com/AmazonS3/latest/userguide/bucketnamingrules.html
 aws_s3_bucket_region: "{{ server_location }}" # The AWS region to use.
 aws_s3_bucket_object_lock_enabled: false # Whether S3 Object Lock to be enabled.
 aws_s3_bucket_encryption: "AES256" # Describes the default server-side encryption to apply to new objects in the bucket. Choices: "AES256", "aws:kms"
@@ -70,7 +84,7 @@ aws_s3_bucket_ignore_public_acls: true # Sets IgnorePublicAcls value.
 aws_s3_bucket_absent: false # Allow to delete S3 bucket when deleting a cluster servers using the 'state=absent' variable.
 
 gcp_bucket_create: true # if 'cloud_backup_provider=gcp'
-gcp_bucket_name: "{{ patroni_cluster_name }}-backup" # Name of the GCS bucket.
+gcp_bucket_name: "{{ cloud_backup_bucket_name }}" # Name of the GCS bucket.
 gcp_bucket_storage_class: "MULTI_REGIONAL" # The bucket’s default storage class. Values include: MULTI_REGIONAL, REGIONAL, STANDARD, NEARLINE, COLDLINE, ARCHIVE, DURABLE_REDUCED_AVAILABILITY.
 gcp_bucket_default_object_acl: "projectPrivate" # Apply a predefined set of default object access controls to this bucket.
 gcp_bucket_absent: false # Allow to delete GCS bucket when deleting a cluster servers using the 'state=absent' variable.
@@ -79,7 +93,7 @@ azure_blob_storage_create: true # if 'cloud_backup_provider=azure'
 azure_backup_location: "{{ server_location }}" # Azure region for backup storage.
 azure_blob_storage_name: "{{ patroni_cluster_name }}-backup" # Name of a blob container within the storage account.
 azure_blob_storage_blob_type: "block" # Type of blob object. Values include: block, page.
-azure_blob_storage_account_name: "{{ patroni_cluster_name | lower | replace('-', '') | truncate(24, true, '') }}" # Storage account name must be between 3 and 24 characters in length and use numbers and lower-case letters only.
+azure_blob_storage_account_name: "{{ cloud_backup_azure_account_name }}" # Storage account name must be between 3 and 24 characters in length and use numbers and lower-case letters only.
 azure_blob_storage_account_type: "Standard_RAGRS" # Type of storage account. Values include: Standard_LRS, Standard_GRS, Standard_RAGRS, Standard_ZRS, Standard_RAGZRS, Standard_GZRS, Premium_LRS, Premium_ZRS.
 azure_blob_storage_account_kind: "StorageV2" # The kind of storage. Values include: StorageV2, BlockBlobStorage, FileStorage.
 azure_blob_storage_account_access_tier: "Hot" # The access tier for blob data in this storage account.
@@ -88,14 +102,14 @@ azure_blob_storage_account_allow_blob_public_access: false # Disallow public ano
 azure_blob_storage_absent: false # Allow to delete Azure Blob Storage when deleting a cluster servers using the 'state=absent' variable.
 
 digital_ocean_spaces_create: true # if 'cloud_backup_provider=digitalocean'
-digital_ocean_spaces_name: "{{ patroni_cluster_name }}-backup" # Name of the Spaces Object Storage (S3 bucket).
+digital_ocean_spaces_name: "{{ cloud_backup_bucket_name }}" # Name of the Spaces Object Storage (S3 bucket).
 digital_ocean_spaces_region: "{{ (server_location in ['nyc1', 'nyc2']) | ternary('nyc3', server_location) }}" # The region to create the Space in.
 digital_ocean_spaces_access_key: "" # (required) Spaces Object Storage ACCESS KEY
 digital_ocean_spaces_secret_key: "" # (required) Spaces Object Storage SECRET KEY
 digital_ocean_spaces_absent: false # Allow to delete Spaces Object Storage when deleting a cluster servers using the 'state=absent' variable.
 
 hetzner_object_storage_create: true # if 'cloud_backup_provider=hetzner'
-hetzner_object_storage_name: "{{ patroni_cluster_name }}-backup" # Name of the Object Storage (S3 bucket).
+hetzner_object_storage_name: "{{ cloud_backup_bucket_name }}" # Name of the Object Storage (S3 bucket).
 hetzner_object_storage_region: "{{ (server_location in ['hel1', 'fsn1', 'nbg1']) | ternary(server_location, 'nbg1') }}" # The region where the Object Storage (S3 bucket) will be created.
 hetzner_object_storage_endpoint: "https://{{ hetzner_object_storage_region }}.your-objectstorage.com"
 hetzner_object_storage_access_key: "" # (required) Object Storage ACCESS KEY

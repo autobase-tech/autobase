@@ -6,7 +6,7 @@
     wal_g_json:
       - { option: "AWS_ACCESS_KEY_ID", value: "{{ wal_g_aws_access_key_id | default(lookup('ansible.builtin.env', 'AWS_ACCESS_KEY_ID')) }}" }
       - { option: "AWS_SECRET_ACCESS_KEY", value: "{{ wal_g_aws_secret_access_key | default(lookup('ansible.builtin.env', 'AWS_SECRET_ACCESS_KEY')) }}" }
-      - { option: "WALG_S3_PREFIX", value: "{{ wal_g_s3_prefix | default('s3://' + (aws_s3_bucket_name | default(patroni_cluster_name + '-backup'))) }}" }
+      - { option: "WALG_S3_PREFIX", value: "{{ wal_g_s3_prefix | default('s3://' + (aws_s3_bucket_name | default(wal_g_default_cloud_bucket_name))) }}" }
       - { option: "AWS_REGION", value: "{{ wal_g_aws_region | default(aws_s3_bucket_region | default(server_location)) }}" }
       - { option: "WALG_COMPRESSION_METHOD", value: "{{ wal_g_compression_method | default('brotli') }}" }
       - { option: "WALG_DELTA_MAX_STEPS", value: "{{ wal_g_delta_max_steps | default('6') }}" }
@@ -28,7 +28,7 @@
   ansible.builtin.set_fact:
     wal_g_json:
       - { option: "GOOGLE_APPLICATION_CREDENTIALS", value: "{{ wal_g_gs_key | default(postgresql_home_dir + '/gcs-key.json') }}" }
-      - { option: "WALG_GS_PREFIX", value: "{{ wal_g_gs_prefix | default('gs://' + (gcp_bucket_name | default(patroni_cluster_name + '-backup'))) }}" }
+      - { option: "WALG_GS_PREFIX", value: "{{ wal_g_gs_prefix | default('gs://' + (gcp_bucket_name | default(wal_g_default_cloud_bucket_name))) }}" }
       - { option: "WALG_COMPRESSION_METHOD", value: "{{ wal_g_compression_method | default('brotli') }}" }
       - { option: "WALG_DELTA_MAX_STEPS", value: "{{ wal_g_delta_max_steps | default('6') }}" }
       - { option: "WALG_DOWNLOAD_CONCURRENCY", value: "{{ wal_g_download_concurrency | default([ansible_processor_vcpus | int // 2, 1] | max) }}" }
@@ -48,7 +48,7 @@
     - name: "Azure: Get Storage Account info"
       azure.azcollection.azure_rm_storageaccount_info:
         resource_group: "{{ azure_resource_group | default('postgres-cluster-resource-group-' ~ (azure_backup_location | default(server_location | default('')))) }}"
-        name: "{{ wal_g_azure_storage_account | default(azure_blob_storage_account_name | default(patroni_cluster_name | lower | replace('-', '') | truncate(24, true, ''))) }}"
+        name: "{{ wal_g_azure_storage_account | default(azure_blob_storage_account_name | default(wal_g_default_azure_account_name)) }}"
         show_connection_string: true
       register: azure_storage_account_info
 
@@ -69,7 +69,7 @@
     wal_g_json:
       - {
           option: "AZURE_STORAGE_ACCOUNT",
-          value: "{{ wal_g_azure_storage_account | default(azure_blob_storage_account_name | default(patroni_cluster_name | lower | replace('-', '') | truncate(24, true, ''))) }}",
+          value: "{{ wal_g_azure_storage_account | default(azure_blob_storage_account_name | default(wal_g_default_azure_account_name)) }}",
         }
       - {
           option: "AZURE_STORAGE_ACCESS_KEY",
@@ -104,7 +104,7 @@
         }
       - { option: "AWS_REGION", value: "{{ wal_g_s3_region | default(digital_ocean_spaces_region | default(default_region)) }}" }
       - { option: "AWS_S3_FORCE_PATH_STYLE", value: "{{ AWS_S3_FORCE_PATH_STYLE | default(true) }}" }
-      - { option: "WALG_S3_PREFIX", value: "{{ wal_g_s3_prefix | default('s3://' + (digital_ocean_spaces_name | default(patroni_cluster_name + '-backup'))) }}" }
+      - { option: "WALG_S3_PREFIX", value: "{{ wal_g_s3_prefix | default('s3://' + (digital_ocean_spaces_name | default(wal_g_default_cloud_bucket_name))) }}" }
       - { option: "WALG_COMPRESSION_METHOD", value: "{{ wal_g_compression_method | default('brotli') }}" }
       - { option: "WALG_DELTA_MAX_STEPS", value: "{{ wal_g_delta_max_steps | default('6') }}" }
       - { option: "WALG_DOWNLOAD_CONCURRENCY", value: "{{ wal_g_download_concurrency | default([ansible_processor_vcpus | int // 2, 1] | max) }}" }
@@ -134,7 +134,7 @@
       - { option: "AWS_REGION", value: "{{ wal_g_s3_region | default(hetzner_object_storage_region | default(default_region)) }}" }
       - {
           option: "WALG_S3_PREFIX",
-          value: "{{ wal_g_s3_prefix | default('s3://' + (hetzner_object_storage_name | default(patroni_cluster_name + '-backup'))) }}",
+          value: "{{ wal_g_s3_prefix | default('s3://' + (hetzner_object_storage_name | default(wal_g_default_cloud_bucket_name))) }}",
         }
       - { option: "WALG_COMPRESSION_METHOD", value: "{{ wal_g_compression_method | default('brotli') }}" }
       - { option: "WALG_DELTA_MAX_STEPS", value: "{{ wal_g_delta_max_steps | default('6') }}" }
