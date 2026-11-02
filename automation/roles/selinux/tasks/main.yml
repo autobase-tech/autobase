@@ -1,0 +1,19 @@
+---
+- block:
+    - name: SELinux | set mode to "{{ selinux_state }}"
+      ansible.posix.selinux:
+        policy: "{{ selinux_policy }}"
+        state: "{{ selinux_state }}"
+      register: selinux_mode_result
+      when: selinux_state | default('') | length > 0
+
+    # Switching from "disabled" needs a reboot and a full relabel; the role does not reboot.
+    - name: SELinux | warn that a reboot is required
+      ansible.builtin.debug:
+        msg: "SELinux mode '{{ selinux_state }}' is configured but takes effect only after a reboot of {{ inventory_hostname }}."
+      when: selinux_mode_result.reboot_required | default(false)
+  when:
+    - ansible_os_family == "RedHat"
+    - ansible_selinux.status is defined
+    - ansible_selinux.status == "enabled"
+  tags: selinux
