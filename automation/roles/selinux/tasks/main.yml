@@ -18,5 +18,8 @@
     - ansible_selinux.status == "enabled"
   tags: selinux
 
+- name: SELinux | confine Patroni and PostgreSQL
+  ansible.builtin.import_tasks: policy.yml
+
 - name: SELinux | label the PostgreSQL directories
   ansible.builtin.import_tasks: contexts.yml
