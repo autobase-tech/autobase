@@ -79,4 +79,6 @@
     - role: vitabaks.autobase.add_repository
       when: etcd_installation_method | default('binary') != "binary"
 
+    - role: vitabaks.autobase.selinux
+
     - role: vitabaks.autobase.etcd

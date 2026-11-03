@@ -9,7 +9,9 @@
         selinux_policy_modules: >-
           {{ (['autobase_patroni'] if inventory_hostname in groups['postgres_cluster'] | default([]) else [])
              + (['autobase_pgbackrest'] if inventory_hostname in groups['postgres_cluster'] | default([])
-                and pgbackrest_install | default(false) | bool else []) }}
+                and pgbackrest_install | default(false) | bool else [])
+             + (['autobase_etcd'] if inventory_hostname in groups['etcd_cluster'] | default([])
+                and dcs_type | default('etcd') == 'etcd' and not dcs_exists | default(false) | bool else []) }}
 
     - name: SELinux | install the policy development tools
       ansible.builtin.package:
@@ -75,6 +77,23 @@
         setype: patroni_log_t
         state: present
       when: "'autobase_patroni' in selinux_policy_modules"
+
+    - name: SELinux | assign the etcd client and peer ports
+      community.general.seport:
+        ports: "2379,2380"
+        proto: tcp
+        setype: etcd_port_t
+        state: present
+      when: "'autobase_etcd' in selinux_policy_modules"
+
+    - name: SELinux | add file context rules for a custom etcd data directory
+      community.general.sefcontext:
+        target: "{{ etcd_data_dir }}(/.*)?"
+        setype: etcd_var_lib_t
+        state: present
+      when:
+        - "'autobase_etcd' in selinux_policy_modules"
+        - etcd_data_dir | default('/var/lib/etcd') != '/var/lib/etcd'
 
     # autobase_pgbackrest.fc labels the default paths; custom ones from pgbackrest_conf need rules.
     - name: SELinux | add file context rules for custom pgBackRest paths
