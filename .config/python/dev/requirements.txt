@@ -1,8 +1,8 @@
-ansible==14.2.0
-ansible-lint==26.6.0
-ansible-compat==26.6.0
+ansible==14.5.0
+ansible-lint==26.10.1
+ansible-compat==26.10.0
 yamllint==1.38.0
-molecule==26.6.0
-molecule-plugins==26.7.15
+molecule==26.10.0
+molecule-plugins==26.10.12
 docker==7.2.0
-flake8==7.3.0
+flake8==7.5.0
