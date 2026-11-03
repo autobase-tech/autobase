@@ -1,0 +1,24 @@
+policy_module(autobase_haproxy, 1.0.0)
+
+########################################
+#
+# HAProxy keeps the base policy's haproxy_t domain, which the haproxy role
+# otherwise sets to permissive. This module adds what Autobase's layout
+# needs, so haproxy_t can stay enforcing (haproxy_connect_any remains on:
+# the listeners 5000-5003/7000 and the backends 8008/5432/6432 vary).
+#
+
+require {
+	type haproxy_t;
+	type haproxy_exec_t;
+}
+
+# /etc/haproxy: written by confd, read by HAProxy
+type haproxy_conf_t;
+files_config_file(haproxy_conf_t)
+
+read_files_pattern(haproxy_t, haproxy_conf_t, haproxy_conf_t)
+list_dirs_pattern(haproxy_t, haproxy_conf_t, haproxy_conf_t)
+
+# haproxy.cfg is haproxy:haproxy 0640 and the master process reads it as root
+allow haproxy_t self:capability { dac_override dac_read_search };

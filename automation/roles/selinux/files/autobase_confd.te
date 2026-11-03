@@ -1,0 +1,75 @@
+policy_module(autobase_confd, 1.0.0)
+
+########################################
+#
+# confd runs in its own domain (confd_t). It watches the DCS, renders
+# /etc/haproxy/haproxy.cfg, checks it with "haproxy -c" and reloads HAProxy
+# through systemctl. Without this module it runs as unconfined_service_t.
+#
+
+require {
+	type haproxy_conf_t;
+	type haproxy_exec_t;
+	type haproxy_unit_file_t;
+	type haproxy_var_lib_t;
+	class service { reload status };
+}
+
+type confd_t;
+type confd_exec_t;
+init_daemon_domain(confd_t, confd_exec_t)
+
+# /etc/confd: configuration, templates and the etcd client certificates
+type confd_etc_t;
+files_config_file(confd_etc_t)
+
+########################################
+#
+# Local policy
+#
+
+allow confd_t self:process { fork signal_perms };
+allow confd_t self:fifo_file rw_fifo_file_perms;
+allow confd_t self:unix_stream_socket create_stream_socket_perms;
+allow confd_t self:unix_dgram_socket create_socket_perms;
+allow confd_t self:tcp_socket create_stream_socket_perms;
+allow confd_t self:udp_socket create_socket_perms;
+allow confd_t self:netlink_route_socket r_netlink_socket_perms;
+
+read_files_pattern(confd_t, confd_etc_t, confd_etc_t)
+list_dirs_pattern(confd_t, confd_etc_t, confd_etc_t)
+
+files_read_etc_files(confd_t)
+kernel_read_system_state(confd_t)
+kernel_read_kernel_sysctls(confd_t)
+dev_read_sysfs(confd_t)
+dev_read_urand(confd_t)
+fs_search_cgroup_dirs(confd_t)
+fs_read_cgroup_files(confd_t)
+auth_use_nsswitch(confd_t)
+miscfiles_read_localization(confd_t)
+miscfiles_read_generic_certs(confd_t)
+sysnet_read_config(confd_t)
+logging_send_syslog_msg(confd_t)
+
+# The DCS (etcd or Consul; on a balancer host the ports may carry no type)
+corenet_tcp_connect_all_ports(confd_t)
+
+# Render haproxy.cfg: confd writes a stage file next to it and renames it
+manage_files_pattern(confd_t, haproxy_conf_t, haproxy_conf_t)
+rw_dirs_pattern(confd_t, haproxy_conf_t, haproxy_conf_t)
+
+# confd runs as root; haproxy.cfg and its directory belong to haproxy:haproxy
+allow confd_t self:capability { chown fowner dac_override dac_read_search };
+
+# check_cmd: haproxy -c -f <stage file>, run in confd_t; it checks the chroot directory
+allow confd_t haproxy_var_lib_t:dir { getattr search };
+corecmd_exec_bin(confd_t)
+corecmd_exec_shell(confd_t)
+can_exec(confd_t, haproxy_exec_t)
+
+# reload_cmd: systemctl reload haproxy
+systemd_exec_systemctl(confd_t)
+init_stream_connect(confd_t)
+init_read_state(confd_t)
+allow confd_t haproxy_unit_file_t:service { reload status };

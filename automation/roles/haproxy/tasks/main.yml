@@ -83,6 +83,14 @@
     - /var/lib/haproxy/dev
   tags: haproxy, load_balancing
 
+- name: Apply SELinux file contexts to the HAProxy configuration directory
+  ansible.builtin.include_role:
+    name: vitabaks.autobase.selinux
+    tasks_from: relabel
+  vars:
+    selinux_relabel_paths: ["/etc/haproxy"]
+  tags: haproxy, load_balancing, selinux
+
 - name: Generate conf file "/etc/haproxy/haproxy.cfg"
   ansible.builtin.template:
     src: templates/haproxy.cfg.j2
@@ -209,10 +217,12 @@
         state: true
         persistent: true
 
-    - name: selinux | change the haproxy_t domain to permissive
+    # With selinux_confine_services the autobase_haproxy module covers what haproxy_t needs,
+    # so the domain stays (or becomes again) enforcing.
+    - name: selinux | set the haproxy_t domain to {{ 'enforcing' if selinux_confine_services | default(false) | bool else 'permissive' }}
       community.general.selinux_permissive:
         name: haproxy_t
-        permissive: true
+        permissive: "{{ not (selinux_confine_services | default(false) | bool) }}"
   when: ansible_selinux.status is defined and ansible_selinux.status == 'enabled'
   ignore_errors: true
   tags: haproxy, load_balancing, haproxy_selinux

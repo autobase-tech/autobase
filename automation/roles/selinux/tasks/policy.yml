@@ -12,6 +12,11 @@
                 and pgbackrest_install | default(false) | bool else [])
              + (['autobase_pgbouncer'] if inventory_hostname in groups['postgres_cluster'] | default([])
                 and pgbouncer_install | default(false) | bool else [])
+             + (['autobase_haproxy'] if inventory_hostname in groups['balancers'] | default([])
+                and with_haproxy_load_balancing | default(false) | bool else [])
+             + (['autobase_confd'] if inventory_hostname in groups['balancers'] | default([])
+                and with_haproxy_load_balancing | default(false) | bool and confd_install | default(true) | bool
+                and dcs_type | default('etcd') == 'etcd' else [])
              + (['autobase_etcd'] if inventory_hostname in groups['etcd_cluster'] | default([])
                 and dcs_type | default('etcd') == 'etcd' and not dcs_exists | default(false) | bool else []) }}
 

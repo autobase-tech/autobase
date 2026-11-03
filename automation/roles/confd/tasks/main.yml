@@ -37,6 +37,14 @@
     - /etc/confd/templates
   tags: confd_dir, confd_conf, confd
 
+- name: Apply SELinux file contexts to confd
+  ansible.builtin.include_role:
+    name: vitabaks.autobase.selinux
+    tasks_from: relabel
+  vars:
+    selinux_relabel_paths: ["/usr/local/bin/confd", "/etc/confd"]
+  tags: confd_dir, confd_conf, confd, selinux
+
 # TLS (etcd)
 - name: Copy etcd cert files for confd
   ansible.builtin.include_role:
