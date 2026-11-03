@@ -1,0 +1,54 @@
+policy_module(autobase_vip_manager, 1.0.0)
+
+########################################
+#
+# vip-manager runs in its own domain (vip_manager_t). It watches the leader
+# key in the DCS (or the Patroni REST API) and adds or removes the cluster
+# VIP on the leader, announcing it with gratuitous ARP. Without this module
+# it runs as unconfined_service_t.
+#
+
+type vip_manager_t;
+type vip_manager_exec_t;
+init_daemon_domain(vip_manager_t, vip_manager_exec_t)
+
+########################################
+#
+# Local policy
+#
+
+allow vip_manager_t self:process { fork signal_perms };
+allow vip_manager_t self:fifo_file rw_fifo_file_perms;
+allow vip_manager_t self:unix_stream_socket create_stream_socket_perms;
+allow vip_manager_t self:unix_dgram_socket create_socket_perms;
+allow vip_manager_t self:tcp_socket create_stream_socket_perms;
+allow vip_manager_t self:udp_socket create_socket_perms;
+
+# vip-manager adds and removes the address with "ip", which runs in the base policy's ifconfig_t
+sysnet_domtrans_ifconfig(vip_manager_t)
+
+# Add and remove the address (netlink) and send gratuitous ARP (packet socket)
+allow vip_manager_t self:capability { net_admin net_raw };
+# The configuration (vip_manager_conf) belongs to postgres and vip-manager runs as root
+allow vip_manager_t self:capability dac_read_search;
+allow vip_manager_t self:netlink_route_socket { create_netlink_socket_perms nlmsg_write };
+allow vip_manager_t self:packet_socket create_socket_perms;
+allow vip_manager_t self:rawip_socket create_socket_perms;
+
+files_read_etc_files(vip_manager_t)
+kernel_read_system_state(vip_manager_t)
+kernel_read_network_state(vip_manager_t)
+kernel_read_kernel_sysctls(vip_manager_t)
+kernel_request_load_module(vip_manager_t)
+dev_read_sysfs(vip_manager_t)
+dev_read_urand(vip_manager_t)
+fs_search_cgroup_dirs(vip_manager_t)
+fs_read_cgroup_files(vip_manager_t)
+auth_use_nsswitch(vip_manager_t)
+miscfiles_read_localization(vip_manager_t)
+miscfiles_read_generic_certs(vip_manager_t)
+sysnet_read_config(vip_manager_t)
+logging_send_syslog_msg(vip_manager_t)
+
+# The DCS (etcd or Consul) or the Patroni REST API
+corenet_tcp_connect_all_ports(vip_manager_t)

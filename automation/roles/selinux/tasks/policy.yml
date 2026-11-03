@@ -21,7 +21,10 @@
                 and with_haproxy_load_balancing | default(false) | bool
                 and cluster_vip | default('') | length > 0 else [])
              + (['autobase_etcd'] if inventory_hostname in groups['etcd_cluster'] | default([])
-                and dcs_type | default('etcd') == 'etcd' and not dcs_exists | default(false) | bool else []) }}
+                and dcs_type | default('etcd') == 'etcd' and not dcs_exists | default(false) | bool else [])
+             + (['autobase_vip_manager'] if inventory_hostname in groups['postgres_cluster'] | default([])
+                and cluster_vip | default('') | length > 0
+                and not with_haproxy_load_balancing | default(false) | bool else []) }}
 
     - name: SELinux | install the policy development tools
       ansible.builtin.package:
