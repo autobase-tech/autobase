@@ -1,0 +1,5 @@
+/usr/bin/pgbouncer	--	gen_context(system_u:object_r:pgbouncer_exec_t,s0)
+/usr/sbin/pgbouncer	--	gen_context(system_u:object_r:pgbouncer_exec_t,s0)
+/etc/pgbouncer(/.*)?	gen_context(system_u:object_r:pgbouncer_etc_t,s0)
+/var/log/pgbouncer(/.*)?	gen_context(system_u:object_r:pgbouncer_log_t,s0)
+/run/pgbouncer(-[0-9]+)?(/.*)?	gen_context(system_u:object_r:pgbouncer_var_run_t,s0)

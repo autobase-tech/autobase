@@ -10,6 +10,8 @@
           {{ (['autobase_patroni'] if inventory_hostname in groups['postgres_cluster'] | default([]) else [])
              + (['autobase_pgbackrest'] if inventory_hostname in groups['postgres_cluster'] | default([])
                 and pgbackrest_install | default(false) | bool else [])
+             + (['autobase_pgbouncer'] if inventory_hostname in groups['postgres_cluster'] | default([])
+                and pgbouncer_install | default(false) | bool else [])
              + (['autobase_etcd'] if inventory_hostname in groups['etcd_cluster'] | default([])
                 and dcs_type | default('etcd') == 'etcd' and not dcs_exists | default(false) | bool else []) }}
 
@@ -85,6 +87,28 @@
         setype: etcd_port_t
         state: present
       when: "'autobase_etcd' in selinux_policy_modules"
+
+    - name: SELinux | assign the pgbouncer listen port
+      community.general.seport:
+        ports: "{{ pgbouncer_listen_port | default(6432) }}"
+        proto: tcp
+        setype: pgbouncer_port_t
+        state: present
+      when: "'autobase_pgbouncer' in selinux_policy_modules"
+
+    - name: SELinux | add file context rules for custom pgbouncer directories
+      community.general.sefcontext:
+        target: "{{ item.path }}(/.*)?"
+        setype: "{{ item.setype }}"
+        state: present
+      loop:
+        - { path: "{{ pgbouncer_conf_dir }}", default: "/etc/pgbouncer", setype: pgbouncer_etc_t }
+        - { path: "{{ pgbouncer_log_dir }}", default: "/var/log/pgbouncer", setype: pgbouncer_log_t }
+      loop_control:
+        label: "{{ item.path }}"
+      when:
+        - "'autobase_pgbouncer' in selinux_policy_modules"
+        - item.path != item.default
 
     - name: SELinux | add file context rules for a custom etcd data directory
       community.general.sefcontext:

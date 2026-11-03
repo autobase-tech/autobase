@@ -1,0 +1,75 @@
+policy_module(autobase_pgbouncer, 1.0.0)
+
+########################################
+#
+# PgBouncer runs in its own domain (pgbouncer_t). The base policy has no
+# PgBouncer module, so without this one it runs as unconfined_service_t.
+#
+
+require {
+	type postgresql_t;
+	type postgresql_var_run_t;
+}
+
+type pgbouncer_t;
+type pgbouncer_exec_t;
+init_daemon_domain(pgbouncer_t, pgbouncer_exec_t)
+
+# /etc/pgbouncer holds userlist.txt with password hashes
+type pgbouncer_etc_t;
+files_config_file(pgbouncer_etc_t)
+
+type pgbouncer_log_t;
+logging_log_file(pgbouncer_log_t)
+
+# /run/pgbouncer[-N]: pid file and the unix socket for local clients
+type pgbouncer_var_run_t;
+files_pid_file(pgbouncer_var_run_t)
+
+# pgbouncer_listen_port (6432/tcp by default); assigned by the selinux role
+type pgbouncer_port_t;
+corenet_port(pgbouncer_port_t)
+
+########################################
+#
+# Local policy
+#
+
+allow pgbouncer_t self:process { fork signal_perms setrlimit };
+allow pgbouncer_t self:fifo_file rw_fifo_file_perms;
+allow pgbouncer_t self:unix_stream_socket { create_stream_socket_perms accept listen };
+allow pgbouncer_t self:unix_dgram_socket create_socket_perms;
+allow pgbouncer_t self:tcp_socket { create_stream_socket_perms accept listen };
+allow pgbouncer_t self:udp_socket create_socket_perms;
+
+read_files_pattern(pgbouncer_t, pgbouncer_etc_t, pgbouncer_etc_t)
+list_dirs_pattern(pgbouncer_t, pgbouncer_etc_t, pgbouncer_etc_t)
+
+manage_dirs_pattern(pgbouncer_t, pgbouncer_log_t, pgbouncer_log_t)
+manage_files_pattern(pgbouncer_t, pgbouncer_log_t, pgbouncer_log_t)
+logging_log_filetrans(pgbouncer_t, pgbouncer_log_t, { dir file })
+
+manage_dirs_pattern(pgbouncer_t, pgbouncer_var_run_t, pgbouncer_var_run_t)
+manage_files_pattern(pgbouncer_t, pgbouncer_var_run_t, pgbouncer_var_run_t)
+manage_sock_files_pattern(pgbouncer_t, pgbouncer_var_run_t, pgbouncer_var_run_t)
+files_pid_filetrans(pgbouncer_t, pgbouncer_var_run_t, { dir file sock_file })
+
+files_read_etc_files(pgbouncer_t)
+files_read_usr_files(pgbouncer_t)
+kernel_read_system_state(pgbouncer_t)
+kernel_read_kernel_sysctls(pgbouncer_t)
+dev_read_urand(pgbouncer_t)
+auth_use_nsswitch(pgbouncer_t)
+miscfiles_read_localization(pgbouncer_t)
+miscfiles_read_generic_certs(pgbouncer_t)
+sysnet_read_config(pgbouncer_t)
+logging_send_syslog_msg(pgbouncer_t)
+
+# Clients connect on pgbouncer_listen_port (so_reuseport when pgbouncer_processes > 1)
+corenet_tcp_bind_generic_node(pgbouncer_t)
+allow pgbouncer_t pgbouncer_port_t:tcp_socket name_bind;
+
+# Servers: PostgreSQL over its unix socket, or over TCP
+files_search_pids(pgbouncer_t)
+stream_connect_pattern(pgbouncer_t, postgresql_var_run_t, postgresql_var_run_t, postgresql_t)
+corenet_tcp_connect_postgresql_port(pgbouncer_t)
