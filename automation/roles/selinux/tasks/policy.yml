@@ -22,6 +22,8 @@
                 and cluster_vip | default('') | length > 0 else [])
              + (['autobase_etcd'] if inventory_hostname in groups['etcd_cluster'] | default([])
                 and dcs_type | default('etcd') == 'etcd' and not dcs_exists | default(false) | bool else [])
+             + (['autobase_consul'] if inventory_hostname in groups['consul_instances'] | default([])
+                and dcs_type | default('etcd') == 'consul' else [])
              + (['autobase_vip_manager'] if inventory_hostname in groups['postgres_cluster'] | default([])
                 and cluster_vip | default('') | length > 0
                 and not with_haproxy_load_balancing | default(false) | bool else []) }}
@@ -130,6 +132,17 @@
         mode: "0755"
         setype: keepalived_iproute2_t
       when: "'autobase_keepalived' in selinux_policy_modules"
+
+    - name: SELinux | assign the Consul ports
+      community.general.seport:
+        ports: "{{ item.ports }}"
+        proto: "{{ item.proto }}"
+        setype: consul_port_t
+        state: present
+      loop:
+        - { proto: tcp, ports: "8300-8302,8400,8500,8502-8503,8600" }
+        - { proto: udp, ports: "8301-8302,8600" }
+      when: "'autobase_consul' in selinux_policy_modules"
 
     - name: SELinux | add file context rules for a custom etcd data directory
       community.general.sefcontext:

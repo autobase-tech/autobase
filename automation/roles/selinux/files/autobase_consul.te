@@ -1,0 +1,104 @@
+policy_module(autobase_consul, 1.0.0)
+
+########################################
+#
+# Consul runs in its own domain (consul_t). The base policy has no Consul
+# module, so without this one it runs as unconfined_service_t.
+#
+
+type consul_t;
+type consul_exec_t;
+init_daemon_domain(consul_t, consul_exec_t)
+
+type consul_etc_t;
+files_config_file(consul_etc_t)
+
+type consul_var_lib_t;
+files_type(consul_var_lib_t)
+
+type consul_log_t;
+logging_log_file(consul_log_t)
+
+type consul_var_run_t;
+files_pid_file(consul_var_run_t)
+
+# server 8300, serf LAN/WAN 8301-8302 (tcp and udp), RPC 8400, HTTP(S) 8500,
+# gRPC 8502-8503, DNS 8600 (tcp and udp); assigned by the selinux role
+type consul_port_t;
+corenet_port(consul_port_t)
+
+########################################
+#
+# Local policy
+#
+
+allow consul_t self:process { fork signal_perms getsched setrlimit setpgid };
+allow consul_t self:fifo_file rw_fifo_file_perms;
+allow consul_t self:unix_stream_socket { create_stream_socket_perms accept listen };
+allow consul_t self:unix_dgram_socket create_socket_perms;
+allow consul_t self:tcp_socket { create_stream_socket_perms accept listen };
+allow consul_t self:udp_socket create_socket_perms;
+allow consul_t self:netlink_route_socket r_netlink_socket_perms;
+
+read_files_pattern(consul_t, consul_etc_t, consul_etc_t)
+list_dirs_pattern(consul_t, consul_etc_t, consul_etc_t)
+
+manage_dirs_pattern(consul_t, consul_var_lib_t, consul_var_lib_t)
+manage_files_pattern(consul_t, consul_var_lib_t, consul_var_lib_t)
+allow consul_t consul_var_lib_t:file map;
+
+manage_dirs_pattern(consul_t, consul_log_t, consul_log_t)
+manage_files_pattern(consul_t, consul_log_t, consul_log_t)
+logging_log_filetrans(consul_t, consul_log_t, { dir file })
+
+manage_dirs_pattern(consul_t, consul_var_run_t, consul_var_run_t)
+manage_files_pattern(consul_t, consul_var_run_t, consul_var_run_t)
+files_pid_filetrans(consul_t, consul_var_run_t, { dir file })
+
+files_read_etc_files(consul_t)
+files_read_usr_files(consul_t)
+kernel_read_system_state(consul_t)
+kernel_read_network_state(consul_t)
+kernel_read_kernel_sysctls(consul_t)
+kernel_read_net_sysctls(consul_t)
+dev_read_sysfs(consul_t)
+dev_read_urand(consul_t)
+fs_getattr_all_fs(consul_t)
+fs_search_cgroup_dirs(consul_t)
+fs_read_cgroup_files(consul_t)
+auth_use_nsswitch(consul_t)
+miscfiles_read_localization(consul_t)
+miscfiles_read_generic_certs(consul_t)
+sysnet_read_config(consul_t)
+logging_send_syslog_msg(consul_t)
+
+########################################
+#
+# Health checks of the registered services: an HTTP check against the Patroni
+# REST API (8008/tcp is http_port_t) and "systemctl status pgbouncer", which
+# the agent runs itself (Autobase's consul_services)
+#
+
+corenet_tcp_connect_http_port(consul_t)
+corecmd_exec_bin(consul_t)
+corecmd_exec_shell(consul_t)
+systemd_exec_systemctl(consul_t)
+init_read_state(consul_t)
+init_stream_connect(consul_t)
+init_status(consul_t)
+systemd_status_all_unit_files(consul_t)
+domain_read_all_domains_state(consul_t)
+logging_read_syslog_pid(consul_t)
+
+optional_policy(`
+	gen_require(`
+		type patroni_t;
+	')
+	# The Consul client in Patroni looks for the consul binary but does not run it
+	dontaudit patroni_t consul_exec_t:file getattr;
+')
+
+corenet_tcp_bind_generic_node(consul_t)
+corenet_udp_bind_generic_node(consul_t)
+allow consul_t consul_port_t:tcp_socket { name_bind name_connect };
+allow consul_t consul_port_t:udp_socket name_bind;

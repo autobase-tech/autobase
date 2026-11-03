@@ -299,6 +299,19 @@
     - not ansible_os_family == "Darwin"
     - consul_snapshot | bool
 
+- name: Apply SELinux file contexts to Consul
+  ansible.builtin.include_role:
+    name: vitabaks.autobase.selinux
+    tasks_from: relabel
+  vars:
+    selinux_relabel_paths:
+      - "{{ consul_bin_path }}/consul"
+      - /usr/bin/consul
+      - "{{ consul_config_path }}"
+      - "{{ consul_data_path }}"
+      - "{{ consul_log_path }}"
+  tags: selinux
+
 - block:
     - name: Start Consul
       ansible.builtin.service:
