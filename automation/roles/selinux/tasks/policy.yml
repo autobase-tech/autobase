@@ -7,7 +7,9 @@
     - name: SELinux | select the policy modules for this host
       ansible.builtin.set_fact:
         selinux_policy_modules: >-
-          {{ (['autobase_patroni'] if inventory_hostname in groups['postgres_cluster'] | default([]) else []) }}
+          {{ (['autobase_patroni'] if inventory_hostname in groups['postgres_cluster'] | default([]) else [])
+             + (['autobase_pgbackrest'] if inventory_hostname in groups['postgres_cluster'] | default([])
+                and pgbackrest_install | default(false) | bool else []) }}
 
     - name: SELinux | install the policy development tools
       ansible.builtin.package:
@@ -73,6 +75,25 @@
         setype: patroni_log_t
         state: present
       when: "'autobase_patroni' in selinux_policy_modules"
+
+    # autobase_pgbackrest.fc labels the default paths; custom ones from pgbackrest_conf need rules.
+    - name: SELinux | add file context rules for custom pgBackRest paths
+      community.general.sefcontext:
+        target: "{{ item.value }}(/.*)?"
+        setype: "{{ selinux_pgbackrest_path_types[item.option] }}"
+        state: present
+      loop: "{{ pgbackrest_conf.global | default([]) | selectattr('option', 'in', selinux_pgbackrest_path_types.keys() | list) | list }}"
+      loop_control:
+        label: "{{ item.option }}={{ item.value }}"
+      when:
+        - "'autobase_pgbackrest' in selinux_policy_modules"
+        - item.option != 'repo1-path' or pgbackrest_repo_type | default('posix') == 'posix'
+      vars:
+        selinux_pgbackrest_path_types:
+          log-path: pgbackrest_log_t
+          repo1-path: pgbackrest_var_lib_t
+          spool-path: pgbackrest_spool_t
+          lock-path: pgbackrest_tmp_t
   when:
     - ansible_os_family == "RedHat"
     - ansible_selinux.status is defined

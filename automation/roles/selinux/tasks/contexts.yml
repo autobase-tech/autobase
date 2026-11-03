@@ -75,13 +75,16 @@
     - inventory_hostname in groups['postgres_cluster'] | default([])
   tags: selinux, selinux_contexts
 
-# Patroni installed by pip lands in /usr/local/bin as bin_t; file context rules apply only
-# after a relabel.
-- name: SELinux | apply the file contexts to the Patroni and PostgreSQL files
+# Patroni installed by pip lands in /usr/local/bin as bin_t, and the pgBackRest directories
+# exist before the policy modules are loaded; file context rules apply only after a relabel.
+- name: SELinux | apply the file contexts to the Patroni, PostgreSQL and pgBackRest files
   ansible.builtin.include_tasks: relabel.yml
   vars:
     selinux_relabel_paths: >-
       {{ ['/usr/bin/patroni', '/usr/local/bin/patroni', patroni_log_dir]
-         + ['postgres', 'initdb', 'pg_ctl'] | map('regex_replace', '^', postgresql_bin_dir + '/') | list }}
+         + ['postgres', 'initdb', 'pg_ctl'] | map('regex_replace', '^', postgresql_bin_dir + '/') | list
+         + ['/usr/bin/pgbackrest']
+         + (pgbackrest_conf.global | default([]) | selectattr('option', 'in', ['log-path', 'repo1-path', 'spool-path'])
+            | map(attribute='value') | list) }}
   when: inventory_hostname in groups['postgres_cluster'] | default([])
   tags: selinux, selinux_contexts
