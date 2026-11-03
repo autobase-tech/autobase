@@ -75,23 +75,13 @@
     - inventory_hostname in groups['postgres_cluster'] | default([])
   tags: selinux, selinux_contexts
 
-# Patroni installed by pip lands in /usr/local/bin as bin_t; the rules from policy.yml
-# take effect on files only after a relabel.
-- name: SELinux | apply the file contexts to the Patroni and PostgreSQL executables
-  ansible.builtin.shell: |
-    set -o pipefail
-    paths=$(ls -d /usr/bin/patroni /usr/local/bin/patroni {{ patroni_log_dir | quote }} \
-      {{ postgresql_bin_dir | quote }}/postgres {{ postgresql_bin_dir | quote }}/initdb \
-      {{ postgresql_bin_dir | quote }}/pg_ctl 2>/dev/null || true)
-    [ -z "$paths" ] || restorecon -R -v $paths
-  args:
-    executable: /bin/bash
-  register: selinux_restorecon_executables
-  changed_when: selinux_restorecon_executables.stdout | length > 0
-  when:
-    - ansible_os_family == "RedHat"
-    - ansible_selinux.status is defined
-    - ansible_selinux.status == "enabled"
-    - selinux_confine_services | bool
-    - inventory_hostname in groups['postgres_cluster'] | default([])
+# Patroni installed by pip lands in /usr/local/bin as bin_t; file context rules apply only
+# after a relabel.
+- name: SELinux | apply the file contexts to the Patroni and PostgreSQL files
+  ansible.builtin.include_tasks: relabel.yml
+  vars:
+    selinux_relabel_paths: >-
+      {{ ['/usr/bin/patroni', '/usr/local/bin/patroni', patroni_log_dir]
+         + ['postgres', 'initdb', 'pg_ctl'] | map('regex_replace', '^', postgresql_bin_dir + '/') | list }}
+  when: inventory_hostname in groups['postgres_cluster'] | default([])
   tags: selinux, selinux_contexts

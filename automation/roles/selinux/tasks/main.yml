@@ -1,5 +1,18 @@
 ---
 - block:
+    # The sefcontext and seport modules need the Python bindings; the packages role installs
+    # them too, but etcd and Consul are deployed before it runs.
+    - name: SELinux | make sure the Python bindings are present
+      ansible.builtin.package:
+        name:
+          - python3-libselinux
+          - python3-policycoreutils
+        state: present
+      register: package_status
+      until: package_status is success
+      delay: 5
+      retries: 3
+
     - name: SELinux | set mode to "{{ selinux_state }}"
       ansible.posix.selinux:
         policy: "{{ selinux_policy }}"
