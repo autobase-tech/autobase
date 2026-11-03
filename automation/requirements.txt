@@ -1,5 +1,5 @@
-ansible==14.2.0
-boto3==1.43.58
+ansible==14.5.0
+boto3==1.43.123
 dopy==0.3.7
-google-auth==2.56.2
-hcloud==2.23.0
+google-auth==2.62.0
+hcloud==2.27.0

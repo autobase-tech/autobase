@@ -1,5 +1,5 @@
 rich>=15.0.0,<15.1.0
-molecule==26.6.0
+molecule==26.10.0
 docker
 netaddr
 testinfra
