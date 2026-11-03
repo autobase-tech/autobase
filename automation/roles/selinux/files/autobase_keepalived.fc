@@ -1,0 +1,1 @@
+/etc/iproute2/rt_addrprotos\.d(/.*)?	gen_context(system_u:object_r:keepalived_iproute2_t,s0)

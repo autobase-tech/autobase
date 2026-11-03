@@ -17,6 +17,9 @@
              + (['autobase_confd'] if inventory_hostname in groups['balancers'] | default([])
                 and with_haproxy_load_balancing | default(false) | bool and confd_install | default(true) | bool
                 and dcs_type | default('etcd') == 'etcd' else [])
+             + (['autobase_keepalived'] if inventory_hostname in groups['balancers'] | default([])
+                and with_haproxy_load_balancing | default(false) | bool
+                and cluster_vip | default('') | length > 0 else [])
              + (['autobase_etcd'] if inventory_hostname in groups['etcd_cluster'] | default([])
                 and dcs_type | default('etcd') == 'etcd' and not dcs_exists | default(false) | bool else []) }}
 
@@ -114,6 +117,16 @@
       when:
         - "'autobase_pgbouncer' in selinux_policy_modules"
         - item.path != item.default
+
+    # keepalived creates the directory itself when it is missing, in etc_t; created here,
+    # it gets keepalived_iproute2_t and keepalived needs no write access to /etc/iproute2.
+    - name: SELinux | create the iproute2 protocol directory for keepalived
+      ansible.builtin.file:
+        path: /etc/iproute2/rt_addrprotos.d
+        state: directory
+        mode: "0755"
+        setype: keepalived_iproute2_t
+      when: "'autobase_keepalived' in selinux_policy_modules"
 
     - name: SELinux | add file context rules for a custom etcd data directory
       community.general.sefcontext:
