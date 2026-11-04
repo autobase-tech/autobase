@@ -6,6 +6,13 @@ interval: {{ vip_manager_interval }}
 {% if vip_manager_dcs_type | default(dcs_type) == 'patroni' %}
 trigger-key: "/leader"
 trigger-value: 200
+# the Patroni REST API of this host (the default endpoint, with the scheme Patroni serves)
+dcs-endpoints:
+  - {{ patroni_restapi_protocol | default('http') }}://127.0.0.1:{{ patroni_restapi_port | default(8008) }}
+{% if patroni_restapi_protocol | default('http') == 'https' and patroni_restapi_cafile | default('') | length > 0 %}
+# CA used to verify the REST API certificate (vip-manager reads it from etcd-ca-file for every DCS type)
+etcd-ca-file: {{ patroni_restapi_cafile }}
+{% endif %}
 {% else %}
 # the etcd or consul key which vip-manager will regularly poll.
 trigger-key: "/{{ patroni_etcd_namespace | default('service') }}/{{ patroni_cluster_name }}/leader"
@@ -38,18 +45,20 @@ dcs-endpoints:
 {% endif %}
 {% if vip_manager_dcs_type | default(dcs_type) == 'consul' %}
 # A list that contains all DCS endpoints to which vip-manager could talk.
+# HTTPS when the Consul agent serves TLS (the CA is passed in the systemd unit)
+{% set consul_scheme = 'https' if consul_tls_enable | default(false) | bool else 'http' %}
 dcs-endpoints:
 {% if not dcs_exists | bool %}
   {% if consul_client_address == '127.0.0.1' %}
-  - http://127.0.0.1:8500
+  - {{ consul_scheme }}://127.0.0.1:8500
   {% else %}
   {% for host in groups['consul_instances'] %}
-  - http://{{ hostvars[host]['consul_bind_address'] | default(hostvars[host]['bind_address'], true) }}:8500
+  - {{ consul_scheme }}://{{ hostvars[host]['consul_bind_address'] | default(hostvars[host]['bind_address'], true) }}:8500
   {% endfor %}
   {% endif %}
 {% else %}
   {% for consul_host in consul_join %}
-  - http://{{ consul_host }}:8500
+  - {{ consul_scheme }}://{{ consul_host }}:8500
   {% endfor %}
 {% endif %}
 {% if consul_token | default("") | length > 0 %}
