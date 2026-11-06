@@ -137,7 +137,13 @@ bootstrap:
       {% endif %}
       {% if patroni_standby_cluster.recovery_min_apply_delay is defined and patroni_standby_cluster.recovery_min_apply_delay | length > 0 %}
       recovery_min_apply_delay: {{ patroni_standby_cluster.recovery_min_apply_delay }}
-     {% endif %}
+      {% endif %}
+      {% if patroni_standby_cluster.create_replica_methods is defined and patroni_standby_cluster.create_replica_methods | length > 0 %}
+      create_replica_methods:
+        {% for create_replica_method in patroni_standby_cluster.create_replica_methods %}
+        - {{ create_replica_method }}
+        {% endfor %}
+      {% endif %}
     {% endif %}
     {% if patroni_slots is defined and patroni_slots | length > 0 %}
     slots:

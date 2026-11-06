@@ -44,6 +44,7 @@
   when:
     - pgbackrest_repo_host | length < 1
     - "'postgres_cluster' in group_names"
+    - patroni_standby_cluster.host | default('') | length < 1 # do not perform on the standby cluster
   tags: pgbackrest, pgbackrest_stanza_create
 
 # Create a stanza on the dedicated repository host
@@ -92,4 +93,5 @@
   when:
     - (pgbackrest_repo_host | default('')) | length > 0
     - (groups.get('pgbackrest', []) | length) > 0
+    - patroni_standby_cluster.host | default('') | length < 1 # do not perform on the standby cluster
   tags: pgbackrest, pgbackrest_stanza_create

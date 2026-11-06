@@ -125,6 +125,7 @@ This role installs and configures [Patroni](https://github.com/patroni/patroni),
 | `patroni_standby_cluster.primary_slot_name`        | `""`     | which slot on the remote primary to use for replication (optional)                  |
 | `patroni_standby_cluster.restore_command`          | `""`     | command to restore WAL records from the remote primary to standby leader (optional) |
 | `patroni_standby_cluster.recovery_min_apply_delay` | `""`     | how long to wait before actually apply WAL records on a standby leader (optional)   |
+| `patroni_standby_cluster.create_replica_methods`   | `[]`     | methods to create the standby leader, e.g. `["pgbackrest"]` (optional)              |
 
 Requirements:
 
