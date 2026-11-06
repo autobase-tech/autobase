@@ -231,9 +231,6 @@
     - role: vitabaks.autobase.postgresql_schemas
       when: inventory_hostname in groups['primary']
 
-    - role: vitabaks.autobase.postgresql_privs
-      when: inventory_hostname in groups['primary']
-
     - role: vitabaks.autobase.postgresql_index_maintenance
 
     - role: vitabaks.autobase.wal_g
@@ -314,6 +311,10 @@
       tags: always
   roles:
     - role: vitabaks.autobase.postgresql_extensions
+      when: current_patroni_leader_result.status | default(0) == 200
+
+    # after the extensions, so that privileges can be granted on their objects
+    - role: vitabaks.autobase.postgresql_privs
       when: current_patroni_leader_result.status | default(0) == 200
 
     # finish (info)
