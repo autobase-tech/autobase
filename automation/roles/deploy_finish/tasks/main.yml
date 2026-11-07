@@ -111,7 +111,7 @@
       ansible.builtin.debug:
         msg:
           address: "{{ cluster_vip }}"
-          port: "{{ pgbouncer_listen_port if pgbouncer_install | bool else postgresql_port }}"
+          port: "{{ connection_pooler_port if connection_pooler_enabled | bool else postgresql_port }}"
           superuser: "{{ superuser_username }}"
           password: "{{ superuser_password }}"
       register: connection_info_vip_direct
@@ -156,8 +156,8 @@
           superuser: "{{ superuser_username }}"
           password: "{{ superuser_password }}"
           connection_string:
-            primary: "postgresql://{{ superuser_username }}@{{ libpq_postgres_host_port }}/postgres?target_session_attrs=primary"
-            replica: "postgresql://{{ superuser_username }}@{{ libpq_postgres_host_port }}/postgres?target_session_attrs=standby{{ libpq_load_balance }}"
+            primary: "postgresql://{{ superuser_username }}@{{ libpq_postgres_host_port }}/postgres{{ libpq_primary_params }}"
+            replica: "postgresql://{{ superuser_username }}@{{ libpq_postgres_host_port }}/postgres{{ libpq_replica_params }}"
       register: connection_info_local_postgres
       when: not with_haproxy_load_balancing | bool
   ignore_errors: true
@@ -188,9 +188,12 @@
       }}
     superuser_username: "{{ patroni_superuser_username }}"
     superuser_password: "{{ '********' if mask_password | default(false) | bool else patroni_superuser_password }}"
-    database_port: "{{ pgbouncer_listen_port if pgbouncer_install | bool else postgresql_port }}"
+    database_port: "{{ connection_pooler_port if connection_pooler_enabled | bool else postgresql_port }}"
     libpq_postgres_host_port: "{{ postgres_ip_addresses.split(',') | map('trim') | map('regex_replace', '$', ':' + database_port | string) | join(',') }}"
     libpq_load_balance: "{{ '&load_balance_hosts=random' if postgresql_version | int >= 16 else '' }}"
+    # PgDog routes the queries by itself: it accepts writes on every node, regardless of the role of that node.
+    libpq_primary_params: "{{ '' if pgdog_install | bool else '?target_session_attrs=primary' }}"
+    libpq_replica_params: "{{ '' if pgdog_install | bool else '?target_session_attrs=standby' ~ libpq_load_balance }}"
   when:
     - (cluster_vip is not defined or cluster_vip | length < 1)
     - dcs_type == "etcd"
@@ -207,7 +210,7 @@
         replica: "replica.{{ patroni_cluster_name }}.service.consul"
         replica_sync: "{{ 'sync-replica.' ~ patroni_cluster_name ~ '.service.consul' if synchronous_mode | bool and 'sync-replica' in consul_service_tags else omit }}"
         replica_async: "{{ 'async-replica.' ~ patroni_cluster_name ~ '.service.consul' if synchronous_mode | bool and 'async-replica' in consul_service_tags else omit }}"
-      port: "{{ pgbouncer_listen_port if pgbouncer_install | bool else postgresql_port }}"
+      port: "{{ connection_pooler_port if connection_pooler_enabled | bool else postgresql_port }}"
       superuser: "{{ superuser_username }}"
       password: "{{ superuser_password }}"
   register: connection_info_consul
@@ -233,7 +236,7 @@
         replica: "{{ (load_balancer_replica if load_balancer_replica != 'N/A' else omit) if cloud_load_balancer_replica | default(true) | bool else omit }}"
         replica_sync: "{{ load_balancer_replica_sync if synchronous_mode | bool and cloud_load_balancer_replica_sync | default(false) | bool and load_balancer_replica_sync != 'N/A' else omit }}"
         replica_async: "{{ load_balancer_replica_async if synchronous_mode | bool and cloud_load_balancer_replica_async | default(false) | bool and load_balancer_replica_async != 'N/A' else omit }}"
-      port: "{{ pgbouncer_listen_port if pgbouncer_install | bool else postgresql_port }}"
+      port: "{{ connection_pooler_port if connection_pooler_enabled | bool else postgresql_port }}"
       superuser: "{{ superuser_username }}"
       password: "{{ superuser_password }}"
   register: connection_info_aws_nlb
@@ -260,7 +263,7 @@
         replica: "{{ (load_balancer_replica if load_balancer_replica != 'N/A' else omit) if cloud_load_balancer_replica | default(true) | bool else omit }}"
         replica_sync: "{{ load_balancer_replica_sync if synchronous_mode | bool and cloud_load_balancer_replica_sync | default(false) | bool and load_balancer_replica_sync != 'N/A' else omit }}"
         replica_async: "{{ load_balancer_replica_async if synchronous_mode | bool and cloud_load_balancer_replica_async | default(false) | bool and load_balancer_replica_async != 'N/A' else omit }}"
-      port: "{{ pgbouncer_listen_port if pgbouncer_install | bool else postgresql_port }}"
+      port: "{{ connection_pooler_port if connection_pooler_enabled | bool else postgresql_port }}"
       superuser: "{{ superuser_username }}"
       password: "{{ superuser_password }}"
   register: connection_info_gcp
@@ -285,7 +288,7 @@
         replica: "{{ ((lb_replica_public if lb_replica_public != 'N/A' else omit) if database_public_access | default(false) | bool else (lb_replica_private if lb_replica_private != 'N/A' else omit) ) if cloud_load_balancer_replica | default(true) | bool else omit }}"
         replica_sync: "{{ (lb_sync_public if database_public_access | default(false) | bool else lb_sync_private) if synchronous_mode | bool and cloud_load_balancer_replica_sync | default(false) | bool and (lb_sync_public if database_public_access | default(false) | bool else lb_sync_private) != 'N/A' else omit }}"
         replica_async: "{{ (lb_async_public if database_public_access | default(false) | bool else lb_async_private) if synchronous_mode | bool and cloud_load_balancer_replica_async | default(false) | bool and (lb_async_public if database_public_access | default(false) | bool else lb_async_private) != 'N/A' else omit }}"
-      port: "{{ pgbouncer_listen_port if pgbouncer_install | bool else postgresql_port }}"
+      port: "{{ connection_pooler_port if connection_pooler_enabled | bool else postgresql_port }}"
       superuser: "{{ superuser_username }}"
       password: "{{ superuser_password }}"
   register: connection_info_azure
@@ -324,7 +327,7 @@
     load_balancer_replica: "{{ (hostvars['localhost']['digitalocean_load_balancer']['data'] | selectattr('name', 'equalto', patroni_cluster_name + '-replica') | first).ip | default('N/A') }}"
     load_balancer_replica_sync: "{{ (hostvars['localhost']['digitalocean_load_balancer']['data'] | selectattr('name', 'equalto', patroni_cluster_name + '-sync') | first).ip | default('N/A') }}"
     load_balancer_replica_async: "{{ (hostvars['localhost']['digitalocean_load_balancer']['data'] | selectattr('name', 'equalto', patroni_cluster_name + '-async') | first).ip | default('N/A') }}"
-    database_port: "{{ pgbouncer_listen_port if pgbouncer_install | bool else postgresql_port }}"
+    database_port: "{{ connection_pooler_port if connection_pooler_enabled | bool else postgresql_port }}"
     superuser_username: "{{ patroni_superuser_username }}"
     superuser_password: "{{ '********' if mask_password | default(false) | bool else patroni_superuser_password }}"
   when: cloud_provider | default('') | lower in ['digitalocean', 'do'] and cloud_load_balancer | default(true) | bool
@@ -354,7 +357,7 @@
     lb_replica_async_public: "{{ (hostvars['localhost']['hetzner_load_balancer']['hcloud_load_balancer_info'] | selectattr('name', 'equalto', patroni_cluster_name + '-async') | first).ipv4_address | default('N/A') }}"
     lb_replica_sync_private: "{{ (hostvars['localhost']['hetzner_load_balancer']['hcloud_load_balancer_info'] | selectattr('name', 'equalto', patroni_cluster_name + '-sync') | first).private_ipv4_address | default('N/A') }}"
     lb_replica_async_private: "{{ (hostvars['localhost']['hetzner_load_balancer']['hcloud_load_balancer_info'] | selectattr('name', 'equalto', patroni_cluster_name + '-async') | first).private_ipv4_address | default('N/A') }}"
-    database_port: "{{ pgbouncer_listen_port if pgbouncer_install | bool else postgresql_port }}"
+    database_port: "{{ connection_pooler_port if connection_pooler_enabled | bool else postgresql_port }}"
     superuser_username: "{{ patroni_superuser_username }}"
     superuser_password: "{{ '********' if mask_password | default(false) | bool else patroni_superuser_password }}"
   when: cloud_provider | default('') | lower == 'hetzner' and cloud_load_balancer | default(true) | bool

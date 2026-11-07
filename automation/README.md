@@ -95,6 +95,7 @@ Autobase adheres to a modular design separating atomic logic (roles) and orchest
   - `etcd_cluster` – Provision and configure a new etcd cluster as the DCS (used if dcs_type: etcd).
   - `consul_cluster` – Provision and configure a new Consul cluster as the DCS (used if dcs_type: consul).
   - `balancers` – Deploy HAProxy for routing client traffic (used if with_haproxy_load_balancing: true).
+  - `pgdog` – Deploy [PgDog](roles/pgdog/README.md) as a replacement for PgBouncer and HAProxy (used if pgdog_install: true). Optional and disabled by default; requires glibc 2.39+ (Debian 13, Ubuntu 24.04+, RHEL family 10).
 
 #### Maintenance
 

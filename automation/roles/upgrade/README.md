@@ -43,7 +43,7 @@ Rollback is possible without losing changes made after cutover, because reverse 
 
 **Database Downtime Considerations**
 
-`In-place` To minimize the downtime, we pause PgBouncer pools. This doesn’t terminate application connections, but may temporarily increase query latency while pools are paused. The pause typically lasts ~30-60 seconds, but may be longer for large databases due to pg_upgrade and rsync. The default maximum wait time during a pause is 2 minutes (controlled by the query_wait_timeout parameter).
+`In-place` To minimize the downtime, we pause PgBouncer pools (or enable the maintenance mode of [PgDog](../pgdog/README.md), which works the same way for the clients). This doesn’t terminate application connections, but may temporarily increase query latency while pools are paused. The pause typically lasts ~30-60 seconds, but may be longer for large databases due to pg_upgrade and rsync. The default maximum wait time during a pause is 2 minutes (controlled by the query_wait_timeout parameter).
 
 `Blue-green` A short service impact occurs only during switchover: the source cluster is briefly set to read-only, the remaining logical replication lag is drained, and traffic is redirected to target. Only the write traffic degrades (~10-15 seconds), while the read traffic has near-zero downtime.
 
@@ -146,7 +146,7 @@ After pg_logical_upgrade is completed and logical replication is active (source 
 ansible-playbook playbooks/pg_logical_switchover.yml -i inventory.yml
 ```
 
-WARNING: If PgBouncer is not installed in your cluster, traffic redirection will not happen automatically.
+WARNING: If PgBouncer is not installed in your cluster, for example if you use PgDog, traffic redirection will not happen automatically.
 In this case, use the following sequence:
    1. Stop your application
    2. Run the pg_logical_switchover playbook
@@ -215,6 +215,7 @@ Upgrade settings (for both methods):
 | `pgbouncer_pool_pause_timeout`               | The maximum waiting time (in seconds) for the pool to be paused. For each iteration of the loop when trying to pause all pools.                                                       |           `2` |
 | `pgbouncer_pool_pause_terminate_after`       | Time in seconds after which script terminates slow active queries.                                                                                                                    |          `30` |
 | `pgbouncer_pool_pause_stop_after`            | Time in seconds after which the script exits with an error if unable to pause all pgbouncer pools.                                                                                    |          `60` |
+| `pgdog_pool_pause`                           | Hold the client queries in PgDog during upgrade. It uses the `pgbouncer_pool_pause_terminate_after` and `pgbouncer_pool_pause_stop_after` times. | `true` |
 | `pg_slow_active_query_treshold`              | Time in milliseconds to wait for active queries before trying to pause the pool.                                                                                                      |        `1000` |
 | `pg_slow_active_query_treshold_to_terminate` | Time in milliseconds after reaching "pgbouncer_pool_pause_terminate_after" before the script terminates active queries.                                                               |         `100` |
 | `pgbackrest_stanza_upgrade`                  | Perform the "stanza-upgrade" command after the upgrade (if 'pgbackrest_install' is 'true').                                                                                           |        `true` |
@@ -306,6 +307,8 @@ Note: For more information, see the `upgrade` role [variables](../upgrade/defaul
 - **Test PgBouncer access via unix socket**
   - Ensure correct permissions for PgBouncer unix socket directory
   - Test access via unix socket to be able to perform 'PAUSE' command
+- **Test PgDog access to the admin database**
+  - Notes: if 'pgdog_install' is 'true' and 'pgdog_pool_pause' is 'true'
 
 #### PRE-UPGRADE: Install new PostgreSQL packages
 
@@ -418,6 +421,9 @@ Note: For more information, see the `upgrade` role [variables](../upgrade/defaul
   - Stop, if replication lag is high
   - Perform rollback
     - Print error message: "There's a replication lag in the PostgreSQL cluster. Please try again later"
+- **Enable maintenance mode on all PgDog servers**
+  - Notes: if 'pgdog_install' is 'true' and 'pgdog_pool_pause' is 'true'
+  - Notes: sends `MAINTENANCE ON` to every PgDog server, which holds new queries, and then waits for the active queries to complete. It terminates them after `pgbouncer_pool_pause_terminate_after` seconds, and performs a rollback after `pgbouncer_pool_pause_stop_after` seconds
 - **Perform PAUSE on all pgbouncers servers**
   - Notes: if 'pgbouncer_install' is 'true' and 'pgbouncer_pool_pause' is 'true'
   - Notes: pgbouncer pause script performs the following actions:

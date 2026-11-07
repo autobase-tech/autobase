@@ -271,8 +271,8 @@
       vars:
         allowed_ports: >-
           {{
-            ([postgresql_port | default('5432')] if not with_haproxy_load_balancing | bool and not pgbouncer_install | bool else []) +
-            ([pgbouncer_listen_port | default('6432')] if not with_haproxy_load_balancing | bool and pgbouncer_install | bool else []) +
+            ([postgresql_port | default('5432')] if not with_haproxy_load_balancing | bool and not connection_pooler_enabled | bool else []) +
+            ([connection_pooler_port | default('6432')] if not with_haproxy_load_balancing | bool and connection_pooler_enabled | bool else []) +
             ([haproxy_listen_port.master | default('5000'),
               haproxy_listen_port.replicas | default('5001'),
               haproxy_listen_port.replicas_sync | default('5002'),
@@ -303,7 +303,7 @@
           {{
             [ansible_ssh_port | default('22')] +
             ([netdata_port | default('19999')] if netdata_install | bool else []) +
-            ([pgbouncer_listen_port | default('6432')] if pgbouncer_install | bool else []) +
+            ([connection_pooler_port | default('6432')] if connection_pooler_enabled | bool else []) +
             [postgresql_port | default('5432')] +
             [patroni_restapi_port | default('8008')] +
             ([haproxy_listen_port.master | default('5000'),
@@ -335,7 +335,7 @@
           - ip_protocol: tcp
             ports:
               - "{{ patroni_restapi_port | default('8008') }}"
-              - "{{ pgbouncer_listen_port | default('6432') if pgbouncer_install | bool else postgresql_port | default('5432') }}"
+              - "{{ connection_pooler_port | default('6432') if connection_pooler_enabled | bool else postgresql_port | default('5432') }}"
         source_ranges:
           - "35.191.0.0/16"
           - "130.211.0.0/22"
@@ -449,7 +449,7 @@
               - name: postgres
                 port: "{{ postgresql_port | default('5432') }}"
               - name: pgbouncer
-                port: "{{ pgbouncer_listen_port | default('6432') }}"
+                port: "{{ connection_pooler_port | default('6432') }}"
             network:
               selfLink: "{{ gcp_network_info.resources[0].selfLink }}"
             instances: >-
@@ -516,7 +516,7 @@
             name: "{{ patroni_cluster_name }}-{{ item }}"
             description: "{{ patroni_cluster_name }} {{ item }} backend"
             protocol: "TCP"
-            port_name: "{{ 'pgbouncer' if pgbouncer_install | bool else 'postgres' }}"
+            port_name: "{{ 'pgbouncer' if connection_pooler_enabled | bool else 'postgres' }}"
             load_balancing_scheme: "EXTERNAL"
             backends: "{{ gcp_lb_backends }}"
             health_checks: "{{ health_check.results | selectattr('item', 'equalto', item) | map(attribute='selfLink') | list }}"
@@ -609,7 +609,7 @@
             label: "{{ patroni_cluster_name }}-{{ item }}-fr"
           register: gcp_load_balancer
           vars:
-            target_port: "{{ pgbouncer_listen_port | default('6432') if pgbouncer_install | bool else postgresql_port | default('5432') }}"
+            target_port: "{{ connection_pooler_port | default('6432') if connection_pooler_enabled | bool else postgresql_port | default('5432') }}"
           when: item == 'primary' or
             (item == 'replica' and cloud_load_balancer_replica | bool and server_count | int > 1) or
             (item == 'sync' and cloud_load_balancer_replica_sync | bool and server_count | int > 1 and synchronous_mode | bool) or

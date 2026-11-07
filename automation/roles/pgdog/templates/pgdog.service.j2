@@ -1,0 +1,22 @@
+[Unit]
+Description=PgDog connection pooler and load balancer for PostgreSQL
+Documentation=https://docs.pgdog.dev
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+
+User=postgres
+Group=postgres
+
+WorkingDirectory={{ pgdog_conf_dir }}
+ExecStart=/usr/local/bin/pgdog --config {{ pgdog_conf_dir }}/pgdog.toml --users {{ pgdog_conf_dir }}/users.toml run
+ExecReload=/bin/kill -SIGHUP $MAINPID
+Restart=on-failure
+TimeoutStopSec={{ (pgdog_shutdown_timeout | int // 1000) + 15 }}
+
+LimitNOFILE=100000
+
+[Install]
+WantedBy=multi-user.target

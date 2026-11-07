@@ -1,0 +1,68 @@
+---
+name: Molecule pgdog
+
+on:
+  schedule:
+    - cron: "0 12 * * 6"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "automation/roles/pgdog/**"
+      - "automation/roles/pre_checks/tasks/pgdog.yml"
+      - "automation/roles/upgrade/tasks/pgdog_*.yml"
+      - "automation/molecule/pgdog/**"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    if: ${{ github.repository_owner == 'autobase-tech' || github.event_name == 'workflow_dispatch' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # PgDog requires glibc 2.39 or newer
+        config:
+          - distro: ubuntu2404
+            tag: latest
+            namespace: geerlingguy
+          - distro: debian13
+            tag: latest
+            namespace: geerlingguy
+          - distro: rockylinux10
+            tag: latest
+            namespace: geerlingguy
+
+    steps:
+      - name: Set TERM environment variable
+        run: echo "TERM=xterm" >> $GITHUB_ENV
+
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.15"
+
+      - name: Install dependencies
+        run: make bootstrap-dev
+
+      # The Ubuntu runner confines unix_chkpwd with an AppArmor profile that is attached by path,
+      # so it also applies to the binary inside the RHEL containers. There /etc/shadow has mode 0000
+      # and the profile does not allow CAP_DAC_OVERRIDE, so the PAM account check of sshd fails for
+      # the postgres user, and rsync to the replicas fails with "connection unexpectedly closed".
+      - name: Unload the AppArmor profile for unix_chkpwd
+        run: |
+          if [ -f /etc/apparmor.d/unix-chkpwd ]; then
+            sudo apparmor_parser -R /etc/apparmor.d/unix-chkpwd
+          fi
+
+      - name: Run Molecule tests for pgdog
+        run: make molecule-test-scenario
+        env:
+          PY_COLORS: "1"
+          ANSIBLE_FORCE_COLOR: "1"
+          IMAGE_DISTRO: ${{ matrix.config.distro }}
+          IMAGE_TAG: ${{ matrix.config.tag }}
+          IMAGE_NAMESPACE: ${{ matrix.config.namespace }}
+          MOLECULE_SCENARIO: pgdog

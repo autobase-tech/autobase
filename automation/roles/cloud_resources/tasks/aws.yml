@@ -196,11 +196,11 @@
                     haproxy_listen_port.replicas_async | default('5003')
                   ] if with_haproxy_load_balancing | bool else []) +
                   ([
-                    pgbouncer_listen_port | default('6432')
-                  ] if not with_haproxy_load_balancing | bool and pgbouncer_install | bool else []) +
+                    connection_pooler_port | default('6432')
+                  ] if not with_haproxy_load_balancing | bool and connection_pooler_enabled | bool else []) +
                   ([
                     postgresql_port | default('5432')
-                  ] if not with_haproxy_load_balancing | bool and not pgbouncer_install | bool else []),
+                  ] if not with_haproxy_load_balancing | bool and not connection_pooler_enabled | bool else []),
                 'cidr_ip': database_public_allowed_ips | default('0.0.0.0/0', true) | split(',')
               }
             ] if database_public_access | bool else []) +
@@ -210,10 +210,10 @@
               'ports': [netdata_port | default('19999')],
               'cidr_ip': vpc_cidr_blocks }] if netdata_install | bool else []) +
             ([{
-              'rule_desc': 'PgBouncer internal access',
+              'rule_desc': connection_pooler_name ~ ' internal access',
               'proto': 'tcp',
-              'ports': [pgbouncer_listen_port | default('6432')],
-              'cidr_ip': vpc_cidr_blocks }] if pgbouncer_install | bool else []) +
+              'ports': [connection_pooler_port | default('6432')],
+              'cidr_ip': vpc_cidr_blocks }] if connection_pooler_enabled | bool else []) +
             ([{
               'rule_desc': 'PostgreSQL internal access',
               'proto': 'tcp',
@@ -545,7 +545,7 @@
       loop: "{{ instance_ids | default([]) }}"
       vars:
         instance_ids: "{{ (server_result | default({'results': []})) | json_query('results[].instances[].instance_id') }}"
-        target_port: "{{ pgbouncer_listen_port | default('6432') if pgbouncer_install | bool else postgresql_port | default('5432') }}"
+        target_port: "{{ connection_pooler_port | default('6432') if connection_pooler_enabled | bool else postgresql_port | default('5432') }}"
       when: cloud_load_balancer | bool
 
     - name: "AWS: Create or modify NLB Target Group"
@@ -581,7 +581,7 @@
       loop_control:
         label: "{{ patroni_cluster_name }}-tg-{{ item }}"
       vars:
-        target_port: "{{ pgbouncer_listen_port | default('6432') if pgbouncer_install | bool else postgresql_port | default('5432') }}"
+        target_port: "{{ connection_pooler_port | default('6432') if connection_pooler_enabled | bool else postgresql_port | default('5432') }}"
       when: cloud_load_balancer | bool and
         (item == 'primary' or
         (item == 'replica' and cloud_load_balancer_replica | bool and server_count | int > 1) or
@@ -620,7 +620,7 @@
       retries: 3
       delay: 10
       vars:
-        target_port: "{{ pgbouncer_listen_port | default('6432') if pgbouncer_install | bool else postgresql_port | default('5432') }}"
+        target_port: "{{ connection_pooler_port | default('6432') if connection_pooler_enabled | bool else postgresql_port | default('5432') }}"
       when: cloud_load_balancer | bool and
         (item == 'primary' or
         (item == 'replica' and cloud_load_balancer_replica | bool and server_count | int > 1) or

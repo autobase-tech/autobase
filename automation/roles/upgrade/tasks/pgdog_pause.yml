@@ -1,0 +1,107 @@
+---
+# Hold the client queries in PgDog on all servers, to keep the client connections while PostgreSQL is stopped.
+#
+# Unlike the PgBouncer 'PAUSE', the maintenance mode lets the transactions in progress finish and it holds
+# all new queries right away, so it is enabled first and then the active queries are given time to complete:
+# 1. Enable the maintenance mode on all PgDog servers. If this is not possible, the script exits with an error.
+# 2. Wait for the active queries that are executed longer than 'pg_slow_active_query_treshold' to complete.
+# 3. After 'pgbouncer_pool_pause_terminate_after' seconds, terminate the active queries that are executed longer
+#    than 'pg_slow_active_query_treshold_to_terminate'.
+# 4. After 'pgbouncer_pool_pause_stop_after' seconds, exit with an error. The rollback disables the maintenance mode.
+- name: Enable PgDog maintenance mode
+  become: true
+  become_user: postgres
+  vars:
+    pg_slow_active_count_query: >-
+      select count(*) from pg_stat_activity
+      where pid <> pg_backend_pid()
+      and state <> 'idle'
+      and query_start < clock_timestamp() - interval '{{ pg_slow_active_query_treshold }} ms'
+      and backend_type = 'client backend'
+    pg_slow_active_terminate_query: >-
+      select
+        clock_timestamp(),
+        pg_terminate_backend(pid),
+        clock_timestamp() - query_start as query_age,
+        left(regexp_replace(query, E'[ \\t\\n\\r]+', ' ', 'g'),150) as query
+      from pg_stat_activity
+      where pid <> pg_backend_pid()
+      and state <> 'idle'
+      and query_start < clock_timestamp() - interval '{{ pg_slow_active_query_treshold_to_terminate }} ms'
+      and backend_type = 'client backend'
+    pg_hosts: "{{ groups['primary'] + groups.get('secondary', []) }}"
+  ansible.builtin.shell: |
+    set -o pipefail;
+
+    pg_servers=(
+    {% for host in pg_hosts %}
+      {{ hostvars[host]['patroni_bind_address'] | default(hostvars[host]['bind_address'], true) }}
+    {% endfor %}
+    )
+    admin_password="$(sed -n '/^\[admin\]/,/^\[\[/s/^password = "\(.*\)"$/\1/p' {{ pgdog_conf_dir }}/pgdog.toml)"
+
+    pgdog_admin() {
+      PGPASSWORD="$admin_password" PGCONNECT_TIMEOUT=5 {{ pg_old_bindir }}/psql -h "$1" -p {{ pgdog_listen_port }} \
+        -U {{ pgdog_admin_username }} -d admin -tAXc "$2"
+    }
+    postgres_query() {
+      PGCONNECT_TIMEOUT=5 {{ pg_old_bindir }}/psql -h "$1" -p {{ postgresql_port }} \
+        -U {{ patroni_superuser_username }} -d postgres -tAXc "$2"
+    }
+
+    {
+      for server in "${pg_servers[@]}"; do
+        pgdog_admin "$server" "MAINTENANCE ON" || exit 1
+      done
+
+      start_time=$(date +%s)
+      while true; do
+        current_time=$(date +%s)
+
+        total_pg_slow_active_count=0
+        for server in "${pg_servers[@]}"; do
+          count=$(postgres_query "$server" "{{ pg_slow_active_count_query }}") || exit 1
+          total_pg_slow_active_count=$((total_pg_slow_active_count + count))
+        done
+        echo "$(date): total pg_slow_active_count: $total_pg_slow_active_count"
+
+        if [[ "$total_pg_slow_active_count" == 0 ]]; then
+          break
+        fi
+
+        if (( current_time - start_time >= {{ pgbouncer_pool_pause_stop_after }} )); then
+          echo "$(date): it was not possible to complete the active queries (exit by timeout)"
+          exit 1
+        fi
+
+        if (( current_time - start_time >= {{ pgbouncer_pool_pause_terminate_after }} )); then
+          echo "$(date): terminate active queries"
+          for server in "${pg_servers[@]}"; do
+            postgres_query "$server" "{{ pg_slow_active_terminate_query }}" || true
+          done
+        fi
+        sleep 1
+      done
+    } > /tmp/pgdog_pool_pause_{{ ansible_date_time.date }}.log 2>&1
+  args:
+    executable: /bin/bash
+  environment:
+    PGPASSFILE: "{{ _postgresql_cli_passfile_path }}"
+  register: pgdog_pool_pause_result
+  ignore_errors: true
+  no_log: true # do not output contents to the ansible log
+  when: inventory_hostname in groups['primary']
+
+# Stop, if it was not possible to hold the client queries
+- block:
+    - name: Perform rollback
+      ansible.builtin.include_tasks: rollback.yml
+
+    - name: "ERROR: Client queries cannot be held in PgDog"
+      ansible.builtin.fail:
+        msg:
+          - "PgDog could not hold the client queries, or the active queries did not complete in time. Please try again later."
+          - "The log is available on the path: /tmp/pgdog_pool_pause_{{ ansible_date_time.date }}.log"
+          - "on the {{ hostvars[groups['primary'][0]]['ansible_hostname'] }} server."
+      run_once: true
+  when: hostvars[groups['primary'][0]].pgdog_pool_pause_result is failed

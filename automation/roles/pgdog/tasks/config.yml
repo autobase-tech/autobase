@@ -1,0 +1,32 @@
+---
+- name: Ensure config directory "{{ pgdog_conf_dir | default('') }}" exist
+  ansible.builtin.file:
+    path: "{{ pgdog_conf_dir }}"
+    state: directory
+    owner: postgres
+    group: postgres
+    mode: "0750"
+  tags: pgdog_conf, pgdog
+
+- name: Update users.toml
+  ansible.builtin.template:
+    src: templates/users.toml.j2
+    dest: "{{ pgdog_conf_dir }}/users.toml"
+    owner: postgres
+    group: postgres
+    mode: "0640"
+  notify: "reload pgdog"
+  no_log: true
+  tags: pgdog_conf, pgdog
+
+# 'users.toml' goes first, because this check reads both files.
+- name: Update pgdog.toml
+  ansible.builtin.template:
+    src: templates/pgdog.toml.j2
+    dest: "{{ pgdog_conf_dir }}/pgdog.toml"
+    owner: postgres
+    group: postgres
+    mode: "0640"
+    validate: "/usr/local/bin/pgdog --config %s --users {{ pgdog_conf_dir }}/users.toml configcheck"
+  notify: "reload pgdog"
+  tags: pgdog_conf, pgdog

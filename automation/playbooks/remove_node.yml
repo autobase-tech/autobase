@@ -248,6 +248,15 @@
 
   tasks:
     - block:
+        # Otherwise it would keep accepting clients and sending them to the cluster.
+        - name: Stop and disable pgdog service on target node
+          ansible.builtin.systemd:
+            name: pgdog
+            state: stopped
+            enabled: false
+          when: pgdog_install | default(false) | bool
+          failed_when: false
+
         - name: Stop and disable patroni service on target node
           ansible.builtin.service:
             name: patroni
@@ -512,6 +521,17 @@
         pg_hba_hosts: "{{ groups['postgres_cluster'] | default([]) | difference([target_node]) }}"
       when: inventory_hostname != target_node
       tags: postgres, postgresql, pg_hba, pg_hba_generate
+
+    - name: Remove a node from the PgDog configuration on existing cluster nodes
+      ansible.builtin.include_role:
+        name: vitabaks.autobase.pgdog
+        tasks_from: config
+      vars:
+        pgdog_hosts: "{{ groups['postgres_cluster'] | default([]) | difference([target_node]) }}"
+      when:
+        - pgdog_install | default(false) | bool
+        - inventory_hostname != target_node
+      tags: pgdog, pgdog_conf
 
     - block:
         - name: Waiting for 20 seconds after Patroni cluster reload

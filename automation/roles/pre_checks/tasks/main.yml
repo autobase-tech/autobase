@@ -32,6 +32,12 @@
     - pgbouncer_install | bool
     - inventory_hostname in groups['postgres_cluster']
 
+- name: Perform pre-checks for pgdog
+  ansible.builtin.import_tasks: pgdog.yml
+  when:
+    - pgdog_install | default(false) | bool
+    - inventory_hostname in groups['postgres_cluster']
+
 - name: Perform pre-checks for patroni
   ansible.builtin.import_tasks: patroni.yml
   when: inventory_hostname in groups['postgres_cluster']

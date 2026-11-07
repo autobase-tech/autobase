@@ -1,0 +1,80 @@
+---
+- name: Ensure install directory "{{ pgdog_install_dir | default('') }}" exist
+  ansible.builtin.file:
+    path: "{{ pgdog_install_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  tags: pgdog_install, pgdog
+
+- name: Check if PgDog {{ pgdog_version | default('') }} is already installed
+  ansible.builtin.stat:
+    path: "{{ pgdog_release_dir }}/pgdog"
+  register: pgdog_binary
+  tags: pgdog_install, pgdog
+
+# The upstream releases provide no rpm packages, so the tar archive is used on all distributions.
+- block:
+    - name: Download PgDog {{ pgdog_version | default('') }}
+      ansible.builtin.get_url:
+        url: "{{ pgdog_package_repo }}"
+        dest: "/tmp/{{ pgdog_package_repo | basename }}"
+        checksum: "{{ pgdog_package_checksum | default(omit, true) }}"
+        mode: "0644"
+        timeout: 60
+      register: get_url_result
+      until: get_url_result is success
+      delay: 5
+      retries: 3
+      environment: "{{ proxy_env | default({}) }}"
+
+    - name: Extract PgDog {{ pgdog_version | default('') }}
+      ansible.builtin.unarchive:
+        src: "/tmp/{{ pgdog_package_repo | basename }}"
+        dest: "{{ pgdog_install_dir }}"
+        owner: root
+        group: root
+        remote_src: true
+
+    - name: Remove the downloaded archive
+      ansible.builtin.file:
+        path: "/tmp/{{ pgdog_package_repo | basename }}"
+        state: absent
+  when:
+    - not pgdog_binary.stat.exists
+    - not ansible_check_mode
+  tags: pgdog_install, pgdog
+
+- name: Create a symlink to the PgDog {{ pgdog_version | default('') }} binary
+  ansible.builtin.file:
+    src: "{{ pgdog_release_dir }}/pgdog"
+    dest: /usr/local/bin/pgdog
+    owner: root
+    group: root
+    state: link
+  notify: "restart pgdog"
+  when: not ansible_check_mode
+  tags: pgdog_install, pgdog
+
+- name: Configure pgdog systemd service file
+  ansible.builtin.template:
+    src: templates/pgdog.service.j2
+    dest: /etc/systemd/system/pgdog.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: "restart pgdog"
+  tags: pgdog_service, pgdog
+
+- name: Configure pgdog
+  ansible.builtin.import_tasks: config.yml
+
+# The handlers only restart it after a change, which does not start the service on a node that is added again.
+- name: Ensure pgdog service is enabled and running
+  ansible.builtin.systemd:
+    daemon_reload: true
+    name: pgdog
+    enabled: true
+    state: started
+  tags: pgdog_service, pgdog

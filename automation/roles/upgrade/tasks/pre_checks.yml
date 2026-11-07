@@ -587,3 +587,21 @@
     - pgbouncer_install | bool
     - pgbouncer_pool_pause | bool
     - source_databases is not defined # exclude for blue-green upgrade method
+
+# PgDog (if 'pgdog_pool_pause' is 'true')
+# Note: not for blue-green upgrade method
+# Test access to the admin database to be able to perform the 'MAINTENANCE' command
+- name: "[Pre-Check] Test PgDog access to the admin database"
+  ansible.builtin.shell: |
+    set -o pipefail;
+    PGPASSWORD="$(sed -n '/^\[admin\]/,/^\[\[/s/^password = "\(.*\)"$/\1/p' {{ pgdog_conf_dir }}/pgdog.toml)" \
+      {{ pg_old_bindir }}/psql -h {{ patroni_bind_address | default(bind_address, true) }} -p {{ pgdog_listen_port }} \
+      -U {{ pgdog_admin_username }} -d admin -tAXc "SHOW POOLS"
+  args:
+    executable: /bin/bash
+  changed_when: false
+  no_log: true
+  when:
+    - pgdog_install | bool
+    - pgdog_pool_pause | bool
+    - source_databases is not defined # exclude for blue-green upgrade method

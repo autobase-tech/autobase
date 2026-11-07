@@ -1,0 +1,27 @@
+---
+- name: Restart pgdog service
+  ansible.builtin.systemd:
+    daemon_reload: true
+    name: pgdog
+    enabled: true
+    state: restarted
+  register: pgdog_restart_result
+  retries: 3
+  delay: 5
+  until: pgdog_restart_result is success
+  listen: "restart pgdog"
+
+- name: Wait for port "{{ pgdog_listen_port | default('6432') }}" to become open on the host
+  ansible.builtin.wait_for:
+    port: "{{ pgdog_listen_port }}"
+    host: "{{ '127.0.0.1' if pgdog_listen_addr == '0.0.0.0' else pgdog_listen_addr }}"
+    state: started
+    timeout: 120
+    delay: 2
+  listen: "restart pgdog"
+
+- name: Reload pgdog service
+  ansible.builtin.systemd:
+    name: pgdog
+    state: reloaded
+  listen: "reload pgdog"

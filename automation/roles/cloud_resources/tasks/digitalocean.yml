@@ -243,12 +243,12 @@
             ([
               {
                 'protocol': 'tcp',
-                'ports': pgbouncer_listen_port | default('6432'),
+                'ports': connection_pooler_port | default('6432'),
                 'sources': {
                   'addresses': database_public_allowed_ips | default('0.0.0.0/0,::/0', true) | split(',')
                 }
               }
-            ] if database_public_access | bool and (not with_haproxy_load_balancing | bool and pgbouncer_install | bool) else []) +
+            ] if database_public_access | bool and (not with_haproxy_load_balancing | bool and connection_pooler_enabled | bool) else []) +
             ([
               {
                 'protocol': 'tcp',
@@ -257,7 +257,7 @@
                   'addresses': database_public_allowed_ips | default('0.0.0.0/0,::/0', true) | split(',')
                 }
               }
-            ] if database_public_access | bool and (not with_haproxy_load_balancing | bool and not pgbouncer_install | bool) else [])
+            ] if database_public_access | bool and (not with_haproxy_load_balancing | bool and not connection_pooler_enabled | bool) else [])
           }}
       when:
         - cloud_firewall | bool
@@ -346,12 +346,12 @@
             ([
               {
                 'protocol': 'tcp',
-                'ports': pgbouncer_listen_port | default('6432'),
+                'ports': connection_pooler_port | default('6432'),
                 'sources': {
                   'addresses': [sources_addresses]
                 }
               }
-            ] if pgbouncer_install | bool else []) +
+            ] if connection_pooler_enabled | bool else []) +
             ([
               {
                 'protocol': 'tcp',
@@ -496,27 +496,27 @@
     # Load Balancer
     - name: "Set variable: digital_ocean_load_balancer_port"
       ansible.builtin.set_fact:
-        digital_ocean_load_balancer_port: "{{ pgbouncer_listen_port }}"
+        digital_ocean_load_balancer_port: "{{ connection_pooler_port }}"
       when:
         - cloud_load_balancer | bool
-        - pgbouncer_install | bool
+        - connection_pooler_enabled | bool
         - digital_ocean_load_balancer_port | default('') | length < 1
 
     - name: "Set variable: digital_ocean_load_balancer_target_port"
       ansible.builtin.set_fact:
-        digital_ocean_load_balancer_target_port: "{{ pgbouncer_listen_port }}"
+        digital_ocean_load_balancer_target_port: "{{ connection_pooler_port }}"
       when:
         - cloud_load_balancer | bool
-        - pgbouncer_install | bool
+        - connection_pooler_enabled | bool
         - digital_ocean_load_balancer_target_port | default('') | length < 1
 
-    # if 'pgbouncer_install' is 'false'
+    # if 'connection_pooler_enabled' is 'false'
     - name: "Set variable: digital_ocean_load_balancer_port"
       ansible.builtin.set_fact:
         digital_ocean_load_balancer_port: "{{ postgresql_port }}"
       when:
         - cloud_load_balancer | bool
-        - not pgbouncer_install | bool
+        - not connection_pooler_enabled | bool
         - digital_ocean_load_balancer_port | default('') | length < 1
 
     - name: "Set variable: digital_ocean_load_balancer_target_port"
@@ -524,7 +524,7 @@
         digital_ocean_load_balancer_target_port: "{{ postgresql_port }}"
       when:
         - cloud_load_balancer | bool
-        - not pgbouncer_install | bool
+        - not connection_pooler_enabled | bool
         - digital_ocean_load_balancer_target_port | default('') | length < 1
 
     - name: "DigitalOcean: Create or modify Load Balancer"

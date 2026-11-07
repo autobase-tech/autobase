@@ -1,0 +1,14 @@
+---
+# Release the client queries held in PgDog
+- name: Disable PgDog maintenance mode
+  become: true
+  become_user: postgres
+  ansible.builtin.shell: |
+    set -o pipefail;
+    PGPASSWORD="$(sed -n '/^\[admin\]/,/^\[\[/s/^password = "\(.*\)"$/\1/p' {{ pgdog_conf_dir }}/pgdog.toml)" \
+      PGCONNECT_TIMEOUT=5 {{ pg_new_bindir }}/psql -h {{ patroni_bind_address | default(bind_address, true) }} \
+      -p {{ pgdog_listen_port }} -U {{ pgdog_admin_username }} -d admin -tAXc "MAINTENANCE OFF"
+  args:
+    executable: /bin/bash
+  no_log: true
+  ignore_errors: true # if there is an error, show the message and continue
