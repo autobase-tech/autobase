@@ -84,18 +84,19 @@ upgrade_copy_files_to_all_server: []
 pgbouncer_pool_pause: true # or 'false' if you don't want to pause pgbouncer pools during upgrade.
 # the maximum waiting time (in seconds) for the pool to be paused. For each iteration of the loop when trying to pause all pools.
 pgbouncer_pool_pause_timeout: 2
+
 # the time (in seconds) after which instead of waiting for the completion of the active queries, the script terminates the slow active queries.
-pgbouncer_pool_pause_terminate_after: 30
-# the time (in seconds) after which the script exit with an error if it was not possible to pause all pgbouncer pools.
-pgbouncer_pool_pause_stop_after: 60
+pg_pool_pause_terminate_after: 30
+# the time (in seconds) after which the script exit with an error if it was not possible to pause all pools.
+pg_pool_pause_stop_after: 60
 # wait for the completion of active queries that are executed longer than the specified time (in milliseconds) before trying to pause the pool.
 pg_slow_active_query_treshold: 1000
-# terminate active queries that longer than the specified time (in milliseconds) after reaching "pgbouncer_pool_pause_terminate_after" before trying to pause the pool.
+# terminate active queries that longer than the specified time (in milliseconds) after reaching "pg_pool_pause_terminate_after" before trying to pause the pool.
 pg_slow_active_query_treshold_to_terminate: 100 # (0 = terminate all active backends)
 
 # if 'pgdog_install' is 'true'
 pgdog_pool_pause: true # or 'false' if you don't want to hold the client queries in PgDog during upgrade.
-# PgDog uses the same 'pgbouncer_pool_pause_terminate_after', 'pgbouncer_pool_pause_stop_after' and
+# PgDog uses the same 'pg_pool_pause_terminate_after', 'pg_pool_pause_stop_after' and
 # 'pg_slow_active_query_treshold*' settings. Its maintenance mode has no timeout of its own to set.
 
 # Whether a connection pooler keeps the client connections while PostgreSQL is stopped.

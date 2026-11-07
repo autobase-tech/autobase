@@ -5,9 +5,9 @@
 # all new queries right away, so it is enabled first and then the active queries are given time to complete:
 # 1. Enable the maintenance mode on all PgDog servers. If this is not possible, the script exits with an error.
 # 2. Wait for the active queries that are executed longer than 'pg_slow_active_query_treshold' to complete.
-# 3. After 'pgbouncer_pool_pause_terminate_after' seconds, terminate the active queries that are executed longer
+# 3. After 'pg_pool_pause_terminate_after' seconds, terminate the active queries that are executed longer
 #    than 'pg_slow_active_query_treshold_to_terminate'.
-# 4. After 'pgbouncer_pool_pause_stop_after' seconds, exit with an error. The rollback disables the maintenance mode.
+# 4. After 'pg_pool_pause_stop_after' seconds, exit with an error. The rollback disables the maintenance mode.
 - name: Enable PgDog maintenance mode
   become: true
   become_user: postgres
@@ -69,12 +69,12 @@
           break
         fi
 
-        if (( current_time - start_time >= {{ pgbouncer_pool_pause_stop_after }} )); then
+        if (( current_time - start_time >= {{ pg_pool_pause_stop_after }} )); then
           echo "$(date): it was not possible to complete the active queries (exit by timeout)"
           exit 1
         fi
 
-        if (( current_time - start_time >= {{ pgbouncer_pool_pause_terminate_after }} )); then
+        if (( current_time - start_time >= {{ pg_pool_pause_terminate_after }} )); then
           echo "$(date): terminate active queries"
           for server in "${pg_servers[@]}"; do
             postgres_query "$server" "{{ pg_slow_active_terminate_query }}" || true

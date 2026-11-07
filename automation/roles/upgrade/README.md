@@ -213,11 +213,11 @@ Upgrade settings (for both methods):
 | `copy_files_to_all_server`                   | Copy files located in the "files" directory to all servers. (optional)                                                                                                                |          `[]` |
 | `pgbouncer_pool_pause`                       | Pause pgbouncer pools during upgrade.                                                                                                                                                 |        `true` |
 | `pgbouncer_pool_pause_timeout`               | The maximum waiting time (in seconds) for the pool to be paused. For each iteration of the loop when trying to pause all pools.                                                       |           `2` |
-| `pgbouncer_pool_pause_terminate_after`       | Time in seconds after which script terminates slow active queries.                                                                                                                    |          `30` |
-| `pgbouncer_pool_pause_stop_after`            | Time in seconds after which the script exits with an error if unable to pause all pgbouncer pools.                                                                                    |          `60` |
-| `pgdog_pool_pause`                           | Hold the client queries in PgDog during upgrade. It uses the `pgbouncer_pool_pause_terminate_after` and `pgbouncer_pool_pause_stop_after` times. | `true` |
+| `pg_pool_pause_terminate_after`       | Time in seconds after which script terminates slow active queries.                                                                                                                    |          `30` |
+| `pg_pool_pause_stop_after`            | Time in seconds after which the script exits with an error if unable to pause all pgbouncer pools.                                                                                    |          `60` |
+| `pgdog_pool_pause`                           | Hold the client queries in PgDog during upgrade. It uses the `pg_pool_pause_terminate_after` and `pg_pool_pause_stop_after` times. | `true` |
 | `pg_slow_active_query_treshold`              | Time in milliseconds to wait for active queries before trying to pause the pool.                                                                                                      |        `1000` |
-| `pg_slow_active_query_treshold_to_terminate` | Time in milliseconds after reaching "pgbouncer_pool_pause_terminate_after" before the script terminates active queries.                                                               |         `100` |
+| `pg_slow_active_query_treshold_to_terminate` | Time in milliseconds after reaching "pg_pool_pause_terminate_after" before the script terminates active queries.                                                               |         `100` |
 | `pgbackrest_stanza_upgrade`                  | Perform the "stanza-upgrade" command after the upgrade (if 'pgbackrest_install' is 'true').                                                                                           |        `true` |
 | `pg_install_user_password`                  | The Postgres install user (rolname with oid = 10) password. | `{{ patroni_superuser_password }}` |
 
@@ -423,15 +423,15 @@ Note: For more information, see the `upgrade` role [variables](../upgrade/defaul
     - Print error message: "There's a replication lag in the PostgreSQL cluster. Please try again later"
 - **Enable maintenance mode on all PgDog servers**
   - Notes: if 'pgdog_install' is 'true' and 'pgdog_pool_pause' is 'true'
-  - Notes: sends `MAINTENANCE ON` to every PgDog server, which holds new queries, and then waits for the active queries to complete. It terminates them after `pgbouncer_pool_pause_terminate_after` seconds, and performs a rollback after `pgbouncer_pool_pause_stop_after` seconds
+  - Notes: sends `MAINTENANCE ON` to every PgDog server, which holds new queries, and then waits for the active queries to complete. It terminates them after `pg_pool_pause_terminate_after` seconds, and performs a rollback after `pg_pool_pause_stop_after` seconds
 - **Perform PAUSE on all pgbouncers servers**
   - Notes: if 'pgbouncer_install' is 'true' and 'pgbouncer_pool_pause' is 'true'
   - Notes: pgbouncer pause script performs the following actions:
     - Waits for active queries on the database servers to complete (with a runtime more than `pg_slow_active_query_treshold`).
     - If there are no active queries, sends a `PAUSE` command to each PgBouncer server in parallel (using `xargs` and ssh connections).
     - If all PgBouncer pools are successfully paused, the script exits with code 0 (successful).
-    - If active queries do not complete within 30 seconds (`pgbouncer_pool_pause_terminate_after` variable), the script terminates slow active queries (longer than `pg_slow_active_query_treshold_to_terminate`).
-    - If after that it is still not possible to pause the pgbouncer servers within 60 seconds (`pgbouncer_pool_pause_stop_after` variable) from the start of the script, the script exits with an error.
+    - If active queries do not complete within 30 seconds (`pg_pool_pause_terminate_after` variable), the script terminates slow active queries (longer than `pg_slow_active_query_treshold_to_terminate`).
+    - If after that it is still not possible to pause the pgbouncer servers within 60 seconds (`pg_pool_pause_stop_after` variable) from the start of the script, the script exits with an error.
       - Perform rollback
         - Print error message: "PgBouncer pools could not be paused, please try again later."
 - **Stop PostgreSQL** on the leader and replicas

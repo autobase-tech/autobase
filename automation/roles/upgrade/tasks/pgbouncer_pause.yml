@@ -107,13 +107,13 @@
       fi
 
       # after 30 seconds of waiting, terminate active sessions on pg_servers and try pausing again
-      if (( current_time - start_time >= {{ pgbouncer_pool_pause_terminate_after }} )); then
+      if (( current_time - start_time >= {{ pg_pool_pause_terminate_after }} )); then
         echo "$(date): terminate active queries"
         echo -e "$pg_servers" | xargs -I {} -P "$pg_servers_count" -n 1 ssh -o StrictHostKeyChecking=no {} "PGPASSFILE="{{ _postgresql_cli_passfile_path | quote | quote }}" psql -h 127.0.0.1 -p {{ postgresql_port }} -U {{ patroni_superuser_username }} -d postgres -tAXc \"$pg_slow_active_terminate_query\""
       fi
 
       # if it was not possible to pause for 60 seconds, exit with an error
-      if (( current_time - start_time >= {{ pgbouncer_pool_pause_stop_after }} )); then
+      if (( current_time - start_time >= {{ pg_pool_pause_stop_after }} )); then
         echo "$(date): it was not possible to pause (exit by timeout)"
         exit 1
       fi
