@@ -166,4 +166,5 @@
     - postgresql_users | default('') | length > 0
     - item.role | default('') | length > 0
     - patroni_standby_cluster.host | default('') | length < 1 # do not perform on the standby cluster
+    - not ansible_check_mode # Users are not actually created in check mode, so membership would fail
   tags: postgresql_users

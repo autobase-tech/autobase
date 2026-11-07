@@ -342,10 +342,11 @@
     - role: vitabaks.autobase.postgresql_schemas
       when: inventory_hostname == groups['master'][0]
 
-    - role: vitabaks.autobase.postgresql_privs
+    - role: vitabaks.autobase.postgresql_extensions
       when: inventory_hostname == groups['master'][0]
 
-    - role: vitabaks.autobase.postgresql_extensions
+    # after the extensions, so that privileges can be granted on their objects
+    - role: vitabaks.autobase.postgresql_privs
       when: inventory_hostname == groups['master'][0]
 
     - role: vitabaks.autobase.postgresql_index_maintenance
