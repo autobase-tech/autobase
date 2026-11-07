@@ -1,0 +1,89 @@
+policy_module(autobase_walg, 1.0.0)
+
+########################################
+#
+# WAL-G runs in its own domain (walg_t) when PostgreSQL starts it as
+# archive_command/restore_command, when Patroni starts it to create a
+# replica, and when cron or systemd start a backup. Without this module it
+# runs in the domain of its caller.
+#
+# The configuration (~postgres/.walg.json) and the prefetch directory live
+# in the PostgreSQL home directory (postgresql_db_t).
+#
+
+require {
+	type postgresql_t;
+	type postgresql_db_t;
+	type postgresql_log_t;
+	type postgresql_var_run_t;
+	type patroni_t;
+}
+
+type walg_t;
+type walg_exec_t;
+init_daemon_domain(walg_t, walg_exec_t)
+cron_system_entry(walg_t, walg_exec_t)
+
+# Local storage (WALG_FILE_PREFIX), /var/lib/wal-g by convention
+type walg_var_lib_t;
+files_type(walg_var_lib_t)
+
+type walg_tmp_t;
+files_tmp_file(walg_tmp_t)
+
+domtrans_pattern(postgresql_t, walg_exec_t, walg_t)
+# PostgreSQL stops a running archive_command on shutdown
+allow postgresql_t walg_t:process signal_perms;
+domtrans_pattern(patroni_t, walg_exec_t, walg_t)
+
+########################################
+#
+# Local policy
+#
+
+allow walg_t self:process { fork signal_perms getsched setrlimit };
+allow walg_t self:fifo_file rw_fifo_file_perms;
+allow walg_t self:unix_stream_socket create_stream_socket_perms;
+allow walg_t self:unix_dgram_socket create_socket_perms;
+allow walg_t self:tcp_socket create_stream_socket_perms;
+allow walg_t self:udp_socket create_socket_perms;
+allow walg_t self:netlink_route_socket r_netlink_socket_perms;
+
+corecmd_exec_bin(walg_t)
+corecmd_exec_shell(walg_t)
+
+files_read_etc_files(walg_t)
+files_search_var_lib(walg_t)
+kernel_read_system_state(walg_t)
+kernel_read_kernel_sysctls(walg_t)
+dev_read_sysfs(walg_t)
+dev_read_urand(walg_t)
+fs_getattr_all_fs(walg_t)
+fs_search_cgroup_dirs(walg_t)
+fs_read_cgroup_files(walg_t)
+auth_use_nsswitch(walg_t)
+miscfiles_read_localization(walg_t)
+miscfiles_read_generic_certs(walg_t)
+sysnet_read_config(walg_t)
+logging_send_syslog_msg(walg_t)
+
+manage_dirs_pattern(walg_t, walg_var_lib_t, walg_var_lib_t)
+manage_files_pattern(walg_t, walg_var_lib_t, walg_var_lib_t)
+
+manage_dirs_pattern(walg_t, walg_tmp_t, walg_tmp_t)
+manage_files_pattern(walg_t, walg_tmp_t, walg_tmp_t)
+files_tmp_filetrans(walg_t, walg_tmp_t, { dir file })
+
+# PostgreSQL: the data directory, the WAL, the configuration and prefetch in
+# the home directory, and the server socket for backup-push
+manage_dirs_pattern(walg_t, postgresql_db_t, postgresql_db_t)
+manage_files_pattern(walg_t, postgresql_db_t, postgresql_db_t)
+manage_lnk_files_pattern(walg_t, postgresql_db_t, postgresql_db_t)
+files_search_pids(walg_t)
+# The Autobase cron job redirects backup-push output into postgresql_log_dir
+allow walg_t postgresql_log_t:file { append_file_perms getattr };
+stream_connect_pattern(walg_t, postgresql_var_run_t, postgresql_var_run_t, postgresql_t)
+corenet_tcp_connect_postgresql_port(walg_t)
+
+# Object storage over HTTPS (S3, GCS, Azure, Swift)
+corenet_tcp_connect_http_port(walg_t)

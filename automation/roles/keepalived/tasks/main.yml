@@ -105,10 +105,12 @@
   when: add_balancer is defined and add_balancer|bool
   tags: keepalived_conf, keepalived
 
-- name: Selinux | Change the keepalived_t domain to permissive
+# With selinux_confine_services the domain stays (or becomes again) enforcing; the base policy
+# already runs the check script in keepalived_unconfined_script_t.
+- name: Selinux | Set the keepalived_t domain to {{ 'enforcing' if selinux_confine_services | default(false) | bool else 'permissive' }}
   community.general.selinux_permissive:
     name: keepalived_t
-    permissive: true
+    permissive: "{{ not (selinux_confine_services | default(false) | bool) }}"
   when: ansible_selinux.status is defined and
     ansible_selinux.status == 'enabled'
   ignore_errors: true # noqa ignore-errors

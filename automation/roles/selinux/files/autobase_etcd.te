@@ -1,0 +1,68 @@
+policy_module(autobase_etcd, 1.0.0)
+
+########################################
+#
+# etcd runs in its own domain (etcd_t). The base policy has no etcd module,
+# so without this one etcd runs as initrc_t or unconfined_service_t.
+#
+# The Autobase unit starts etcd through "/bin/bash -c" (to set GOMAXPROCS),
+# so the shell runs as unconfined_service_t and the transition happens when
+# it executes the etcd binary.
+#
+
+require {
+	type unconfined_service_t;
+}
+
+type etcd_t;
+type etcd_exec_t;
+init_daemon_domain(etcd_t, etcd_exec_t)
+domtrans_pattern(unconfined_service_t, etcd_exec_t, etcd_t)
+
+type etcd_var_lib_t;
+files_type(etcd_var_lib_t)
+
+# 2379/tcp (client) and 2380/tcp (peer); assigned by the selinux role
+type etcd_port_t;
+corenet_port(etcd_port_t)
+
+########################################
+#
+# Local policy
+#
+
+allow etcd_t self:process { fork signal_perms getsched setsched setrlimit };
+allow etcd_t self:fifo_file rw_fifo_file_perms;
+allow etcd_t self:unix_stream_socket create_stream_socket_perms;
+allow etcd_t self:unix_dgram_socket create_socket_perms;
+allow etcd_t self:tcp_socket { create_stream_socket_perms accept listen };
+allow etcd_t self:udp_socket create_socket_perms;
+allow etcd_t self:netlink_route_socket r_netlink_socket_perms;
+# Nice=-20 and IOSchedulingClass=realtime in the unit
+allow etcd_t self:capability sys_nice;
+
+manage_dirs_pattern(etcd_t, etcd_var_lib_t, etcd_var_lib_t)
+manage_files_pattern(etcd_t, etcd_var_lib_t, etcd_var_lib_t)
+# The bbolt database (member/snap/db) is memory-mapped
+allow etcd_t etcd_var_lib_t:file map;
+files_search_var_lib(etcd_t)
+
+files_read_etc_files(etcd_t)
+files_read_usr_files(etcd_t)
+kernel_read_system_state(etcd_t)
+kernel_read_kernel_sysctls(etcd_t)
+kernel_read_net_sysctls(etcd_t)
+dev_read_sysfs(etcd_t)
+dev_read_urand(etcd_t)
+fs_getattr_all_fs(etcd_t)
+fs_search_cgroup_dirs(etcd_t)
+fs_read_cgroup_files(etcd_t)
+auth_use_nsswitch(etcd_t)
+miscfiles_read_localization(etcd_t)
+miscfiles_read_generic_certs(etcd_t)
+sysnet_read_config(etcd_t)
+logging_send_syslog_msg(etcd_t)
+init_read_state(etcd_t)
+
+corenet_tcp_bind_generic_node(etcd_t)
+allow etcd_t etcd_port_t:tcp_socket { name_bind name_connect };

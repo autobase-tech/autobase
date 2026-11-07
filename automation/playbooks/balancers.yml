@@ -75,6 +75,7 @@
     - role: vitabaks.autobase.hostname
     - role: vitabaks.autobase.resolv_conf
     - role: vitabaks.autobase.sysctl
+    - role: vitabaks.autobase.selinux
 
     - role: vitabaks.autobase.haproxy
       when: with_haproxy_load_balancing | default(false) | bool

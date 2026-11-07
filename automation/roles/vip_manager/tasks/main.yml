@@ -38,6 +38,14 @@
     - not postgresql_cluster_maintenance | default(false) | bool
   tags: vip, vip_manager, vip_manager_install
 
+- name: Apply SELinux file contexts to vip-manager
+  ansible.builtin.include_role:
+    name: vitabaks.autobase.selinux
+    tasks_from: relabel
+  vars:
+    selinux_relabel_paths: ["/usr/bin/vip-manager"]
+  tags: vip, vip_manager, selinux
+
 - name: Make sure the conf directory "{{ vip_manager_conf | default('') | dirname }}" exist
   ansible.builtin.file:
     dest: "{{ vip_manager_conf | dirname }}"

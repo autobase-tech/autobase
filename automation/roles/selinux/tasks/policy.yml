@@ -1,0 +1,181 @@
+---
+# Confine the cluster services: build and load an autobase_<service> policy module for each
+# service that runs on this host, and label the executables the modules refer to. Processes
+# that are already running keep their domain until they restart; the role restarts nothing.
+- block:
+    # One entry per policy module in files/ (autobase_<name>.te and .fc).
+    - name: SELinux | select the policy modules for this host
+      ansible.builtin.set_fact:
+        selinux_policy_modules: >-
+          {{ (['autobase_patroni'] if inventory_hostname in groups['postgres_cluster'] | default([]) else [])
+             + (['autobase_pgbackrest'] if inventory_hostname in groups['postgres_cluster'] | default([])
+                and pgbackrest_install | default(false) | bool else [])
+             + (['autobase_pgbouncer'] if inventory_hostname in groups['postgres_cluster'] | default([])
+                and pgbouncer_install | default(false) | bool else [])
+             + (['autobase_haproxy'] if inventory_hostname in groups['balancers'] | default([])
+                and with_haproxy_load_balancing | default(false) | bool else [])
+             + (['autobase_confd'] if inventory_hostname in groups['balancers'] | default([])
+                and with_haproxy_load_balancing | default(false) | bool and confd_install | default(true) | bool
+                and dcs_type | default('etcd') == 'etcd' else [])
+             + (['autobase_keepalived'] if inventory_hostname in groups['balancers'] | default([])
+                and with_haproxy_load_balancing | default(false) | bool
+                and cluster_vip | default('') | length > 0 else [])
+             + (['autobase_etcd'] if inventory_hostname in groups['etcd_cluster'] | default([])
+                and dcs_type | default('etcd') == 'etcd' and not dcs_exists | default(false) | bool else [])
+             + (['autobase_consul'] if inventory_hostname in groups['consul_instances'] | default([])
+                and dcs_type | default('etcd') == 'consul' else [])
+             + (['autobase_vip_manager'] if inventory_hostname in groups['postgres_cluster'] | default([])
+                and cluster_vip | default('') | length > 0
+                and not with_haproxy_load_balancing | default(false) | bool else [])
+             + (['autobase_walg'] if inventory_hostname in groups['postgres_cluster'] | default([])
+                and wal_g_install | default(false) | bool else []) }}
+
+    - name: SELinux | install the policy development tools
+      ansible.builtin.package:
+        name:
+          - selinux-policy-devel
+          - make
+        state: present
+      register: package_status
+      until: package_status is success
+      delay: 5
+      retries: 3
+      when: selinux_policy_modules | length > 0
+
+    - name: SELinux | make sure the policy module directory exists
+      ansible.builtin.file:
+        path: "{{ selinux_policy_module_dir }}"
+        state: directory
+        mode: "0755"
+      when: selinux_policy_modules | length > 0
+
+    - name: SELinux | copy the policy modules
+      ansible.builtin.copy:
+        src: "{{ item.0 }}.{{ item.1 }}"
+        dest: "{{ selinux_policy_module_dir }}/{{ item.0 }}.{{ item.1 }}"
+        mode: "0644"
+      loop: "{{ selinux_policy_modules | product(['te', 'fc']) | list }}"
+      register: selinux_module_source
+
+    - name: SELinux | list the loaded policy modules
+      ansible.builtin.command: semodule -l
+      register: selinux_loaded_modules
+      changed_when: false
+      when: selinux_policy_modules | length > 0
+
+    - name: SELinux | find policy modules that are changed or not loaded
+      ansible.builtin.set_fact:
+        selinux_modules_to_build: >-
+          {{ (selinux_module_source.results | selectattr('changed') | map(attribute='item') | map('first') | list)
+             + (selinux_policy_modules
+                | difference(selinux_loaded_modules.stdout_lines | default([]) | map('split') | map('first') | list)) }}
+
+    - name: SELinux | build and load the policy modules
+      ansible.builtin.shell: |
+        make -f /usr/share/selinux/devel/Makefile {{ item }}.pp
+        semodule -i {{ item }}.pp
+      args:
+        chdir: "{{ selinux_policy_module_dir }}"
+      loop: "{{ selinux_modules_to_build | unique }}"
+
+    # PGDG installs the server under /usr/pgsql-<version>/bin, which the base policy does not
+    # label as postgresql_exec_t, so Patroni would start PostgreSQL in its own domain.
+    - name: SELinux | add file context rules for the PostgreSQL server executables
+      community.general.sefcontext:
+        target: "{{ postgresql_bin_dir }}/(postgres|initdb|pg_ctl)"
+        ftype: f
+        setype: postgresql_exec_t
+        state: present
+      when: "'autobase_patroni' in selinux_policy_modules"
+
+    - name: SELinux | add file context rules for the Patroni log directory
+      community.general.sefcontext:
+        target: "{{ patroni_log_dir }}(/.*)?"
+        setype: patroni_log_t
+        state: present
+      when: "'autobase_patroni' in selinux_policy_modules"
+
+    - name: SELinux | assign the etcd client and peer ports
+      community.general.seport:
+        ports: "2379,2380"
+        proto: tcp
+        setype: etcd_port_t
+        state: present
+      when: "'autobase_etcd' in selinux_policy_modules"
+
+    - name: SELinux | assign the pgbouncer listen port
+      community.general.seport:
+        ports: "{{ pgbouncer_listen_port | default(6432) }}"
+        proto: tcp
+        setype: pgbouncer_port_t
+        state: present
+      when: "'autobase_pgbouncer' in selinux_policy_modules"
+
+    - name: SELinux | add file context rules for custom pgbouncer directories
+      community.general.sefcontext:
+        target: "{{ item.path }}(/.*)?"
+        setype: "{{ item.setype }}"
+        state: present
+      loop:
+        - { path: "{{ pgbouncer_conf_dir }}", default: "/etc/pgbouncer", setype: pgbouncer_etc_t }
+        - { path: "{{ pgbouncer_log_dir }}", default: "/var/log/pgbouncer", setype: pgbouncer_log_t }
+      loop_control:
+        label: "{{ item.path }}"
+      when:
+        - "'autobase_pgbouncer' in selinux_policy_modules"
+        - item.path != item.default
+
+    # keepalived creates the directory itself when it is missing, in etc_t; created here,
+    # it gets keepalived_iproute2_t and keepalived needs no write access to /etc/iproute2.
+    - name: SELinux | create the iproute2 protocol directory for keepalived
+      ansible.builtin.file:
+        path: /etc/iproute2/rt_addrprotos.d
+        state: directory
+        mode: "0755"
+        setype: keepalived_iproute2_t
+      when: "'autobase_keepalived' in selinux_policy_modules"
+
+    - name: SELinux | assign the Consul ports
+      community.general.seport:
+        ports: "{{ item.ports }}"
+        proto: "{{ item.proto }}"
+        setype: consul_port_t
+        state: present
+      loop:
+        - { proto: tcp, ports: "8300-8302,8400,8500,8502-8503,8600" }
+        - { proto: udp, ports: "8301-8302,8600" }
+      when: "'autobase_consul' in selinux_policy_modules"
+
+    - name: SELinux | add file context rules for a custom etcd data directory
+      community.general.sefcontext:
+        target: "{{ etcd_data_dir }}(/.*)?"
+        setype: etcd_var_lib_t
+        state: present
+      when:
+        - "'autobase_etcd' in selinux_policy_modules"
+        - etcd_data_dir | default('/var/lib/etcd') != '/var/lib/etcd'
+
+    # autobase_pgbackrest.fc labels the default paths; custom ones from pgbackrest_conf need rules.
+    - name: SELinux | add file context rules for custom pgBackRest paths
+      community.general.sefcontext:
+        target: "{{ item.value }}(/.*)?"
+        setype: "{{ selinux_pgbackrest_path_types[item.option] }}"
+        state: present
+      loop: "{{ pgbackrest_conf.global | default([]) | selectattr('option', 'in', selinux_pgbackrest_path_types.keys() | list) | list }}"
+      loop_control:
+        label: "{{ item.option }}={{ item.value }}"
+      when:
+        - "'autobase_pgbackrest' in selinux_policy_modules"
+        - item.option != 'repo1-path' or pgbackrest_repo_type | default('posix') == 'posix'
+      vars:
+        selinux_pgbackrest_path_types:
+          log-path: pgbackrest_log_t
+          repo1-path: pgbackrest_var_lib_t
+          spool-path: pgbackrest_spool_t
+          lock-path: pgbackrest_tmp_t
+  when:
+    - ansible_os_family == "RedHat"
+    - ansible_selinux.status is defined
+    - ansible_selinux.status == "enabled"
+    - selinux_confine_services | bool
+  tags: selinux, selinux_policy

@@ -158,6 +158,14 @@
     - etcd_conf_dir | default('/etc/etcd') == '/etc/etcd'
     - etcd_installation_method == "rpm"
 
+- name: Apply SELinux file contexts to the etcd binary and data directory
+  ansible.builtin.include_role:
+    name: vitabaks.autobase.selinux
+    tasks_from: relabel
+  vars:
+    selinux_relabel_paths: ["{{ etcd_bin_dir | default('/usr/local/bin') }}/etcd", "{{ etcd_data_dir }}"]
+  tags: etcd, etcd_start, selinux
+
 - name: Start etcd service and check cluster health
   ansible.builtin.include_tasks: start.yml
   when:

@@ -54,6 +54,14 @@
     mode: "0750"
   tags: pgbouncer_conf, pgbouncer
 
+- name: Apply SELinux file contexts to the pgbouncer directories
+  ansible.builtin.include_role:
+    name: vitabaks.autobase.selinux
+    tasks_from: relabel
+  vars:
+    selinux_relabel_paths: ["{{ pgbouncer_conf_dir }}", "{{ pgbouncer_log_dir }}"]
+  tags: pgbouncer_conf, pgbouncer, selinux
+
 - name: Check if pgbouncer systemd service file exists
   ansible.builtin.stat:
     path: /etc/systemd/system/pgbouncer.service

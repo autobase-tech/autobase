@@ -1,0 +1,21 @@
+---
+# Consul, vip-manager holding the VIP (no HAProxy), WAL-G with local file storage
+dcs_type: "consul"
+consul_node_role: server
+with_haproxy_load_balancing: false
+vip_manager_dcs_type: "consul"
+# vip-manager's configuration has no TLS settings and talks plain HTTP to Consul and the
+# Patroni REST API, which both use HTTPS with the default tls_cert_generate: true.
+tls_cert_generate: false
+consul_tls_enable: false
+pgbouncer_install: true
+pgbackrest_install: false
+wal_g_install: true
+wal_g_json:
+  - { option: "WALG_FILE_PREFIX", value: "{{ postgresql_home_dir }}/wal-g-storage" }
+  - { option: "WALG_COMPRESSION_METHOD", value: "brotli" }
+  - { option: "WALG_PREFETCH_DIR", value: "{{ wal_g_prefetch_dir_path }}" }
+  - { option: "PGDATA", value: "{{ postgresql_data_dir }}" }
+  - { option: "PGHOST", value: "{{ postgresql_unix_socket_dir }}" }
+  - { option: "PGPORT", value: "{{ postgresql_port }}" }
+  - { option: "PGUSER", value: "{{ patroni_superuser_username }}" }

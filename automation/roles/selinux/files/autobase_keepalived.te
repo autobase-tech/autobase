@@ -1,0 +1,23 @@
+policy_module(autobase_keepalived, 1.0.0)
+
+########################################
+#
+# keepalived keeps the base policy's keepalived_t domain, which the
+# keepalived role otherwise sets to permissive. Newer keepalived releases
+# (RHEL 10) run "ip" through a shell and register their route protocol in
+# /etc/iproute2/rt_addrprotos.d, which the base policy does not cover yet.
+#
+
+require {
+	type keepalived_t;
+}
+
+# /etc/iproute2/rt_addrprotos.d, created by the selinux role
+type keepalived_iproute2_t;
+files_config_file(keepalived_iproute2_t)
+
+manage_dirs_pattern(keepalived_t, keepalived_iproute2_t, keepalived_iproute2_t)
+manage_files_pattern(keepalived_t, keepalived_iproute2_t, keepalived_iproute2_t)
+
+corecmd_exec_shell(keepalived_t)
+sysnet_domtrans_ifconfig(keepalived_t)

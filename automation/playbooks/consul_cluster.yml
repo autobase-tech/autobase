@@ -162,4 +162,6 @@
     - role: vitabaks.autobase.timezone
     - role: vitabaks.autobase.ntp
 
+    - role: vitabaks.autobase.selinux
+
     - role: vitabaks.autobase.consul

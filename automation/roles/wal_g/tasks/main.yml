@@ -267,6 +267,14 @@
     mode: "0644"
   tags: wal-g, wal_g, wal_g_conf
 
+- name: Apply SELinux file contexts to WAL-G
+  ansible.builtin.include_role:
+    name: vitabaks.autobase.selinux
+    tasks_from: relabel
+  vars:
+    selinux_relabel_paths: ["{{ (wal_g_path | default('/usr/local/bin/wal-g')) | split(' ') | first }}"]
+  tags: wal-g, wal_g, selinux
+
 - name: Add WAL-G cron jobs
   ansible.builtin.include_role:
     name: vitabaks.autobase.cron

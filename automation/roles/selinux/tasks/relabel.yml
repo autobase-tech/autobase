@@ -1,0 +1,26 @@
+---
+# Apply the file contexts of the autobase_* policy modules to paths that a service role has
+# just installed or created (binaries copied by pip or unarchive, data directories created
+# before the module was loaded). Call it right before the service starts:
+#
+#   - ansible.builtin.include_role:
+#       name: vitabaks.autobase.selinux
+#       tasks_from: relabel
+#     vars:
+#       selinux_relabel_paths: ["/usr/local/bin/etcd", "/var/lib/etcd"]
+- name: SELinux | apply file contexts to {{ selinux_relabel_paths | join(', ') }}
+  ansible.builtin.shell: |
+    set -o pipefail
+    paths=$(ls -d {{ selinux_relabel_paths | map('quote') | join(' ') }} 2>/dev/null || true)
+    [ -z "$paths" ] || restorecon -R -v $paths
+  args:
+    executable: /bin/bash
+  register: selinux_relabel_result
+  changed_when: selinux_relabel_result.stdout | length > 0
+  when:
+    - ansible_os_family == "RedHat"
+    - ansible_selinux.status is defined
+    - ansible_selinux.status == "enabled"
+    - selinux_confine_services | bool
+    - selinux_relabel_paths | default([]) | length > 0
+  tags: selinux, selinux_contexts

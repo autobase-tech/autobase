@@ -1064,6 +1064,15 @@ swap_file_create: true
 swap_file_path: /swapfile
 swap_file_size_mb: "4096" # change this value for your system
 
+# SELinux (applies only to hosts where SELinux is enabled)
+selinux_state: "" # "enforcing", "permissive" or "" to leave the current mode unchanged
+selinux_policy: "targeted"
+# Run the cluster services in their own SELinux domains instead of unconfined_service_t
+# (Patroni in patroni_t, PostgreSQL in postgresql_t). Builds and loads the autobase_* policy modules
+# for the services on each host; running processes change domain when they restart.
+selinux_confine_services: false
+selinux_policy_module_dir: "/usr/share/selinux/autobase"
+
 # Kernel parameters
 sysctl_set: true
 sysctl_file: /etc/sysctl.d/autobase.sysctl.conf

@@ -1,0 +1,2 @@
+/usr/local/bin/confd	--	gen_context(system_u:object_r:confd_exec_t,s0)
+/etc/confd(/.*)?	gen_context(system_u:object_r:confd_etc_t,s0)
