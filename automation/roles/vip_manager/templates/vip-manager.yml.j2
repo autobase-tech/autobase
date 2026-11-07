@@ -6,13 +6,6 @@ interval: {{ vip_manager_interval }}
 {% if vip_manager_dcs_type | default(dcs_type) == 'patroni' %}
 trigger-key: "/leader"
 trigger-value: 200
-# the Patroni REST API of this host (the default endpoint, with the scheme Patroni serves)
-dcs-endpoints:
-  - {{ patroni_restapi_protocol | default('http') }}://127.0.0.1:{{ patroni_restapi_port | default(8008) }}
-{% if patroni_restapi_protocol | default('http') == 'https' and patroni_restapi_cafile | default('') | length > 0 %}
-# CA used to verify the REST API certificate (vip-manager reads it from etcd-ca-file for every DCS type)
-etcd-ca-file: {{ patroni_restapi_cafile }}
-{% endif %}
 {% else %}
 # the etcd or consul key which vip-manager will regularly poll.
 trigger-key: "/{{ patroni_etcd_namespace | default('service') }}/{{ patroni_cluster_name }}/leader"
