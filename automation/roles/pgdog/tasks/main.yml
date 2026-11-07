@@ -32,13 +32,6 @@
         remote_src: true
       notify: "restart pgdog"
 
-    - name: Remove the downloaded archive and the extracted files
-      ansible.builtin.file:
-        path: "{{ item }}"
-        state: absent
-      loop:
-        - "/tmp/{{ pgdog_package_repo | basename }}"
-        - "/tmp/{{ pgdog_package_repo | basename | regex_replace('\\.tar\\.gz$', '') }}"
   when: not ansible_check_mode
   tags: pgdog_install, pgdog
 
