@@ -1,0 +1,13 @@
+---
+- name: Gather service facts
+  ansible.builtin.service_facts:
+
+- name: Stop and disable existing PgBouncer services
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    state: stopped
+    enabled: false
+  loop: >-
+    {{ ansible_facts.services.keys()
+       | select('match', '^pgbouncer(-[0-9]+)?(\.service)?$')
+       | map('regex_replace', '\.service$', '') | unique | sort }}

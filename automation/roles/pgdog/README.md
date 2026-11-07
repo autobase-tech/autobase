@@ -39,7 +39,11 @@ pgdog_install: true
 
 `pgbouncer_install` defaults to `false` when PgDog is enabled, so it does not need to be set separately. Explicitly enabling PgBouncer or HAProxy together with PgDog is rejected by the pre-checks. With `pgdog_install: false`, PgBouncer defaults to enabled, and it can be used together with HAProxy.
 
-PgDog listens on port `6432`, like PgBouncer, so the connection info and the firewall rules stay the same. To switch an existing cluster, stop and disable the `pgbouncer` and `haproxy` services first, where installed, and then run `config_pgcluster.yml` with the tags `patroni_conf,pgdog`. Selecting PgDog does not stop or uninstall existing services. Keep in mind that clients will have to use TLS (see below).
+PgDog listens on port `6432`, like PgBouncer, so the connection info and the firewall rules stay the same.
+
+To switch an existing cluster, run `config_pgcluster.yml` playbook with `pgbouncer_disable: true` variable. After preparing and validating the PgDog configuration, Autobase stops and disables all detected PgBouncer services, including additional processes, before starting PgDog. Packages and configuration files are preserved. Existing PgBouncer client connections are closed, so plan a maintenance window and let clients reconnect.
+
+If PgBouncer was explicitly enabled in your inventory, also set `pgbouncer_install: false`. If HAProxy is in use, set `with_haproxy_load_balancing: false` and stop and disable its service separately. Keep in mind that clients will have to use TLS (see below).
 
 ## Differences from PgBouncer and HAProxy
 
