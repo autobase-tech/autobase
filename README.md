@@ -64,7 +64,9 @@ Autobase supports the following Linux distributions and CPU architectures.
 **CPU architectures:** x86_64 (amd64), aarch64 (arm64).
 
 > [!NOTE]
-> [PgDog](./automation/roles/pgdog/README.md) is optional and disabled by default. It needs glibc 2.39 or newer, so it only runs on Debian 13, Ubuntu 24.04+ and the version 10 releases of the RHEL family (CentOS Stream, Oracle Linux, Rocky Linux, AlmaLinux). PgDog is licensed under AGPL-3.0.
+> [PgDog](./automation/roles/pgdog/README.md) is currently in beta testing and will be enabled by default in Autobase 3.0.
+>
+> It needs glibc 2.39 or newer, so it only runs on Debian 13, Ubuntu 24.04+ and the version 10 releases of the RHEL family.
 
 ### PostgreSQL Versions
 
