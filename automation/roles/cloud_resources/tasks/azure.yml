@@ -232,8 +232,8 @@
                   haproxy_listen_port.replicas_sync | default('5002'),
                   haproxy_listen_port.replicas_async | default('5003')
                 ] if with_haproxy_load_balancing | bool else []) +
-                ([pgbouncer_listen_port | default('6432')] if not with_haproxy_load_balancing | bool and pgbouncer_install | bool else []) +
-                ([postgresql_port | default('5432')] if not with_haproxy_load_balancing | bool and not pgbouncer_install | bool else []),
+                ([connection_pooler_port | default('6432')] if not with_haproxy_load_balancing | bool and connection_pooler_enabled | bool else []) +
+                ([postgresql_port | default('5432')] if not with_haproxy_load_balancing | bool and not connection_pooler_enabled | bool else []),
               'source_address_prefix': '0.0.0.0/0',
               'access': 'Allow',
               'priority': 1300,
@@ -251,7 +251,7 @@
                   haproxy_listen_port.replicas_async | default('5003'),
                   haproxy_listen_port.stats | default('7000')
                 ] if with_haproxy_load_balancing | bool else []) +
-                ([pgbouncer_listen_port | default('6432')] if pgbouncer_install | bool else []) +
+                ([connection_pooler_port | default('6432')] if connection_pooler_enabled | bool else []) +
                 [
                   postgresql_port | default('5432'),
                   patroni_restapi_port | default('8008'),
@@ -506,7 +506,7 @@
       register: azure_load_balancers
       vars:
         lb_name: "{{ patroni_cluster_name }}-{{ azure_lb_role }}"
-        lb_port: "{{ (pgbouncer_listen_port | default(6432) if pgbouncer_install | bool else postgresql_port | default(5432)) | int }}"
+        lb_port: "{{ (connection_pooler_port | default(6432) if connection_pooler_enabled | bool else postgresql_port | default(5432)) | int }}"
         existing_frontend: "{{ azure_existing_lbs[azure_lb_role].properties.frontendIPConfigurations | default([])
           | selectattr('name', 'equalto', lb_name ~ '-frontend') | first | default({}) }}"
 

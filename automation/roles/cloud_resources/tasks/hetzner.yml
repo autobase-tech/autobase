@@ -248,13 +248,13 @@
             ] if database_public_access | bool and with_haproxy_load_balancing | bool else []) +
             ([
               {
-                'description': 'PgBouncer',
+                'description': connection_pooler_name,
                 'direction': 'in',
                 'protocol': 'tcp',
-                'port': pgbouncer_listen_port | default('6432'),
+                'port': connection_pooler_port | default('6432'),
                 'source_ips': database_public_allowed_ips | default('0.0.0.0/0,::/0', true) | split(',')
               }
-            ] if database_public_access | bool and (not with_haproxy_load_balancing | bool and pgbouncer_install | bool) else []) +
+            ] if database_public_access | bool and (not with_haproxy_load_balancing | bool and connection_pooler_enabled | bool) else []) +
             ([
               {
                 'description': 'PostgreSQL',
@@ -263,7 +263,7 @@
                 'port': postgresql_port | default('5432'),
                 'source_ips': database_public_allowed_ips | default('0.0.0.0/0,::/0', true) | split(',')
               }
-            ] if database_public_access | bool and (not with_haproxy_load_balancing | bool and not pgbouncer_install | bool) else [])
+            ] if database_public_access | bool and (not with_haproxy_load_balancing | bool and not connection_pooler_enabled | bool) else [])
           }}
       when:
         - cloud_firewall | bool
@@ -329,13 +329,13 @@
             ] if with_haproxy_load_balancing | bool else []) +
             ([
               {
-                'description': 'PgBouncer',
+                'description': connection_pooler_name,
                 'direction': 'in',
                 'protocol': 'tcp',
-                'port': pgbouncer_listen_port | default('6432'),
+                'port': connection_pooler_port | default('6432'),
                 'source_ips': [server_network_ip_range]
               }
-            ] if pgbouncer_install | bool else []) +
+            ] if connection_pooler_enabled | bool else []) +
             ([
               {
                 'description': 'PostgreSQL',
@@ -538,7 +538,7 @@
         api_token: "{{ lookup('ansible.builtin.env', 'HCLOUD_API_TOKEN') }}"
         load_balancer: "{{ patroni_cluster_name }}-{{ item }}"
         listen_port: "{{ hetzner_load_balancer_port | default(database_port) }}"
-        destination_port: "{{ pgbouncer_listen_port | default(6432) if pgbouncer_install | bool else postgresql_port | default(5432) }}"
+        destination_port: "{{ connection_pooler_port | default(6432) if connection_pooler_enabled | bool else postgresql_port | default(5432) }}"
         protocol: tcp
         health_check:
           protocol: http
@@ -560,7 +560,7 @@
       loop_control:
         label: "{{ patroni_cluster_name }}-{{ item }}"
       vars:
-        database_port: "{{ pgbouncer_listen_port | default(6432) if pgbouncer_install | bool else postgresql_port | default(5432) }}"
+        database_port: "{{ connection_pooler_port | default(6432) if connection_pooler_enabled | bool else postgresql_port | default(5432) }}"
       when: cloud_load_balancer | bool and
         (item == 'primary' or
         (item == 'replica' and cloud_load_balancer_replica | bool and server_count | int > 1) or

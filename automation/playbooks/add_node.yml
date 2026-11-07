@@ -333,6 +333,9 @@
     - role: vitabaks.autobase.pgbouncer
       when: pgbouncer_install | default(true) | bool
 
+    - role: vitabaks.autobase.pgdog
+      when: pgdog_install | default(false) | bool
+
     - role: vitabaks.autobase.pgpass
 
     - role: vitabaks.autobase.patroni
@@ -360,6 +363,14 @@
         - dcs_type | default('etcd') == 'etcd'
         - new_etcd_nodes | default([]) | length > 0
       tags: etcd
+
+    # PgDog connects to all nodes, so the existing nodes have to learn about the new one.
+    - name: Add the new node to the PgDog configuration
+      ansible.builtin.include_role:
+        name: vitabaks.autobase.pgdog
+        tasks_from: config
+      when: pgdog_install | default(false) | bool
+      tags: pgdog, pgdog_conf
 
     # Autobase Console uses this output to register newly added servers.
     - name: System info

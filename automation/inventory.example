@@ -22,7 +22,7 @@
 #10.128.64.144 consul_node_role=client consul_datacenter=dc2
 #10.128.64.145 consul_node_role=client consul_datacenter=dc2
 
-# if with_haproxy_load_balancing: true
+# if with_haproxy_load_balancing: true (not used with pgdog_install: true)
 [balancers]
 #10.128.64.140 # balancer_tags="datacenter=dc1"
 #10.128.64.142 # balancer_tags="datacenter=dc1"

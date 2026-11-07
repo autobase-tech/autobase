@@ -14,6 +14,11 @@ Pre-deployment validations and safety checks for the PostgreSQL cluster stack.
   - Validates `postgresql_locale_provider`, `postgresql_icu_locale` and `postgresql_builtin_locale` against the PostgreSQL version and encoding before initdb runs.
 - PgBouncer:
   - Computes total pool size and ensures it does not exceed max_connections.
+- PgDog:
+  - Ensures it is not combined with PgBouncer or HAProxy.
+  - Validates the architecture and the glibc version required by the PgDog binaries.
+  - Validates the authentication settings and `pgdog_pools`.
+  - Computes total pool size for all the nodes and ensures it does not exceed max_connections.
 - Backup tools:
   - Ensures archive_command for pgBackRest or WAL-G.
   - Validates pgBackRest repo host/user when using a dedicated repo server.
@@ -21,7 +26,7 @@ Pre-deployment validations and safety checks for the PostgreSQL cluster stack.
   - Adds required shared_preload_libraries.
   - Validates versions/OS for TimescaleDB, pgvectorscale, ParadeDB, etc.
 - Credentials:
-  - Generates Patroni passwords when missing or fetches existing ones during maintenance.
+  - Generates Patroni passwords (and the PgDog admin password) when missing or fetches existing ones during maintenance.
 - External secrets:
   - Validates the provider, secret definitions, AWS region, recovery window, and tags before cluster changes begin.
 

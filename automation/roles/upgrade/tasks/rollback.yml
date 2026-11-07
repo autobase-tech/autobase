@@ -186,15 +186,19 @@
     - inventory_hostname in groups.get('secondary', [])
 
 # if 'pgbouncer_install' is 'true' and 'pgbouncer_pool_pause' is 'true'
+# or 'pgdog_install' is 'true' and 'pgdog_pool_pause' is 'true'
 - block:
     - name: "[Rollback] Disable maintenance mode"
       ansible.builtin.include_tasks: maintenance_disable.yml
 
     - name: "[Rollback] Perform RESUME PgBouncer pools (if paused)"
       ansible.builtin.include_tasks: pgbouncer_resume.yml
-  when:
-    - pgbouncer_install | bool
-    - pgbouncer_pool_pause | bool
+      when: pgbouncer_install | bool
+
+    - name: "[Rollback] Disable maintenance mode of PgDog (if enabled)"
+      ansible.builtin.include_tasks: pgdog_resume.yml
+      when: pgdog_install | bool
+  when: connection_pooler_pause | bool
 
 - name: "[Rollback] Check PostgreSQL is started and accepting connections"
   ansible.builtin.command: "{{ pg_old_bindir }}/pg_isready -p {{ postgresql_port }}"

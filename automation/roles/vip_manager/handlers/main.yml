@@ -10,7 +10,7 @@
 - name: Wait for the cluster ip address (VIP) "{{ cluster_vip | default('') }}" is running
   ansible.builtin.wait_for:
     host: "{{ cluster_vip }}"
-    port: "{{ pgbouncer_listen_port if pgbouncer_install | bool else postgresql_port }}"
+    port: "{{ connection_pooler_port if connection_pooler_enabled | bool else postgresql_port }}"
     state: started
     timeout: 15 # max wait time: 30 seconds
     delay: 2

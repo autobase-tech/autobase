@@ -28,6 +28,11 @@
       "schedule": ["every month"]
     },
     {
+      "description": "Require manual merging for PgDog updates: releases can lack the Linux binaries, and pgdog_min_glibc_version may need a change",
+      "matchPackageNames": ["pgdogdev/pgdog"],
+      "automerge": false
+    },
+    {
       "description": "Require manual merging for dbdesk-studio updates",
       "matchPackageNames": ["docker.io/bhavikagarwal2001/dbdesk-studio"],
       "automerge": false

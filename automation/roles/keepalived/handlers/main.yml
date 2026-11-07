@@ -22,7 +22,7 @@
       {{
         (postgresql_cluster_maintenance | default(false) | bool) |
         ternary(
-          pgbouncer_listen_port if pgbouncer_install | bool else postgresql_port,
+          connection_pooler_port if connection_pooler_enabled | bool else postgresql_port,
           ansible_ssh_port | default(22)
         )
       }}

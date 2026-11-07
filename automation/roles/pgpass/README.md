@@ -15,7 +15,7 @@ Creates and manages the `~/.pgpass` file for the postgres user. The role ensures
 postgresql_pgpass:
   - "localhost:{{ postgresql_port }}:*:{{ patroni_superuser_username }}:{{ patroni_superuser_password }}"
   - "{{ bind_address }}:{{ postgresql_port }}:*:{{ patroni_superuser_username }}:{{ patroni_superuser_password }}"
-  - "*:{{ pgbouncer_listen_port }}:*:{{ patroni_superuser_username }}:{{ patroni_superuser_password }}"
+  - "*:{{ connection_pooler_port }}:*:{{ patroni_superuser_username }}:{{ patroni_superuser_password }}"
 ```
 
 

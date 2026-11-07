@@ -1,0 +1,26 @@
+---
+# This task sets the value for max_connections from the provided variables, defaulting to 100 if not explicitly set.
+- name: Set max_connections from vars or use default
+  ansible.builtin.set_fact:
+    max_connections: "{{ postgresql_parameters_max_connections | int }}"
+  vars:
+    # Prefer 'max_connections' from local_postgresql_parameters (host-level override),
+    # fallback to cluster-wide postgresql_parameters_dcs (DCS), else use default 100.
+    postgresql_parameters_max_connections: >-
+      {{
+        (
+          local_postgresql_parameters | default([])
+          | selectattr('option', 'equalto', 'max_connections')
+          | map(attribute='value') | first
+        )
+        | default(
+            (
+              postgresql_parameters_dcs | default([])
+              | selectattr('option', 'equalto', 'max_connections')
+              | map(attribute='value') | first
+            ),
+            true
+        )
+        | default(100)
+      }}
+  when: inventory_hostname == groups['master'][0]

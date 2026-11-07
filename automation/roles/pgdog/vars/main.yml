@@ -1,0 +1,3 @@
+---
+# The directory extracted from the 'pgdog_package_repo' archive.
+pgdog_release_dir: "{{ pgdog_install_dir }}/{{ pgdog_package_repo | basename | regex_replace('\\.tar\\.gz$', '') }}"
