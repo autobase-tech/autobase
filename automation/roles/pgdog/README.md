@@ -30,17 +30,16 @@ Patroni service registration is disabled. The shared Consul service management t
 - **PostgreSQL 12 or newer**, required by the replication monitoring query used for automatic role detection.
 - **glibc 2.39 or newer**, required by the binaries that PgDog publishes. That means Ubuntu 24.04+, Debian 13+, or RHEL 10 and its derivatives. It rules out Ubuntu 22.04, Debian 11 and 12, and RHEL 8 and 9. The pre-checks stop the deployment on these systems.
 - `x86_64` or `aarch64` servers.
-- `pgbouncer_install: false` and `with_haproxy_load_balancing: false`. The pre-checks stop the deployment otherwise.
 
 ## Usage
 
 ```yaml
 pgdog_install: true
-pgbouncer_install: false
-with_haproxy_load_balancing: false
 ```
 
-PgDog listens on port `6432`, like PgBouncer, so the connection info and the firewall rules stay the same. To switch an existing cluster, stop and disable the `pgbouncer` service first, and then run `config_pgcluster.yml` with the tags `patroni_conf,pgdog`. Keep in mind that clients will have to use TLS (see below).
+`pgbouncer_install` defaults to `false` when PgDog is enabled, so it does not need to be set separately. Explicitly enabling PgBouncer or HAProxy together with PgDog is rejected by the pre-checks. With `pgdog_install: false`, PgBouncer defaults to enabled, and it can be used together with HAProxy.
+
+PgDog listens on port `6432`, like PgBouncer, so the connection info and the firewall rules stay the same. To switch an existing cluster, stop and disable the `pgbouncer` and `haproxy` services first, where installed, and then run `config_pgcluster.yml` with the tags `patroni_conf,pgdog`. Selecting PgDog does not stop or uninstall existing services. Keep in mind that clients will have to use TLS (see below).
 
 ## Differences from PgBouncer and HAProxy
 

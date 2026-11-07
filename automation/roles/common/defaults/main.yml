@@ -31,7 +31,7 @@ synchronous_mode_strict: false # if 'true' then block all client writes to the m
 synchronous_node_count: 1 # number of synchronous standby databases
 
 # Load Balancing
-with_haproxy_load_balancing: false # or 'true' if you want to install and configure the HAProxy load balancers (or see 'pgdog_install')
+with_haproxy_load_balancing: false # or 'true' to use HAProxy with PgBouncer or directly with PostgreSQL; incompatible with PgDog.
 haproxy_listen_port:
   master: 5000
   replicas: 5001
@@ -560,7 +560,7 @@ postgresql_index_maintenance_cron_jobs:
 # PgBouncer parameters
 ############################################################
 
-pgbouncer_install: true # or 'false' if you do not want to install and configure the pgbouncer service (or see 'pgdog_install')
+pgbouncer_install: "{{ not (pgdog_install | bool) }}" # Defaults to false with PgDog; can be explicitly disabled otherwise.
 pgbouncer_processes: 1 # Number of pgbouncer processes to be used. Multiple processes use the so_reuseport option for better performance.
 pgbouncer_conf_dir: "/etc/pgbouncer"
 pgbouncer_log_dir: "/var/log/pgbouncer"
