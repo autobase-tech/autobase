@@ -45,6 +45,8 @@ Rollback is possible without losing changes made after cutover, because reverse 
 
 `In-place` To minimize the downtime, we pause PgBouncer pools (or enable the maintenance mode of [PgDog](../pgdog/README.md), which works the same way for the clients). This doesn’t terminate application connections, but may temporarily increase query latency while pools are paused. The pause typically lasts ~30-60 seconds, but may be longer for large databases due to pg_upgrade and rsync. The default maximum wait time during a pause is 2 minutes (controlled by the query_wait_timeout parameter).
 
+PgDog maintenance commands, PostgreSQL activity checks and session termination run in parallel across nodes. The script waits for every maintenance command to complete before checking transactions. If any command fails or draining times out, it waits for pending commands and attempts to disable maintenance on every PgDog before returning an error; the external rollback retries cleanup if needed. Each service command has a 5-second execution timeout (with forced termination after one further second), and the 30/60-second drain timers start after maintenance is enabled on all nodes.
+
 `Blue-green` A short service impact occurs only during switchover: the source cluster is briefly set to read-only, the remaining logical replication lag is drained, and traffic is redirected to target. Only the write traffic degrades (~10-15 seconds), while the read traffic has near-zero downtime.
 
 ## Compatibility
