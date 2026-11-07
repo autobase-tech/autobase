@@ -73,7 +73,6 @@
           pgdog_install: {{ pgdog_install | bool | lower }}
           test_postgresql_version: {{ postgresql_version }}
           test_cluster_vip: "{{ cluster_vip | default('') }}"
-          test_vip_manager_dcs_type: "{{ vip_manager_dcs_type | default(dcs_type) }}"
           postgresql_locale_provider: "{{ postgresql_locale_provider }}"
           postgresql_icu_locale: "{{ postgresql_icu_locale }}"
           postgresql_builtin_locale: "{{ postgresql_builtin_locale }}"

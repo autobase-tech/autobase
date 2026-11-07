@@ -75,10 +75,7 @@
       ansible.builtin.command: >-
         {{ psql_bin }} "postgresql://db1_user@{{ test_cluster_vip }}:6432/db1?sslmode=require&connect_timeout=10" -tAXc "SELECT 1"
       changed_when: false
-      # TODO: with 'vip_manager_dcs_type: patroni', vip-manager polls http://127.0.0.1:8008, but the Patroni REST API uses TLS
-      when:
-        - test_cluster_vip | default('') | length > 0
-        - test_vip_manager_dcs_type | default('') != 'patroni'
+      when: test_cluster_vip | default('') | length > 0
 
     - name: Get the Patroni leader
       ansible.builtin.command: patronictl -c /etc/patroni/patroni.yml list -f json
