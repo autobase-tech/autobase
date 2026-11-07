@@ -215,7 +215,7 @@ consul_services:
   - name: "{{ patroni_cluster_name }}"
     id: "{{ patroni_cluster_name }}-master"
     tags: ["master", "primary"]
-    port: "{{ pgbouncer_listen_port }}" # or "{{ postgresql_port }}" if pgbouncer_install: false
+    port: "{{ connection_pooler_port if connection_pooler_enabled | bool else postgresql_port }}"
     checks:
       - http: >-
           {{ patroni_restapi_protocol }}://{{ patroni_restapi_connect_addr
@@ -223,13 +223,12 @@ consul_services:
           | default(bind_address, true), true) }}:{{ patroni_restapi_port }}/primary
         tls_skip_verify: true
         interval: "2s"
-      # comment out this check if pgbouncer_install: false
-      - args: ["systemctl", "status", "pgbouncer"]
+      - args: ["systemctl", "status", "{{ connection_pooler_name | lower if connection_pooler_enabled | bool else 'patroni' }}"]
         interval: "5s"
   - name: "{{ patroni_cluster_name }}"
     id: "{{ patroni_cluster_name }}-replica"
     tags: ["replica"]
-    port: "{{ pgbouncer_listen_port }}"
+    port: "{{ connection_pooler_port if connection_pooler_enabled | bool else postgresql_port }}"
     checks:
       - http: >-
           {{ patroni_restapi_protocol }}://{{ patroni_restapi_connect_addr
@@ -237,12 +236,12 @@ consul_services:
           | default(bind_address, true), true) }}:{{ patroni_restapi_port }}/replica?lag={{ patroni_maximum_lag_on_replica }}
         tls_skip_verify: true
         interval: "2s"
-      - args: ["systemctl", "status", "pgbouncer"]
+      - args: ["systemctl", "status", "{{ connection_pooler_name | lower if connection_pooler_enabled | bool else 'patroni' }}"]
         interval: "5s"
 #  - name: "{{ patroni_cluster_name }}"
 #    id: "{{ patroni_cluster_name }}-sync-replica"
 #    tags: ['sync-replica']
-#    port: "{{ pgbouncer_listen_port }}"
+#    port: "{{ connection_pooler_port if connection_pooler_enabled | bool else postgresql_port }}"
 #    checks:
 #      - http: >-
 #          {{ patroni_restapi_protocol }}://{{ patroni_restapi_connect_addr
@@ -250,12 +249,12 @@ consul_services:
 #          | default(bind_address, true), true) }}:{{ patroni_restapi_port }}/sync
 #        tls_skip_verify: true
 #        interval: "2s"
-#      - args: ["systemctl", "status", "pgbouncer"]
+#      - args: ["systemctl", "status", "{{ connection_pooler_name | lower if connection_pooler_enabled | bool else 'patroni' }}"]
 #        interval: "5s"
 #  - name: "{{ patroni_cluster_name }}"
 #    id: "{{ patroni_cluster_name }}-async-replica"
 #    tags: ['async-replica']
-#    port: "{{ pgbouncer_listen_port }}"
+#    port: "{{ connection_pooler_port if connection_pooler_enabled | bool else postgresql_port }}"
 #    checks:
 #      - http: >-
 #          {{ patroni_restapi_protocol }}://{{ patroni_restapi_connect_addr
@@ -263,7 +262,7 @@ consul_services:
 #          | default(bind_address, true), true) }}:{{ patroni_restapi_port }}/async?lag={{ patroni_maximum_lag_on_replica }}
 #        tls_skip_verify: true
 #        interval: "2s"
-#      - args: ["systemctl", "status", "pgbouncer"]
+#      - args: ["systemctl", "status", "{{ connection_pooler_name | lower if connection_pooler_enabled | bool else 'patroni' }}"]
 #        interval: "5s"
 
 ############################################################
