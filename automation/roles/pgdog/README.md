@@ -15,9 +15,13 @@ PgDog runs on every node of the `postgres_cluster` group, next to PostgreSQL. Ea
 
 ## Client entry point
 
-PgDog replaces the routing that HAProxy does, not a stable address for clients. It runs on the database nodes, so if a node goes down, clients connected to its PgDog lose that connection and need another way in. Use `cluster_vip` (handled by vip-manager, which follows the Patroni leader), a cloud load balancer, or a libpq multi-host connection string.
+PgDog replaces the routing that HAProxy does, not a stable address for clients. It runs on the database nodes, so if a node goes down, clients connected to its PgDog lose that connection and need another way in. Use Consul service discovery, `cluster_vip` (handled by vip-manager, which follows the Patroni leader), a cloud load balancer, or a libpq multi-host connection string.
 
 There is also a single port. HAProxy's separate ports for the primary and the replicas are gone, because PgDog routes each query. A connection through a `primary` or `replica` cloud load balancer endpoint therefore does not pin the client to that role: reads through the `primary` endpoint can go to a replica, and writes through the `replica` endpoint go to the primary.
+
+With `pgdog_install: true` and `dcs_type: consul`, Consul serves as the DCS for Patroni and discovers the PgDog instances. Autobase registers each instance under the cluster service name with the `pgdog` tag and a TCP health check on `pgdog_listen_port`. Clients use one address, for example `pgdog.postgres-cluster-01.service.consul`, and port `6432` (or the configured `pgdog_listen_port`). Connection info shows this address without role-specific endpoints or `target_session_attrs`. The usual Consul datacenter syntax also applies, for example `pgdog.postgres-cluster-01.service.consul`.
+
+Patroni service registration is disabled. The shared Consul service management tasks register the selected `consul_services` and remove undeclared service definition files, except those in `consul_cleanup_ignore_files`. Changes notify the Consul restart handler. Existing clusters can apply the change with `config_pgcluster.yml --tags patroni_conf,pgdog`. Clients need Consul DNS resolution through a local agent or DNS forwarding and must reconnect after a lost connection; DNS discovery does not preserve existing connections.
 
 ## Requirements
 
@@ -33,7 +37,7 @@ pgbouncer_install: false
 with_haproxy_load_balancing: false
 ```
 
-PgDog listens on port `6432`, like PgBouncer, so the connection info and the firewall rules stay the same. To switch an existing cluster, stop and disable the `pgbouncer` service first, and then run `config_pgcluster.yml` with the tag `pgdog`. Keep in mind that clients will have to use TLS (see below).
+PgDog listens on port `6432`, like PgBouncer, so the connection info and the firewall rules stay the same. To switch an existing cluster, stop and disable the `pgbouncer` service first, and then run `config_pgcluster.yml` with the tags `patroni_conf,pgdog`. Keep in mind that clients will have to use TLS (see below).
 
 ## Differences from PgBouncer and HAProxy
 

@@ -155,9 +155,12 @@
           port: "{{ database_port }}"
           superuser: "{{ superuser_username }}"
           password: "{{ superuser_password }}"
-          connection_string:
-            primary: "postgresql://{{ superuser_username }}@{{ libpq_postgres_host_port }}/postgres{{ libpq_primary_params }}"
-            replica: "postgresql://{{ superuser_username }}@{{ libpq_postgres_host_port }}/postgres{{ libpq_replica_params }}"
+          connection_string: >-
+            {{ {'pgdog': 'postgresql://' ~ superuser_username ~ '@' ~ libpq_postgres_host_port ~ '/postgres'}
+               if pgdog_install | bool else {
+                 'primary': 'postgresql://' ~ superuser_username ~ '@' ~ libpq_postgres_host_port ~ '/postgres' ~ libpq_primary_params,
+                 'replica': 'postgresql://' ~ superuser_username ~ '@' ~ libpq_postgres_host_port ~ '/postgres' ~ libpq_replica_params
+               } }}
       register: connection_info_local_postgres
       when: not with_haproxy_load_balancing | bool
   ignore_errors: true
@@ -205,11 +208,15 @@
   run_once: true
   ansible.builtin.debug:
     msg:
-      address:
-        primary: "master.{{ patroni_cluster_name }}.service.consul"
-        replica: "replica.{{ patroni_cluster_name }}.service.consul"
-        replica_sync: "{{ 'sync-replica.' ~ patroni_cluster_name ~ '.service.consul' if synchronous_mode | bool and 'sync-replica' in consul_service_tags else omit }}"
-        replica_async: "{{ 'async-replica.' ~ patroni_cluster_name ~ '.service.consul' if synchronous_mode | bool and 'async-replica' in consul_service_tags else omit }}"
+      address: >-
+        {{ 'pgdog.' ~ patroni_cluster_name ~ '.service.' ~ consul_domain if pgdog_install | bool else {
+             'primary': 'master.' ~ patroni_cluster_name ~ '.service.consul',
+             'replica': 'replica.' ~ patroni_cluster_name ~ '.service.consul',
+             'replica_sync': 'sync-replica.' ~ patroni_cluster_name ~ '.service.consul'
+               if synchronous_mode | bool and 'sync-replica' in consul_service_tags else omit,
+             'replica_async': 'async-replica.' ~ patroni_cluster_name ~ '.service.consul'
+               if synchronous_mode | bool and 'async-replica' in consul_service_tags else omit
+           } }}
       port: "{{ connection_pooler_port if connection_pooler_enabled | bool else postgresql_port }}"
       superuser: "{{ superuser_username }}"
       password: "{{ superuser_password }}"

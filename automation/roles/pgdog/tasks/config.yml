@@ -30,3 +30,12 @@
     validate: "/usr/local/bin/pgdog --config %s --users {{ pgdog_conf_dir }}/users.toml configcheck"
   notify: "reload pgdog"
   tags: pgdog_conf, pgdog
+
+- name: Configure PgDog service discovery in Consul
+  ansible.builtin.import_role:
+    name: vitabaks.autobase.consul
+    tasks_from: services
+  when:
+    - dcs_type == 'consul'
+    - consul_services | default([]) | length > 0
+  tags: pgdog_conf, pgdog

@@ -69,7 +69,7 @@ etcd3:
 {% if dcs_type == 'consul' %}
 consul:
   host: {{ patroni_consul_host | default('127.0.0.1:8500') }}
-  register_service: true
+  register_service: {{ (not (pgdog_install | default(false) | bool)) | lower }}
   {% if consul_tls_enable | default(false) | bool %}
   scheme: https
   cacert: {{ patroni_consul_cacert | default('/etc/patroni/tls/consul/ca.crt') }}

@@ -211,7 +211,21 @@ consul_join: [] # List of LAN servers of an existing consul cluster, to join.
 # - "10.128.64.143"
 
 # https://developer.hashicorp.com/consul/docs/discovery/services
-consul_services:
+# Register PgDog with one tag, or PostgreSQL endpoints by role when PgDog is disabled.
+consul_services: "{{ consul_pgdog_services if pgdog_install | bool else consul_postgresql_services }}"
+consul_pgdog_address: "{{ bind_address if pgdog_listen_addr in ['0.0.0.0', '::'] else pgdog_listen_addr }}"
+consul_pgdog_services:
+  - name: "{{ patroni_cluster_name }}"
+    id: "{{ patroni_cluster_name }}-pgdog"
+    tags: ["pgdog"]
+    address: "{{ consul_pgdog_address }}"
+    port: "{{ pgdog_listen_port }}"
+    checks:
+      - tcp: "{{ consul_pgdog_address }}:{{ pgdog_listen_port }}"
+        interval: "5s"
+        timeout: "2s"
+
+consul_postgresql_services:
   - name: "{{ patroni_cluster_name }}"
     id: "{{ patroni_cluster_name }}-master"
     tags: ["master", "primary"]
