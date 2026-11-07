@@ -52,12 +52,26 @@ database_public_access: false # Allow access to the database from the public net
 database_public_allowed_ips: "" # (comma-separated list of IP addresses in CIDR format) If empty, then public access is allowed for any IP address.
 
 # Load balancer
-cloud_load_balancer: true # Create a Load Balancer for master / primary.
-cloud_load_balancer_replica: true # Create a Load Balancer for all replicas (requires server_count > 1).
-cloud_load_balancer_replica_sync: false # Create a Load Balancer for synchronous replicas (requires synchronous_mode).
-cloud_load_balancer_replica_async: false # Create a Load Balancer for asynchronous replicas (requires synchronous_mode).
+cloud_load_balancer: true # Create a primary Load Balancer, or one shared endpoint for PgDog.
+cloud_load_balancer_replica: true # Create a Load Balancer for all replicas (requires server_count > 1; ignored with PgDog).
+cloud_load_balancer_replica_sync: false # Create a Load Balancer for synchronous replicas (requires synchronous_mode; ignored with PgDog).
+cloud_load_balancer_replica_async: false # Create a Load Balancer for asynchronous replicas (requires synchronous_mode; ignored with PgDog).
+# Derived endpoints. PgDog has one shared endpoint named after the cluster.
+cloud_load_balancer_roles: >-
+  {{ ['pgdog'] if pgdog_install | default(false) | bool else
+     ['primary']
+     + (['replica'] if cloud_load_balancer_replica | bool and server_count | int > 1 else [])
+     + (['sync'] if cloud_load_balancer_replica_sync | bool and server_count | int > 1 and synchronous_mode | bool else [])
+     + (['async'] if cloud_load_balancer_replica_async | bool and server_count | int > 1 and synchronous_mode | bool else []) }}
+cloud_load_balancer_names:
+  pgdog: "{{ patroni_cluster_name }}"
+  primary: "{{ patroni_cluster_name }}-primary"
+  replica: "{{ patroni_cluster_name }}-replica"
+  sync: "{{ patroni_cluster_name }}-sync"
+  async: "{{ patroni_cluster_name }}-async"
+
 aws_nlb_client_routing_policy: "availability_zone_affinity" # NLB DNS client routing policy: 'availability_zone_affinity', 'partial_availability_zone_affinity' or 'any_availability_zone'.
-aws_nlb_replica_cross_zone: false # Cross-zone load balancing for replica NLBs. 'false' keeps reads in the client's zone when it has a healthy replica. Always enabled for the primary NLB.
+aws_nlb_replica_cross_zone: false # Cross-zone load balancing for replica NLBs. 'false' keeps reads in the client's zone when it has a healthy replica. Always enabled for the primary and PgDog NLBs.
 
 # Bucket (if 'pgbackrest_install' or 'wal_g_install' is 'true')
 cloud_backup_storage_id: "" # Optional stable, globally unique ID (for example, a UUID). Keep it unchanged for the lifetime of the backup storage.

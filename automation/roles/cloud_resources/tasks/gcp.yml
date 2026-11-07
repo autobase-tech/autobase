@@ -333,9 +333,9 @@
         priority: 900
         allowed:
           - ip_protocol: tcp
-            ports:
-              - "{{ patroni_restapi_port | default('8008') }}"
-              - "{{ connection_pooler_port | default('6432') if connection_pooler_enabled | bool else postgresql_port | default('5432') }}"
+            ports: >-
+              {{ ([patroni_restapi_port | default('8008')] if not pgdog_install | bool else [])
+                 + [connection_pooler_port | default('6432') if connection_pooler_enabled | bool else postgresql_port | default('5432')] }}
         source_ranges:
           - "35.191.0.0/16"
           - "130.211.0.0/22"
@@ -432,10 +432,15 @@
       when: not use_local_disk | bool
 
     # Load Balancer
-    # This block creates Global External classic proxy Network Load Balancer.
-    # Global external classic proxy Network Load Balancer. The google.cloud.gcp_compute_target_tcp_proxy module supports only global resources.
-    # Internal proxy load balancer support is tracked in: https://github.com/autobase-tech/autobase/issues/753 (TODO)
+    # PgDog private endpoints use a regional internal passthrough Network Load Balancer.
+    # Other endpoints use a global external classic proxy Network Load Balancer.
     - block:
+        - name: "GCP: [Load Balancer] Validate listener for internal passthrough traffic"
+          ansible.builtin.assert:
+            that: pgdog_listen_addr == '0.0.0.0'
+            fail_msg: "GCP internal passthrough load balancing requires pgdog_listen_addr: '0.0.0.0' to accept traffic to the load balancer IP."
+          when: gcp_load_balancer_internal | bool
+
         - name: "GCP: [Load Balancer] Create instance group"
           google.cloud.gcp_compute_instance_group:
             auth_kind: "serviceaccount"
@@ -471,7 +476,7 @@
                 instance_group.results
                 | map(attribute='selfLink')
                 | map('community.general.dict_kv', 'group')
-                | map('combine', {
+                | map('combine', {} if gcp_load_balancer_internal | bool else {
                     'balancing_mode': 'CONNECTION',
                     'max_connections_per_instance': gcp_lb_max_connections | default(10000) | int
                   })
@@ -483,37 +488,32 @@
             auth_kind: "serviceaccount"
             service_account_contents: "{{ gcp_service_account_contents }}"
             project: "{{ gcp_project | default('') }}"
-            name: "{{ patroni_cluster_name }}-{{ item }}-hc"
+            # GCP health check protocols are immutable; use a separate name when switching to PgDog.
+            name: "{{ cloud_load_balancer_names[item] }}-hc"
             description: "{{ patroni_cluster_name }} {{ item }} health check"
-            type: "{{ patroni_restapi_protocol | upper }}"
+            type: "{{ 'TCP' if pgdog_install | bool else patroni_restapi_protocol | upper }}"
+            tcp_health_check: "{{ {'port': pgdog_listen_port | int} if pgdog_install | bool else omit }}"
             http_health_check: "{{ ({'port': patroni_restapi_port|int, 'request_path': '/' ~ item})
-              if (patroni_restapi_protocol | lower) == 'http' else omit }}"
+              if not pgdog_install | bool and (patroni_restapi_protocol | lower) == 'http' else omit }}"
             https_health_check: "{{ ({'port': patroni_restapi_port|int, 'request_path': '/' ~ item})
-              if (patroni_restapi_protocol | lower) == 'https' else omit }}"
+              if not pgdog_install | bool and (patroni_restapi_protocol | lower) == 'https' else omit }}"
             check_interval_sec: "{{ gcp_compute_health_check_interval_sec | default(3) }}"
             timeout_sec: "{{ gcp_compute_health_check_check_timeout_sec | default(2) }}"
             unhealthy_threshold: "{{ gcp_compute_health_check_unhealthy_threshold | default(2) }}"
             healthy_threshold: "{{ gcp_compute_health_check_healthy_threshold | default(3) }}"
             state: present
-          loop:
-            - "primary"
-            - "replica"
-            - "sync"
-            - "async"
+          loop: "{{ cloud_load_balancer_roles }}"
           loop_control:
-            label: "{{ patroni_cluster_name }}-{{ item }}-hc"
+            label: "{{ cloud_load_balancer_names[item] }}-hc"
           register: health_check
-          when: item == 'primary' or
-            (item == 'replica' and cloud_load_balancer_replica | bool and server_count | int > 1) or
-            (item == 'sync' and cloud_load_balancer_replica_sync | bool and server_count | int > 1 and synchronous_mode | bool) or
-            (item == 'async' and cloud_load_balancer_replica_async | bool and server_count | int > 1 and synchronous_mode | bool)
+          when: cloud_load_balancer | bool
 
         - name: "GCP: [Load Balancer] Create backend service"
           google.cloud.gcp_compute_backend_service:
             auth_kind: "serviceaccount"
             service_account_contents: "{{ gcp_service_account_contents }}"
             project: "{{ gcp_project | default('') }}"
-            name: "{{ patroni_cluster_name }}-{{ item }}"
+            name: "{{ cloud_load_balancer_names[item] }}"
             description: "{{ patroni_cluster_name }} {{ item }} backend"
             protocol: "TCP"
             port_name: "{{ 'pgbouncer' if connection_pooler_enabled | bool else 'postgres' }}"
@@ -524,75 +524,54 @@
             log_config:
               enable: "{{ gcp_compute_backend_service_log_enable | default(false) }}"
             state: present
-          loop:
-            - "primary"
-            - "replica"
-            - "sync"
-            - "async"
+          loop: "{{ cloud_load_balancer_roles }}"
           loop_control:
-            label: "{{ patroni_cluster_name }}-{{ item }}"
+            label: "{{ cloud_load_balancer_names[item] }}"
           register: backend_service
           until: backend_service is success
           delay: 2
           retries: 3
-          when: item == 'primary' or
-            (item == 'replica' and cloud_load_balancer_replica | bool and server_count | int > 1) or
-            (item == 'sync' and cloud_load_balancer_replica_sync | bool and server_count | int > 1 and synchronous_mode | bool) or
-            (item == 'async' and cloud_load_balancer_replica_async | bool and server_count | int > 1 and synchronous_mode | bool)
+          when: cloud_load_balancer | bool and not gcp_load_balancer_internal | bool
 
         - name: "GCP: [Load Balancer] Create target TCP proxy"
           google.cloud.gcp_compute_target_tcp_proxy:
             auth_kind: "serviceaccount"
             service_account_contents: "{{ gcp_service_account_contents }}"
             project: "{{ gcp_project | default('') }}"
-            name: "{{ patroni_cluster_name }}-{{ item }}-proxy"
+            name: "{{ cloud_load_balancer_names[item] }}-proxy"
             description: "{{ patroni_cluster_name }} {{ item }} TCP Proxy"
             service:
               selfLink: "{{ backend_service.results | selectattr('item', 'equalto', item) | map(attribute='selfLink') | first }}"
             proxy_header: "NONE"
             state: present
-          loop:
-            - "primary"
-            - "replica"
-            - "sync"
-            - "async"
+          loop: "{{ cloud_load_balancer_roles }}"
           loop_control:
-            label: "{{ patroni_cluster_name }}-{{ item }}-proxy"
+            label: "{{ cloud_load_balancer_names[item] }}-proxy"
           register: target_tcp_proxy
-          when: item == 'primary' or
-            (item == 'replica' and cloud_load_balancer_replica | bool and server_count | int > 1) or
-            (item == 'sync' and cloud_load_balancer_replica_sync | bool and server_count | int > 1 and synchronous_mode | bool) or
-            (item == 'async' and cloud_load_balancer_replica_async | bool and server_count | int > 1 and synchronous_mode | bool)
+          when: cloud_load_balancer | bool and not gcp_load_balancer_internal | bool
 
         - name: "GCP: [Load Balancer] Reserve static IP address"
           google.cloud.gcp_compute_global_address:
             auth_kind: "serviceaccount"
             service_account_contents: "{{ gcp_service_account_contents }}"
             project: "{{ gcp_project | default('') }}"
-            name: "{{ patroni_cluster_name }}-{{ item }}-ip"
+            name: "{{ cloud_load_balancer_names[item] }}-ip"
             description: "{{ patroni_cluster_name }} {{ item }} load balancer IP address"
             address_type: "EXTERNAL"
             ip_version: "IPV4"
             state: present
-          loop:
-            - "primary"
-            - "replica"
-            - "sync"
-            - "async"
+          loop: "{{ cloud_load_balancer_roles }}"
           loop_control:
-            label: "{{ patroni_cluster_name }}-{{ item }}-ip"
+            label: "{{ cloud_load_balancer_names[item] }}-ip"
           register: load_balancer_ip
-          when: item == 'primary' or
-            (item == 'replica' and cloud_load_balancer_replica | bool and server_count | int > 1) or
-            (item == 'sync' and cloud_load_balancer_replica_sync | bool and server_count | int > 1 and synchronous_mode | bool) or
-            (item == 'async' and cloud_load_balancer_replica_async | bool and server_count | int > 1 and synchronous_mode | bool)
+          when: cloud_load_balancer | bool and not gcp_load_balancer_internal | bool
 
         - name: "GCP: [Load Balancer] Create forwarding rule"
           google.cloud.gcp_compute_global_forwarding_rule:
             auth_kind: "serviceaccount"
             service_account_contents: "{{ gcp_service_account_contents }}"
             project: "{{ gcp_project | default('') }}"
-            name: "{{ patroni_cluster_name }}-{{ item }}-fr"
+            name: "{{ cloud_load_balancer_names[item] }}{{ '-fr' if item != 'pgdog' else '' }}"
             description: "{{ patroni_cluster_name }} {{ item }} forwarding rule"
             load_balancing_scheme: "EXTERNAL"
             ip_address: "{{ (load_balancer_ip.results | selectattr('item', 'equalto', item) | map(attribute='address') | first) }}"
@@ -600,20 +579,71 @@
             port_range: "{{ target_port }}-{{ target_port }}"
             target: "{{ target_tcp_proxy.results | selectattr('item', 'equalto', item) | map(attribute='selfLink') | first }}"
             state: present
-          loop:
-            - "primary"
-            - "replica"
-            - "sync"
-            - "async"
+          loop: "{{ cloud_load_balancer_roles }}"
           loop_control:
-            label: "{{ patroni_cluster_name }}-{{ item }}-fr"
+            label: "{{ cloud_load_balancer_names[item] }}{{ '-fr' if item != 'pgdog' else '' }}"
           register: gcp_load_balancer
           vars:
             target_port: "{{ connection_pooler_port | default('6432') if connection_pooler_enabled | bool else postgresql_port | default('5432') }}"
-          when: item == 'primary' or
-            (item == 'replica' and cloud_load_balancer_replica | bool and server_count | int > 1) or
-            (item == 'sync' and cloud_load_balancer_replica_sync | bool and server_count | int > 1 and synchronous_mode | bool) or
-            (item == 'async' and cloud_load_balancer_replica_async | bool and server_count | int > 1 and synchronous_mode | bool)
+          when: cloud_load_balancer | bool and not gcp_load_balancer_internal | bool
+
+        - name: "GCP: [Load Balancer] Create internal backend service"
+          google.cloud.gcp_compute_region_backend_service:
+            auth_kind: "serviceaccount"
+            service_account_contents: "{{ gcp_service_account_contents }}"
+            project: "{{ gcp_project | default('') }}"
+            region: "{{ gcp_region }}"
+            name: "{{ patroni_cluster_name }}"
+            description: "{{ patroni_cluster_name }} PgDog internal backend"
+            protocol: "TCP"
+            load_balancing_scheme: "INTERNAL"
+            network:
+              selfLink: "{{ gcp_network_info.resources[0].selfLink }}"
+            backends: "{{ gcp_lb_backends }}"
+            health_checks: "{{ health_check.results | map(attribute='selfLink') | list }}"
+            state: present
+          register: gcp_internal_backend_service
+          when: gcp_load_balancer_internal | bool
+
+        - name: "GCP: [Load Balancer] Reserve internal static IP address"
+          google.cloud.gcp_compute_address:
+            auth_kind: "serviceaccount"
+            service_account_contents: "{{ gcp_service_account_contents }}"
+            project: "{{ gcp_project | default('') }}"
+            region: "{{ gcp_region }}"
+            name: "{{ patroni_cluster_name }}-ip"
+            description: "{{ patroni_cluster_name }} PgDog internal load balancer IP address"
+            address_type: "INTERNAL"
+            subnetwork:
+              selfLink: "{{ gcp_selected_subnetworks[0].selfLink }}"
+            state: present
+          register: gcp_internal_load_balancer_ip
+          when: gcp_load_balancer_internal | bool
+
+        - name: "GCP: [Load Balancer] Create internal forwarding rule"
+          google.cloud.gcp_compute_forwarding_rule:
+            auth_kind: "serviceaccount"
+            service_account_contents: "{{ gcp_service_account_contents }}"
+            project: "{{ gcp_project | default('') }}"
+            region: "{{ gcp_region }}"
+            name: "{{ patroni_cluster_name }}"
+            description: "{{ patroni_cluster_name }} PgDog internal forwarding rule"
+            load_balancing_scheme: "INTERNAL"
+            ip_address: "{{ gcp_internal_load_balancer_ip.address }}"
+            ip_protocol: "TCP"
+            ports: ["{{ pgdog_listen_port }}"]
+            allow_global_access: true
+            network:
+              selfLink: "{{ gcp_network_info.resources[0].selfLink }}"
+            subnetwork:
+              selfLink: "{{ gcp_selected_subnetworks[0].selfLink }}"
+            backend_service:
+              selfLink: "{{ gcp_internal_backend_service.selfLink }}"
+            state: present
+          register: gcp_internal_load_balancer
+          when: gcp_load_balancer_internal | bool
+      vars:
+        gcp_load_balancer_internal: "{{ pgdog_install | bool and not database_public_access | bool }}"
       when: cloud_load_balancer | bool
 
   when: state == 'present'
@@ -690,95 +720,87 @@
         auth_kind: "serviceaccount"
         service_account_contents: "{{ gcp_service_account_contents }}"
         project: "{{ gcp_project | default('') }}"
-        name: "{{ patroni_cluster_name }}-{{ item }}-fr"
-        target: "/global/targetTcpProxies/{{ patroni_cluster_name }}-{{ item }}-proxy"
+        name: "{{ cloud_load_balancer_names[item] }}{{ '-fr' if item != 'pgdog' else '' }}"
+        target: "/global/targetTcpProxies/{{ cloud_load_balancer_names[item] }}-proxy"
         state: absent
-      loop:
-        - "primary"
-        - "replica"
-        - "sync"
-        - "async"
+      loop: "{{ cloud_load_balancer_roles }}"
       loop_control:
-        label: "{{ patroni_cluster_name }}-{{ item }}-fr"
-      when: item == 'primary' or
-        (item == 'replica' and server_count | int > 1) or
-        (item in ['sync', 'async'] and server_count | int > 1 and synchronous_mode | bool)
+        label: "{{ cloud_load_balancer_names[item] }}{{ '-fr' if item != 'pgdog' else '' }}"
 
     - name: "GCP: [Load Balancer] Delete static IP address"
       google.cloud.gcp_compute_global_address:
         auth_kind: "serviceaccount"
         service_account_contents: "{{ gcp_service_account_contents }}"
         project: "{{ gcp_project | default('') }}"
-        name: "{{ patroni_cluster_name }}-{{ item }}-ip"
+        name: "{{ cloud_load_balancer_names[item] }}-ip"
         address_type: "EXTERNAL"
         ip_version: "IPV4"
         state: absent
-      loop:
-        - "primary"
-        - "replica"
-        - "sync"
-        - "async"
+      loop: "{{ cloud_load_balancer_roles }}"
       loop_control:
-        label: "{{ patroni_cluster_name }}-{{ item }}-ip"
-      when: item == 'primary' or
-        (item == 'replica' and server_count | int > 1) or
-        (item in ['sync', 'async'] and server_count | int > 1 and synchronous_mode | bool)
+        label: "{{ cloud_load_balancer_names[item] }}-ip"
 
     - name: "GCP: [Load Balancer] Delete target TCP proxy"
       google.cloud.gcp_compute_target_tcp_proxy:
         auth_kind: "serviceaccount"
         service_account_contents: "{{ gcp_service_account_contents }}"
         project: "{{ gcp_project | default('') }}"
-        name: "{{ patroni_cluster_name }}-{{ item }}-proxy"
+        name: "{{ cloud_load_balancer_names[item] }}-proxy"
         service:
-          selfLink: "/global/backendServices/{{ patroni_cluster_name }}-{{ item }}"
+          selfLink: "/global/backendServices/{{ cloud_load_balancer_names[item] }}"
         state: absent
-      loop:
-        - "primary"
-        - "replica"
-        - "sync"
-        - "async"
+      loop: "{{ cloud_load_balancer_roles }}"
       loop_control:
-        label: "{{ patroni_cluster_name }}-{{ item }}-proxy"
-      when: item == 'primary' or
-        (item == 'replica' and server_count | int > 1) or
-        (item in ['sync', 'async'] and server_count | int > 1 and synchronous_mode | bool)
+        label: "{{ cloud_load_balancer_names[item] }}-proxy"
 
     - name: "GCP: [Load Balancer] Delete backend service"
       google.cloud.gcp_compute_backend_service:
         auth_kind: "serviceaccount"
         service_account_contents: "{{ gcp_service_account_contents }}"
         project: "{{ gcp_project | default('') }}"
-        name: "{{ patroni_cluster_name }}-{{ item }}"
+        name: "{{ cloud_load_balancer_names[item] }}"
         state: absent
-      loop:
-        - "primary"
-        - "replica"
-        - "sync"
-        - "async"
+      loop: "{{ cloud_load_balancer_roles }}"
       loop_control:
-        label: "{{ patroni_cluster_name }}-{{ item }}"
-      when: item == 'primary' or
-        (item == 'replica' and server_count | int > 1) or
-        (item in ['sync', 'async'] and server_count | int > 1 and synchronous_mode | bool)
+        label: "{{ cloud_load_balancer_names[item] }}"
+
+    - name: "GCP: [Load Balancer] Delete internal forwarding rule"
+      google.cloud.gcp_compute_forwarding_rule:
+        auth_kind: "serviceaccount"
+        service_account_contents: "{{ gcp_service_account_contents }}"
+        project: "{{ gcp_project | default('') }}"
+        region: "{{ gcp_region }}"
+        name: "{{ patroni_cluster_name }}"
+        state: absent
+
+    - name: "GCP: [Load Balancer] Delete internal static IP address"
+      google.cloud.gcp_compute_address:
+        auth_kind: "serviceaccount"
+        service_account_contents: "{{ gcp_service_account_contents }}"
+        project: "{{ gcp_project | default('') }}"
+        region: "{{ gcp_region }}"
+        name: "{{ patroni_cluster_name }}-ip"
+        state: absent
+
+    - name: "GCP: [Load Balancer] Delete internal backend service"
+      google.cloud.gcp_compute_region_backend_service:
+        auth_kind: "serviceaccount"
+        service_account_contents: "{{ gcp_service_account_contents }}"
+        project: "{{ gcp_project | default('') }}"
+        region: "{{ gcp_region }}"
+        name: "{{ patroni_cluster_name }}"
+        state: absent
 
     - name: "GCP: [Load Balancer] Delete health check"
       google.cloud.gcp_compute_health_check:
         auth_kind: "serviceaccount"
         service_account_contents: "{{ gcp_service_account_contents }}"
         project: "{{ gcp_project | default('') }}"
-        name: "{{ patroni_cluster_name }}-{{ item }}-hc"
+        name: "{{ cloud_load_balancer_names[item] }}-hc"
         state: absent
-      loop:
-        - "primary"
-        - "replica"
-        - "sync"
-        - "async"
+      loop: "{{ cloud_load_balancer_roles }}"
       loop_control:
-        label: "{{ patroni_cluster_name }}-{{ item }}-hc"
-      when: item == 'primary' or
-        (item == 'replica' and server_count | int > 1) or
-        (item in ['sync', 'async'] and server_count | int > 1 and synchronous_mode | bool)
+        label: "{{ cloud_load_balancer_names[item] }}-hc"
 
     - name: "GCP: [Load Balancer] Delete instance group"
       google.cloud.gcp_compute_instance_group:
