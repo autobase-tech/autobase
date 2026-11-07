@@ -3,10 +3,10 @@
 - name: Disable PgDog maintenance mode
   become: true
   become_user: postgres
-  ansible.builtin.command: >-
-    {{ pg_new_bindir }}/psql -h {{ patroni_bind_address | default(bind_address, true) }}
-    -p {{ pgdog_listen_port }} -U {{ pgdog_admin_username }} -d admin -tAXc "MAINTENANCE OFF"
-  environment:
-    PGPASSFILE: "{{ _postgresql_cli_passfile_path }}"
-    PGCONNECT_TIMEOUT: "5"
-  ignore_errors: true # if there is an error, show the message and continue
+  vitabaks.autobase.pgdog_maintenance:
+    servers:
+      - "{{ patroni_bind_address | default(bind_address, true) }}"
+    state: disabled
+    pgdog_port: "{{ pgdog_listen_port }}"
+    admin_user: "{{ pgdog_admin_username }}"
+    passfile: "{{ _postgresql_cli_passfile_path }}"

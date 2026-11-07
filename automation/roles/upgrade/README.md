@@ -45,7 +45,9 @@ Rollback is possible without losing changes made after cutover, because reverse 
 
 `In-place` To minimize the downtime, we pause PgBouncer pools (or enable the maintenance mode of [PgDog](../pgdog/README.md), which works the same way for the clients). This doesn’t terminate application connections, but may temporarily increase query latency while pools are paused. The pause typically lasts ~30-60 seconds, but may be longer for large databases due to pg_upgrade and rsync. The default maximum wait time during a pause is 2 minutes (controlled by the query_wait_timeout parameter).
 
-PgDog maintenance commands, PostgreSQL activity checks and session termination run in parallel across nodes. The script waits for every maintenance command to complete before checking transactions. If any command fails or draining times out, it waits for pending commands and attempts to disable maintenance on every PgDog before returning an error; the external rollback retries cleanup if needed. Each service command has a 5-second execution timeout (with forced termination after one further second), and the 30/60-second drain timers start after maintenance is enabled on all nodes.
+PgDog maintenance is managed by the `vitabaks.autobase.pgdog_maintenance` module using direct `psycopg2` connections. Commands run in parallel across nodes, with a deadline covering both connection establishment and query execution. After maintenance is enabled everywhere, the module checks PgDog clients, backend checkout queues and PostgreSQL activity. This includes buffered `BEGIN` transactions without a PostgreSQL backend; these cannot be terminated with `pg_terminate_backend`, so an unfinished transaction aborts the upgrade at the drain timeout.
+
+The 30/60-second drain timers start after maintenance is enabled on all nodes. On failure or interruption, the module waits for pending operations before attempting to disable maintenance everywhere. Resume commands are retried, and operation and cleanup errors are reported per node. The external rollback remains a fallback if cleanup fails. An unrecoverable resume failure stops the playbook.
 
 `Blue-green` A short service impact occurs only during switchover: the source cluster is briefly set to read-only, the remaining logical replication lag is drained, and traffic is redirected to target. Only the write traffic degrades (~10-15 seconds), while the read traffic has near-zero downtime.
 
@@ -425,7 +427,7 @@ Note: For more information, see the `upgrade` role [variables](../upgrade/defaul
     - Print error message: "There's a replication lag in the PostgreSQL cluster. Please try again later"
 - **Enable maintenance mode on all PgDog servers**
   - Notes: if 'pgdog_install' is 'true' and 'pgdog_pool_pause' is 'true'
-  - Notes: sends `MAINTENANCE ON` to every PgDog server, which holds new transactions, and then waits for all active queries and idle-in-transaction sessions, regardless of query age. It terminates slow queries after `pg_pool_pause_terminate_after` seconds, and performs a rollback after `pg_pool_pause_stop_after` seconds
+  - Notes: the `vitabaks.autobase.pgdog_maintenance` module enables maintenance everywhere, then waits for PgDog transactions, backend checkout queues and PostgreSQL activity to drain. It terminates PostgreSQL sessions after `pg_pool_pause_terminate_after` seconds and aborts draining after `pg_pool_pause_stop_after` seconds. On failure, it attempts to disable maintenance before the playbook performs a rollback.
 - **Perform PAUSE on all pgbouncers servers**
   - Notes: if 'pgbouncer_install' is 'true' and 'pgbouncer_pool_pause' is 'true'
   - Notes: pgbouncer pause script performs the following actions:

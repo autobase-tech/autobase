@@ -1,129 +1,25 @@
-# yamllint disable rule:line-length
 ---
-# Enable PgDog maintenance mode in parallel on all database servers, keeping client connections while PostgreSQL is stopped.
-#
-# Unlike PgBouncer PAUSE, maintenance holds new transactions but lets current ones finish, so it is enabled before waiting for transactions to complete:
-# 1. Enable maintenance in parallel and wait for every result before proceeding or undoing a partial pause.
-# 2. Poll all PostgreSQL servers in parallel for active queries and idle-in-transaction sessions, regardless of query age.
-# 3. After 'pg_pool_pause_terminate_after' seconds, terminate in parallel the queries older than 'pg_slow_active_query_treshold_to_terminate'.
-# 4. On any failure or drain timeout, wait for pending commands and send MAINTENANCE OFF to every PgDog before exiting.
-# The external rollback remains a fallback if an instance cannot be reached during compensation.
-
-- name: Enable PgDog maintenance mode
+- name: Enable PgDog maintenance mode and drain client transactions
   become: true
   become_user: postgres
-  vars:
-    pg_active_count_query: >-
-      select count(*) from pg_stat_activity
-      where pid <> pg_backend_pid()
-      and state <> 'idle'
-      and backend_type = 'client backend'
-    pg_slow_active_terminate_query: >-
-      select
-        clock_timestamp(),
-        pg_terminate_backend(pid),
-        clock_timestamp() - query_start as query_age,
-        left(regexp_replace(query, E'[ \\t\\n\\r]+', ' ', 'g'),150) as query
-      from pg_stat_activity
-      where pid <> pg_backend_pid()
-      and state <> 'idle'
-      and query_start < clock_timestamp() - interval '{{ pg_slow_active_query_treshold_to_terminate }} ms'
-      and backend_type = 'client backend'
-    pg_hosts: "{{ groups['primary'] + groups.get('secondary', []) }}"
-  ansible.builtin.shell: |
-    set -o pipefail;
-    umask 077
-    exec > /tmp/pgdog_pool_pause_{{ ansible_date_time.date }}.log 2>&1
-
-    pg_servers=({% for host in pg_hosts %}{{ hostvars[host]['patroni_bind_address'] | default(hostvars[host]['bind_address'], true) | quote }} {% endfor %})
-    pg_servers_count="{{ pg_hosts | length }}"
-    pg_active_count_query={{ pg_active_count_query | quote }}
-    pg_slow_active_terminate_query={{ pg_slow_active_terminate_query | quote }}
-    pgdog_admin() {
-      PGCONNECT_TIMEOUT=5 timeout --kill-after=1 5 {{ (pg_old_bindir ~ '/psql') | quote }} -h "$1" -p {{ pgdog_listen_port }} -U {{ pgdog_admin_username | quote }} -d admin -v ON_ERROR_STOP=1 -tAXc "$2"
-    }
-    postgres_query() {
-      PGCONNECT_TIMEOUT=5 timeout --kill-after=1 5 {{ (pg_old_bindir ~ '/psql') | quote }} -h "$1" -p {{ postgresql_port }} -U {{ patroni_superuser_username | quote }} -d postgres -v ON_ERROR_STOP=1 -tAXc "$2"
-    }
-    export -f pgdog_admin postgres_query
-
-    results_file=$(mktemp /tmp/pgdog_pause.XXXXXX) || exit 1
-    batch_pid=
-    run_on_all() {
-      # Map failures to 1: status 255 would make xargs stop dispatching before every server has been processed.
-      printf '%s\n' "${pg_servers[@]}" | xargs -I {} -P "$pg_servers_count" -n 1 bash -c '"$1" "$2" "$3" || { echo "command failed on $2" >&2; exit 1; }' _ "$1" {} "$2" > "$results_file" &
-      batch_pid=$!
-      wait "$batch_pid"
-      local status=$?
-      batch_pid=
-      return "$status"
-    }
-
-    maintenance_started=false
-    cleanup() {
-      local status=$?
-      trap - EXIT INT TERM
-      if [[ -n "$batch_pid" ]]; then wait "$batch_pid" || true; fi
-      if (( status != 0 )) && [[ "$maintenance_started" == true ]]; then
-        echo "$(date): undo maintenance mode on all PgDog servers"
-        if ! run_on_all pgdog_admin "MAINTENANCE OFF"; then
-          echo "$(date): ERROR: maintenance could not be disabled on every PgDog; external rollback must retry"
-        fi
-      fi
-      rm -f -- "$results_file"
-      exit "$status"
-    }
-    trap cleanup EXIT
-    trap 'exit 1' INT TERM
-
-    maintenance_started=true
-    run_on_all pgdog_admin "MAINTENANCE ON" || exit 1
-
-    start_time=$(date +%s)
-    while true; do
-      # Wait for active queries and idle-in-transaction sessions on all pg_servers in parallel.
-      run_on_all postgres_query "$pg_active_count_query" || exit 1
-      pg_active_counts=()
-      while IFS= read -r count; do pg_active_counts+=("$count"); done < "$results_file"
-      if [[ $(wc -l < "$results_file") -ne "$pg_servers_count" ]]; then
-        echo "$(date): incomplete active query counts"
-        exit 1
-      fi
-
-      # Sum up all the values in the array.
-      total_pg_active_count=0
-      for count in "${pg_active_counts[@]}"; do
-        if [[ ! "$count" =~ ^[0-9]+$ ]]; then
-          echo "$(date): invalid active query count: $count"
-          exit 1
-        fi
-        total_pg_active_count=$((total_pg_active_count + count))
-      done
-      echo "$(date): total pg_active_count: $total_pg_active_count"
-
-      if [[ "$total_pg_active_count" == 0 ]]; then
-        break
-      fi
-
-      current_time=$(date +%s)
-      if (( current_time - start_time >= {{ pg_pool_pause_stop_after | int }} )); then
-        echo "$(date): it was not possible to complete the active queries (exit by timeout)"
-        exit 1
-      fi
-
-      if (( current_time - start_time >= {{ pg_pool_pause_terminate_after | int }} )); then
-        echo "$(date): terminate active queries"
-        run_on_all postgres_query "$pg_slow_active_terminate_query" || exit 1
-      fi
-      sleep 1
-    done
-  args:
-    executable: /bin/bash
-  environment:
-    PGPASSFILE: "{{ _postgresql_cli_passfile_path }}"
+  vitabaks.autobase.pgdog_maintenance:
+    servers: >-
+      {% set servers = [] -%}
+      {% for host in groups['primary'] + groups.get('secondary', []) -%}
+      {% set _ = servers.append(hostvars[host]['patroni_bind_address'] | default(hostvars[host]['bind_address'], true)) -%}
+      {% endfor -%}
+      {{ servers }}
+    state: enabled
+    pgdog_port: "{{ pgdog_listen_port }}"
+    admin_user: "{{ pgdog_admin_username }}"
+    postgres_port: "{{ postgresql_port }}"
+    postgres_user: "{{ patroni_superuser_username }}"
+    passfile: "{{ _postgresql_cli_passfile_path }}"
+    terminate_after: "{{ pg_pool_pause_terminate_after }}"
+    timeout: "{{ pg_pool_pause_stop_after }}"
+    query_age_threshold: "{{ pg_slow_active_query_treshold_to_terminate }}"
   register: pgdog_pool_pause_result
   ignore_errors: true
-  no_log: true # do not output contents to the ansible log
   when: inventory_hostname in groups['primary']
 
 # Stop, if it was not possible to hold the client queries
@@ -134,8 +30,8 @@
     - name: "ERROR: Client queries cannot be held in PgDog"
       ansible.builtin.fail:
         msg:
-          - "PgDog could not hold the client queries, or the active queries did not complete in time. Please try again later."
-          - "The log is available on the path: /tmp/pgdog_pool_pause_{{ ansible_date_time.date }}.log"
-          - "on the {{ hostvars[groups['primary'][0]]['ansible_hostname'] }} server."
+          - "{{ hostvars[groups['primary'][0]].pgdog_pool_pause_result.msg | default('Client transactions did not drain.') }}"
+          - "Operation errors: {{ hostvars[groups['primary'][0]].pgdog_pool_pause_result.errors | default({}) }}"
+          - "Maintenance cleanup errors: {{ hostvars[groups['primary'][0]].pgdog_pool_pause_result.cleanup_errors | default({}) }}"
       run_once: true
   when: hostvars[groups['primary'][0]].pgdog_pool_pause_result is failed
