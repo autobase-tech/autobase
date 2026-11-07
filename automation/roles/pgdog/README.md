@@ -1,6 +1,6 @@
 # Ansible Role: pgdog
 
-This role installs and configures [PgDog](https://github.com/pgdogdev/pgdog), a connection pooler and load balancer for PostgreSQL. It is an alternative to the combination of [PgBouncer](../pgbouncer/README.md) and [HAProxy](../haproxy/README.md), and it is disabled by default.
+This role installs and configures [PgDog](https://github.com/pgdogdev/pgdog), a connection pooler, load balancer and database sharder for PostgreSQL.
 
 > [!IMPORTANT]
 > PgDog is licensed under [AGPL-3.0](https://github.com/pgdogdev/pgdog/blob/main/LICENSE), unlike the other components installed by Autobase. It is installed as a separate, unmodified program. If your organization has a policy on AGPL software, review it before you enable this role.
