@@ -27,6 +27,7 @@ Patroni service registration is disabled. The shared Consul service management t
 
 ## Requirements
 
+- **PostgreSQL 12 or newer**, required by the replication monitoring query used for automatic role detection.
 - **glibc 2.39 or newer**, required by the binaries that PgDog publishes. That means Ubuntu 24.04+, Debian 13+, or RHEL 10 and its derivatives. It rules out Ubuntu 22.04, Debian 11 and 12, and RHEL 8 and 9. The pre-checks stop the deployment on these systems.
 - `x86_64` or `aarch64` servers.
 - `pgbouncer_install: false` and `with_haproxy_load_balancing: false`. The pre-checks stop the deployment otherwise.
@@ -67,7 +68,6 @@ The variables are defined in [`roles/common/defaults/main.yml`](../common/defaul
 |----------|---------|-------------|
 | `pgdog_install` | `false` | Enable or disable PgDog installation and configuration |
 | `pgdog_version` | see defaults | The PgDog version to install |
-| `pgdog_min_glibc_version` | `"2.39"` | The glibc version required by the binaries of `pgdog_version`. Used by the pre-checks |
 | `pgdog_package_repo` | GitHub release | URL of the release archive. Point it to a mirror for offline installations |
 | `pgdog_package_checksum` | `sha256:<url>.sha256` | Checksum of the archive, or `""` to skip the verification |
 | `pgdog_conf_dir` | `"/etc/pgdog"` | Configuration directory |
@@ -80,18 +80,18 @@ The variables are defined in [`roles/common/defaults/main.yml`](../common/defaul
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `pgdog_default_pool_size` | `30` | Maximum server connections per pool, node and PgDog instance |
+| `pgdog_default_pool_size` | `20` | Maximum server connections per pool, node and PgDog instance |
 | `pgdog_min_pool_size` | `1` | Minimum server connections per pool |
 | `pgdog_pooler_mode` | `"transaction"` | `transaction`, `session` or `statement`. Reads are not split in `session` mode |
 | `pgdog_read_write_split` | `"include_primary"` | `include_primary`, `exclude_primary`, `include_primary_if_replica_banned` or `prefer_primary` |
 | `pgdog_read_write_strategy` | `"conservative"` | `conservative` or `aggressive` |
 | `pgdog_load_balancing_strategy` | `"random"` | `random`, `round_robin` or `least_active_connections`. With the latter, a lightly loaded cluster sends most reads to the primary, because ties go to the first node |
 | `pgdog_lsn_check_interval` | `1000` | How often to check the role and lag of the nodes, in milliseconds |
-| `pgdog_ban_replica_lag_bytes` | `104857600` (100MB) | Stop reading from replicas that lag behind by this amount of bytes, or `""` to disable. PgDog also bans the replicas it has not checked yet, so after a restart, a failover or the first connection of a user, they can be left out of the load balancer for up to `pgdog_ban_timeout` |
-| `pgdog_ban_timeout` | `30000` | How long a lagging or unhealthy replica is left out of the load balancer before it is checked again, in milliseconds. PgDog uses 5 minutes by default |
-| `pgdog_checkout_timeout` | `5000` | How long a client can wait for a connection, in milliseconds. Waiting clients are not moved to a new primary, so this is also the shortest time they need to recover from a failover. Keep it short, and retry in the application |
+| `pgdog_ban_replica_lag_bytes` | `104857600` (100MB) | Stop reading from replicas that lag behind by this amount of bytes, or `""` to disable. Replicas without valid lag measurements can also be excluded until measurements are available and their ban expires |
+| `pgdog_ban_timeout` | `30000` | Ban expiry timeout in milliseconds; upstream uses 5 minutes. Monitoring continues during the ban. Expiry clears the ban only when the target is healthy and its lag is below the configured thresholds |
+| `pgdog_checkout_timeout` | `5000` | Maximum wait for a server connection, in milliseconds. This is not a guaranteed failover duration: recovery also depends on role detection, connection errors and application retries |
 | `pgdog_shutdown_timeout` | `60000` | How long to wait for active transactions on shutdown, in milliseconds |
-| `pgdog_prepared_statements_limit` | `1024` | Maximum prepared statements per server connection |
+| `pgdog_prepared_statements_limit` | `5000` | Maximum prepared statements per server connection |
 | `pgdog_healthcheck_port` | `""` | Port for the HTTP health check, for external load balancers |
 | `pgdog_openmetrics_port` | `""` | Port for the OpenMetrics endpoint |
 
@@ -135,7 +135,7 @@ The configuration is in `pgdog.toml` and `users.toml`, in `pgdog_conf_dir`. It i
 
 Changes are applied with a reload, without closing client connections. `pgdog_listen_addr`, `pgdog_listen_port` and `pgdog_workers` require a restart of the service.
 
-After a failover, some replicas can be left out of the load balancer until PgDog has checked them. Reads go to the other nodes in the meantime, for up to `pgdog_ban_timeout` (30 seconds). This does not affect writes.
+After a failover, some replicas can be left out of the load balancer until PgDog has checked them and their bans have expired. Bans normally expire after `pgdog_ban_timeout` (30 seconds); an unhealthy or lagging replica can remain excluded longer. Reads go to the other eligible nodes in the meantime. If all targets are unavailable, PgDog can clear bans earlier to retry them.
 
 The `add_node.yml` and `remove_node.yml` playbooks update the list of nodes on the whole cluster. New versions are installed by changing `pgdog_version` and running `config_pgcluster.yml` with the tag `pgdog`, which restarts the service.
 

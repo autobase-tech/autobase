@@ -621,20 +621,17 @@ connection_pooler_port: "{{ pgdog_listen_port if pgdog_install | bool else pgbou
 # follows Patroni failovers on its own, sends writes to the primary and balances reads over the replicas.
 #
 # Note: PgDog is licensed under AGPL-3.0, unlike the other components installed by Autobase.
-# Note: the upstream binaries require glibc {{ pgdog_min_glibc_version }} or newer
-# (Ubuntu 24.04+, Debian 13+, RHEL/Rocky/AlmaLinux/OracleLinux/CentOS Stream 10+).
-# See roles/pgdog/README.md for the differences from PgBouncer and HAProxy.
+
 pgdog_install: false # or 'true' to use PgDog instead of PgBouncer and HAProxy
 # renovate: datasource=github-releases depName=pgdogdev/pgdog extractVersion=^v(?<version>.*)$
 pgdog_version: 0.1.64
-pgdog_min_glibc_version: "2.39" # the glibc version required by the binaries of 'pgdog_version'
 pgdog_conf_dir: "/etc/pgdog"
 pgdog_listen_addr: "0.0.0.0" # Listen on all interfaces. Or use "{{ bind_address }}" to listen on a specific IP address.
 pgdog_listen_port: 6432
 pgdog_workers: "{{ (ansible_processor_vcpus | default(1) | int) * 2 }}" # the number of threads, two per vCPU are recommended
 # Every PgDog instance opens up to 'pool_size' connections to each node, per database and per user.
 # So a primary can receive 'pool_size * <number of nodes>' connections for a single database and user.
-pgdog_default_pool_size: 30
+pgdog_default_pool_size: 20
 pgdog_min_pool_size: 1
 pgdog_pooler_mode: "transaction" # transaction, session or statement (read/write splitting needs 'transaction')
 pgdog_read_write_split: "include_primary" # include_primary, exclude_primary, include_primary_if_replica_banned, prefer_primary
@@ -642,16 +639,16 @@ pgdog_read_write_strategy: "conservative" # conservative, aggressive
 pgdog_load_balancing_strategy: "random" # random, round_robin, least_active_connections (ties go to the primary on idle clusters)
 pgdog_lsn_check_interval: 1000 # how often (in milliseconds) to check the role and the replication lag of each node
 # Stop reading from replicas that lag behind by this amount of bytes (100MB, like 'patroni_maximum_lag_on_replica'), or "" to disable.
-# Note: PgDog also bans the replicas it has not checked yet (after a restart or a failover), until 'pgdog_ban_timeout' expires.
+# Replicas without valid lag measurements can also be excluded until measurements are available and their ban expires.
 pgdog_ban_replica_lag_bytes: 104857600
-# How long (in milliseconds) a lagging or unhealthy replica is left out of the load balancer before it is checked again.
-# PgDog uses 5 minutes by default. Reads go to the other nodes in the meantime, it does not affect writes.
+# Ban expiry timeout in milliseconds (upstream default: 5 minutes). Monitoring continues while a target is banned.
+# An expired ban is cleared only when the target is healthy and its replication lag is below the configured thresholds.
 pgdog_ban_timeout: 30000
-# How long (in milliseconds) a client can wait for a connection. Waiting clients stay queued on the pool of the old primary and
-# are not moved to the new one, so a failover takes at least this long for them. Keep it short, and let the applications retry.
+# Maximum time in milliseconds to wait for a server connection. This is not a guaranteed failover duration;
+# recovery also depends on role detection, connection errors and application retries.
 pgdog_checkout_timeout: 5000
 pgdog_shutdown_timeout: 60000 # how long (in milliseconds) to wait for active transactions on shutdown
-pgdog_prepared_statements_limit: 1024
+pgdog_prepared_statements_limit: 5000
 # PgDog does not support 'auth_query': with passthrough authentication it verifies the passwords against Postgres
 # on their first use and when they change. Clients have to send their passwords to PgDog in clear text, so it
 # requires TLS, unless the 'enabled_plain*' mode is used. Set "disabled" to authenticate only the 'pgdog_users'.

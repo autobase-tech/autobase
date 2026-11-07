@@ -8,6 +8,13 @@
       - "Set 'pgbouncer_install: false' and 'with_haproxy_load_balancing: false' to use it."
   when: pgbouncer_install | bool or with_haproxy_load_balancing | bool
 
+- name: PgDog | Check the PostgreSQL version
+  ansible.builtin.fail:
+    msg: >-
+      PgDog {{ pgdog_version }} requires PostgreSQL 12 or newer for automatic role detection and replication lag monitoring.
+      Configured: {{ postgresql_version }}.
+  when: postgresql_version | int < 12
+
 - name: PgDog | Check the architecture
   ansible.builtin.fail:
     msg: "PgDog provides no binaries for {{ ansible_architecture }}. Supported: x86_64, aarch64."
@@ -25,6 +32,8 @@
       - "PgDog {{ pgdog_version }} requires glibc {{ pgdog_min_glibc_version }} or newer."
       - "This server has {{ pgdog_glibc_version.stdout }} ({{ ansible_distribution }} {{ ansible_distribution_version }})."
       - "Use Ubuntu 24.04+, Debian 13+, or a RHEL 10 compatible distribution."
+  vars:
+    pgdog_min_glibc_version: "2.39"
   when: pgdog_glibc_version.stdout.split() | last is version(pgdog_min_glibc_version, '<')
 
 - name: PgDog | Check that passthrough authentication can work without TLS
