@@ -2,9 +2,9 @@
 # Hold the client queries in PgDog on all servers, to keep the client connections while PostgreSQL is stopped.
 #
 # Unlike the PgBouncer 'PAUSE', the maintenance mode lets the transactions in progress finish and it holds
-# all new queries right away, so it is enabled first and then the active queries are given time to complete:
+# new transactions, so it is enabled first and then all current transactions are given time to complete:
 # 1. Enable the maintenance mode on all PgDog servers. If this is not possible, the script exits with an error.
-# 2. Wait for the active queries that are executed longer than 'pg_slow_active_query_treshold' to complete.
+# 2. Wait for all active queries and idle-in-transaction sessions, regardless of the age of the last query.
 # 3. After 'pg_pool_pause_terminate_after' seconds, terminate the active queries that are executed longer
 #    than 'pg_slow_active_query_treshold_to_terminate'.
 # 4. After 'pg_pool_pause_stop_after' seconds, exit with an error. The rollback disables the maintenance mode.
@@ -12,11 +12,10 @@
   become: true
   become_user: postgres
   vars:
-    pg_slow_active_count_query: >-
+    pg_active_count_query: >-
       select count(*) from pg_stat_activity
       where pid <> pg_backend_pid()
       and state <> 'idle'
-      and query_start < clock_timestamp() - interval '{{ pg_slow_active_query_treshold }} ms'
       and backend_type = 'client backend'
     pg_slow_active_terminate_query: >-
       select
@@ -58,14 +57,14 @@
       while true; do
         current_time=$(date +%s)
 
-        total_pg_slow_active_count=0
+        total_pg_active_count=0
         for server in "${pg_servers[@]}"; do
-          count=$(postgres_query "$server" "{{ pg_slow_active_count_query }}") || exit 1
-          total_pg_slow_active_count=$((total_pg_slow_active_count + count))
+          count=$(postgres_query "$server" "{{ pg_active_count_query }}") || exit 1
+          total_pg_active_count=$((total_pg_active_count + count))
         done
-        echo "$(date): total pg_slow_active_count: $total_pg_slow_active_count"
+        echo "$(date): total pg_active_count: $total_pg_active_count"
 
-        if [[ "$total_pg_slow_active_count" == 0 ]]; then
+        if [[ "$total_pg_active_count" == 0 ]]; then
           break
         fi
 

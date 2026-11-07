@@ -423,7 +423,7 @@ Note: For more information, see the `upgrade` role [variables](../upgrade/defaul
     - Print error message: "There's a replication lag in the PostgreSQL cluster. Please try again later"
 - **Enable maintenance mode on all PgDog servers**
   - Notes: if 'pgdog_install' is 'true' and 'pgdog_pool_pause' is 'true'
-  - Notes: sends `MAINTENANCE ON` to every PgDog server, which holds new queries, and then waits for the active queries to complete. It terminates them after `pg_pool_pause_terminate_after` seconds, and performs a rollback after `pg_pool_pause_stop_after` seconds
+  - Notes: sends `MAINTENANCE ON` to every PgDog server, which holds new transactions, and then waits for all active queries and idle-in-transaction sessions, regardless of query age. It terminates slow queries after `pg_pool_pause_terminate_after` seconds, and performs a rollback after `pg_pool_pause_stop_after` seconds
 - **Perform PAUSE on all pgbouncers servers**
   - Notes: if 'pgbouncer_install' is 'true' and 'pgbouncer_pool_pause' is 'true'
   - Notes: pgbouncer pause script performs the following actions:
