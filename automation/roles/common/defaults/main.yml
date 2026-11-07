@@ -723,6 +723,7 @@ patroni_standby_cluster:
 #  primary_slot_name: ""  # which slot on the remote master to use for replication (optional)
 #  restore_command: ""  # command to restore WAL records from the remote master to standby leader (optional)
 #  recovery_min_apply_delay: ""  # how long to wait before actually apply WAL records on a standby leader (optional)
+#  create_replica_methods: []  # methods to create the standby leader from the remote primary, e.g. ["pgbackrest"]; Patroni defaults to basebackup (optional)
 
 patroni_standby_cluster_auto_hba: true # automatically add the standby cluster nodes to pg_hba.conf of the source cluster.
 # Note: this is a temporary rule and may be overwritten by future source cluster reconfiguration.
