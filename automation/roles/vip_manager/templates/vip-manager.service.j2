@@ -6,6 +6,13 @@ Before=patroni.service
 [Service]
 Type=simple
 
+{% if vip_manager_dcs_type | default(dcs_type) == 'consul' and consul_tls_enable | default(false) | bool %}
+# TLS settings for the Consul client (vip-manager has no config options for them)
+Environment=CONSUL_CACERT={{ patroni_consul_cacert | default('/etc/patroni/tls/consul/ca.crt') }}
+Environment=CONSUL_CLIENT_CERT={{ patroni_consul_cert | default('/etc/patroni/tls/consul/server.crt') }}
+Environment=CONSUL_CLIENT_KEY={{ patroni_consul_key | default('/etc/patroni/tls/consul/server.key') }}
+
+{% endif %}
 ExecStart=/usr/bin/vip-manager --config={{ vip_manager_conf }}
 
 # VIP not released when service stopped https://github.com/cybertec-postgresql/vip-manager/issues/19
