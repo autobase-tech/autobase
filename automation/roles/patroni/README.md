@@ -132,6 +132,27 @@ Requirements:
 1. the cluster name for standby cluster must be unique (see 'patroni_cluster_name' variable)
 2. the IP addresses (or network) of the standby cluster servers must be added to the pg_hba.conf of the Main Cluster (see 'postgresql_pg_hba' variable).
 
+Custom methods selected in `patroni_standby_cluster.create_replica_methods` must also be listed in `patroni_create_replica_methods`,
+so their command definitions are included in the generated Patroni configuration.
+
+For example, with pgBackRest already configured to access the source cluster's repository:
+
+```yaml
+patroni_create_replica_methods:
+  - pgbackrest
+
+patroni_standby_cluster:
+  host: "10.0.0.1,10.0.0.2,10.0.0.3"
+  port: "5432"
+  primary_slot_name: "dr_standby_cluster"
+  create_replica_methods:
+    - pgbackrest
+```
+
+In this example, both the standby leader and regular replicas are created from the pgBackRest repository.
+With `pgbackrest_install: true`, the shared `restore_command` is configured automatically.
+Set `patroni_standby_cluster.restore_command` only if the standby cluster needs a different command.
+
 ### Slots Configuration
 
 | Variable        | Default | Description                                                                            |
