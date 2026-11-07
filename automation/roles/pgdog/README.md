@@ -42,7 +42,7 @@ PgDog listens on port `6432`, like PgBouncer, so the connection info and the fir
 | Read/write routing | One port per role, chosen by the client | One port. PgDog parses the queries. A `SELECT` that calls a function which writes is sent to a replica and fails. Use a transaction, or the `pgdog.role` parameter, for such queries |
 | Read consistency | Reads go to the primary unless the client asks for a replica | Reads can be sent to replicas, and they may be behind the primary. Use `pgdog_read_write_split: "prefer_primary"` to change that |
 | Default pooling mode | `session` | `transaction` |
-| Replica selection | Patroni REST API, including `balancer_tags`, the sync/async roles and `patroni_maximum_lag_on_replica` | `pg_is_in_recovery()`. Lagging replicas keep receiving reads unless `pgdog_ban_replica_lag_bytes` is set. `balancer_tags` and the `/sync` and `/async` checks are not used |
+| Replica selection | Patroni REST API, including `balancer_tags`, the sync/async roles and `patroni_maximum_lag_on_replica` | `pg_is_in_recovery()`. Replicas that lag behind by more than `pgdog_ban_replica_lag_bytes` (100MB) stop receiving reads. `balancer_tags` and the `/sync` and `/async` checks are not used |
 | Authentication | `auth_query` | Passthrough: the password is checked against PostgreSQL on first use and when it changes |
 | Client passwords | Never sent in clear text | Sent to PgDog in clear text, so clients have to use TLS (`pgdog_client_tls_required`) |
 | Databases | The `*` wildcard serves all of them | Only the configured ones. Run `config_pgcluster.yml` with the tag `pgdog_conf` after creating a database |
@@ -64,7 +64,6 @@ The variables are defined in [`roles/common/defaults/main.yml`](../common/defaul
 | `pgdog_min_glibc_version` | `"2.39"` | The glibc version required by the binaries of `pgdog_version`. Used by the pre-checks |
 | `pgdog_package_repo` | GitHub release | URL of the release archive. Point it to a mirror for offline installations |
 | `pgdog_package_checksum` | `sha256:<url>.sha256` | Checksum of the archive, or `""` to skip the verification |
-| `pgdog_install_dir` | `"/opt/pgdog"` | Directory for the extracted releases |
 | `pgdog_conf_dir` | `"/etc/pgdog"` | Configuration directory |
 | `pgdog_listen_addr` | `"0.0.0.0"` | IP address for PgDog to bind to |
 | `pgdog_listen_port` | `6432` | Port for PgDog to listen on |
@@ -82,7 +81,8 @@ The variables are defined in [`roles/common/defaults/main.yml`](../common/defaul
 | `pgdog_read_write_strategy` | `"conservative"` | `conservative` or `aggressive` |
 | `pgdog_load_balancing_strategy` | `"random"` | `random`, `round_robin` or `least_active_connections`. With the latter, a lightly loaded cluster sends most reads to the primary, because ties go to the first node |
 | `pgdog_lsn_check_interval` | `1000` | How often to check the role and lag of the nodes, in milliseconds |
-| `pgdog_ban_replica_lag_bytes` | `""` (disabled) | Stop reading from replicas that lag behind by this amount of bytes. PgDog also applies it to new pools before it knows the position of the replicas, so with this enabled they are left out of the load balancer for up to 5 minutes (`ban_timeout`) after every restart, and for every new user |
+| `pgdog_ban_replica_lag_bytes` | `104857600` (100MB) | Stop reading from replicas that lag behind by this amount of bytes, or `""` to disable. PgDog also bans the replicas it has not checked yet, so after a restart, a failover or the first connection of a user, they can be left out of the load balancer for up to `pgdog_ban_timeout` |
+| `pgdog_ban_timeout` | `30000` | How long a lagging or unhealthy replica is left out of the load balancer before it is checked again, in milliseconds. PgDog uses 5 minutes by default |
 | `pgdog_checkout_timeout` | `5000` | How long a client can wait for a connection, in milliseconds. Waiting clients are not moved to a new primary, so this is also the shortest time they need to recover from a failover. Keep it short, and retry in the application |
 | `pgdog_shutdown_timeout` | `60000` | How long to wait for active transactions on shutdown, in milliseconds |
 | `pgdog_prepared_statements_limit` | `1024` | Maximum prepared statements per server connection |
@@ -129,7 +129,7 @@ The configuration is in `pgdog.toml` and `users.toml`, in `pgdog_conf_dir`. It i
 
 Changes are applied with a reload, without closing client connections. `pgdog_listen_addr`, `pgdog_listen_port` and `pgdog_workers` require a restart of the service.
 
-After a failover, some replicas can be left out of the load balancer until PgDog has checked them. Reads go to the other nodes in the meantime, for up to the `ban_timeout` of PgDog (5 minutes by default, it can be changed with `pgdog_general_parameters`). This does not affect writes.
+After a failover, some replicas can be left out of the load balancer until PgDog has checked them. Reads go to the other nodes in the meantime, for up to `pgdog_ban_timeout` (30 seconds). This does not affect writes.
 
 The `add_node.yml` and `remove_node.yml` playbooks update the list of nodes on the whole cluster. New versions are installed by changing `pgdog_version` and running `config_pgcluster.yml` with the tag `pgdog`, which restarts the service.
 

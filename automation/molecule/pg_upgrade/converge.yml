@@ -4,6 +4,19 @@
   gather_facts: true
 
   tasks:
+    # PgDog replaces both PgBouncer and HAProxy. Its binaries require glibc 2.39 or newer.
+    - name: Set variables for the connection pooler test (randomly PgBouncer or PgDog)
+      ansible.builtin.set_fact:
+        pgdog_install: "{{ ([true, false] | random) if pgdog_supported_os | bool else false }}"
+        cacheable: true
+      vars:
+        pgdog_supported_os: >-
+          {{ (ansible_distribution == 'Ubuntu' and ansible_distribution_version is version('24.04', '>='))
+          or (ansible_distribution == 'Debian' and ansible_distribution_major_version | int >= 13)
+          or (ansible_os_family == 'RedHat' and ansible_distribution_major_version | int >= 10) }}
+      delegate_to: localhost
+      run_once: true # noqa run-once
+
     - name: Set variables for Patroni cluster deployment test
       ansible.builtin.set_fact:
         ansible_become_method: su # Override become_method
@@ -14,7 +27,8 @@
         chronyd_ignore_errors: true # to prevent failures in CI
         nameservers: ["8.8.8.8", "9.9.9.9"]
         timezone: "Etc/UTC"
-        with_haproxy_load_balancing: true
+        pgbouncer_install: "{{ not pgdog_install | bool }}"
+        with_haproxy_load_balancing: "{{ not pgdog_install | bool }}"
         dcs_type: "{{ 'etcd' if ansible_distribution_major_version in ['10'] or ansible_distribution_release in ['trixie']
           else (['etcd', 'consul'] | random) }}" # TODO: Consul support for RHEL 10, Debian 13
         consul_node_role: server # if dcs_type: "consul"

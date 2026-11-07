@@ -23,6 +23,7 @@ lsn_check_interval = {{ pgdog_lsn_check_interval | int }}
 {% if pgdog_ban_replica_lag_bytes | string | length > 0 %}
 ban_replica_lag_bytes = {{ pgdog_ban_replica_lag_bytes | int }}
 {% endif %}
+ban_timeout = {{ pgdog_ban_timeout | int }}
 checkout_timeout = {{ pgdog_checkout_timeout | int }}
 shutdown_timeout = {{ pgdog_shutdown_timeout | int }}
 prepared_statements_limit = {{ pgdog_prepared_statements_limit | int }}

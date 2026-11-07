@@ -1,16 +1,17 @@
 ---
-# Verify the client-facing behaviour of PgDog, on a cluster that went through an in-place major upgrade.
-- name: Molecule.pgdog.verify
-  hosts: postgres_cluster
-  gather_facts: true
+# 🚀 These tests check the client-facing behaviour of PgDog, when the converge step installed it instead of PgBouncer and HAProxy.
+# They end with a switchover, so they should be included after the other tests.
+- name: Molecule.tests.roles.pgdog.main | Test PgDog
   become: true
   vars:
-    postgresql_version: 18
-    psql_bin: "{{ '/usr/lib/postgresql/18/bin/psql' if ansible_os_family == 'Debian' else '/usr/pgsql-18/bin/psql' }}"
+    # 'postgresql_version' is redefined by the variable tests, use the version installed by converge.yml
+    psql_bin: "{{ '/usr/lib/postgresql/' ~ test_postgresql_version ~ '/bin/psql' if ansible_os_family == 'Debian'
+      else '/usr/pgsql-' ~ test_postgresql_version ~ '/bin/psql' }}"
     client_uri: "postgresql://db1_user@127.0.0.1:6432/db1?sslmode=require&connect_timeout=10"
   environment:
     PGPASSWORD: "db1_user-test-pass"
-  tasks:
+  when: pgdog_install | default(false) | bool
+  block:
     - name: Check that the pgdog service is running
       ansible.builtin.systemd:
         name: pgdog
@@ -49,7 +50,10 @@
         executable: /bin/bash
       register: read_result
       changed_when: false
-      failed_when: "'t' not in read_result.stdout_lines"
+      # PgDog bans the replicas it has not checked yet, for up to 'pgdog_ban_timeout' after a restart
+      until: "'t' in read_result.stdout_lines"
+      retries: 12
+      delay: 5
 
     - name: Check that a wrong password is rejected
       ansible.builtin.command: >-
@@ -66,6 +70,15 @@
       register: no_tls_result
       changed_when: false
       failed_when: no_tls_result.rc == 0
+
+    - name: Check that the clients can connect through the VIP
+      ansible.builtin.command: >-
+        {{ psql_bin }} "postgresql://db1_user@{{ test_cluster_vip }}:6432/db1?sslmode=require&connect_timeout=10" -tAXc "SELECT 1"
+      changed_when: false
+      # TODO: with 'vip_manager_dcs_type: patroni', vip-manager polls http://127.0.0.1:8008, but the Patroni REST API uses TLS
+      when:
+        - test_cluster_vip | default('') | length > 0
+        - test_vip_manager_dcs_type | default('') != 'patroni'
 
     - name: Get the Patroni leader
       ansible.builtin.command: patronictl -c /etc/patroni/patroni.yml list -f json

@@ -614,7 +614,6 @@ pgdog_install: false # or 'true' to use PgDog instead of PgBouncer and HAProxy
 # renovate: datasource=github-releases depName=pgdogdev/pgdog extractVersion=^v(?<version>.*)$
 pgdog_version: 0.1.64
 pgdog_min_glibc_version: "2.39" # the glibc version required by the binaries of 'pgdog_version'
-pgdog_install_dir: "/opt/pgdog"
 pgdog_conf_dir: "/etc/pgdog"
 pgdog_listen_addr: "0.0.0.0" # Listen on all interfaces. Or use "{{ bind_address }}" to listen on a specific IP address.
 pgdog_listen_port: 6432
@@ -628,9 +627,12 @@ pgdog_read_write_split: "include_primary" # include_primary, exclude_primary, in
 pgdog_read_write_strategy: "conservative" # conservative, aggressive
 pgdog_load_balancing_strategy: "random" # random, round_robin, least_active_connections (ties go to the primary on idle clusters)
 pgdog_lsn_check_interval: 1000 # how often (in milliseconds) to check the role and the replication lag of each node
-# Stop reading from replicas that lag behind by this amount of bytes. Disabled by default: PgDog also applies it to new pools
-# before it knows the position of the replicas, which leaves them out of the load balancer for up to 'ban_timeout' (5 minutes).
-pgdog_ban_replica_lag_bytes: ""
+# Stop reading from replicas that lag behind by this amount of bytes (100MB, like 'patroni_maximum_lag_on_replica'), or "" to disable.
+# Note: PgDog also bans the replicas it has not checked yet (after a restart or a failover), until 'pgdog_ban_timeout' expires.
+pgdog_ban_replica_lag_bytes: 104857600
+# How long (in milliseconds) a lagging or unhealthy replica is left out of the load balancer before it is checked again.
+# PgDog uses 5 minutes by default. Reads go to the other nodes in the meantime, it does not affect writes.
+pgdog_ban_timeout: 30000
 # How long (in milliseconds) a client can wait for a connection. Waiting clients stay queued on the pool of the old primary and
 # are not moved to the new one, so a failover takes at least this long for them. Keep it short, and let the applications retry.
 pgdog_checkout_timeout: 5000

@@ -49,3 +49,7 @@ The file is owned by `postgres` with permissions `0600` and managed separately
 from the user's `~/.pgpass` and Patroni's `.pgpass_patroni`.
 
 PgBouncer pause requires the same `postgresql_cli_passfile` path on all database hosts.
+
+With `pgdog_install: true`, the file also holds the PgDog admin credentials
+(`pgdog_admin_username`, for the `admin` database on `pgdog_listen_port`), which
+the upgrade uses for the `MAINTENANCE` commands.

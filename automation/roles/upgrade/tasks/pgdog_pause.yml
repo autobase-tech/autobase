@@ -37,10 +37,8 @@
       {{ hostvars[host]['patroni_bind_address'] | default(hostvars[host]['bind_address'], true) }}
     {% endfor %}
     )
-    admin_password="$(sed -n '/^\[admin\]/,/^\[\[/s/^password = "\(.*\)"$/\1/p' {{ pgdog_conf_dir }}/pgdog.toml)"
-
     pgdog_admin() {
-      PGPASSWORD="$admin_password" PGCONNECT_TIMEOUT=5 {{ pg_old_bindir }}/psql -h "$1" -p {{ pgdog_listen_port }} \
+      PGCONNECT_TIMEOUT=5 {{ pg_old_bindir }}/psql -h "$1" -p {{ pgdog_listen_port }} \
         -U {{ pgdog_admin_username }} -d admin -tAXc "$2"
     }
     postgres_query() {
