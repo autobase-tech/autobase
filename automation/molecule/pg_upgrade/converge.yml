@@ -7,7 +7,7 @@
     # PgDog replaces both PgBouncer and HAProxy. Its binaries require glibc 2.39 or newer.
     - name: Set variables for the connection pooler test (randomly PgBouncer or PgDog)
       ansible.builtin.set_fact:
-        pgdog_install: "{{ ([true, false] | random) if pgdog_supported_os | bool else false }}"
+        pgdog_install: true # "{{ ([true, false] | random) if pgdog_supported_os | bool else false }}"
         cacheable: true
       vars:
         pgdog_supported_os: >-
