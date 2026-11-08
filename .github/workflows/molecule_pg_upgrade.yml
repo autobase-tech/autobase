@@ -4,9 +4,6 @@ name: Molecule pg_upgrade
 on:
   schedule:
     - cron: "0 0 * * 6"
-  pull_request: # TODO: delete after testing
-    branches:
-      - main
 
 jobs:
   test:
@@ -22,10 +19,10 @@ jobs:
           - distro: debian12
             tag: latest
             namespace: geerlingguy
-          - distro: ubuntu2404
+          - distro: ubuntu2604
             tag: latest
             namespace: geerlingguy
-          - distro: ubuntu2204
+          - distro: ubuntu2404
             tag: latest
             namespace: geerlingguy
           - distro: rockylinux10
