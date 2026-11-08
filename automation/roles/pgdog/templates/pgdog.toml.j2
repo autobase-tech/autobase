@@ -1,0 +1,67 @@
+# {{ ansible_managed }}
+# Documentation: https://docs.pgdog.dev/configuration/
+{% set pgdog_tls = tls_cert_generate | default(false) | bool %}
+{% set pgdog_defined_names = pgdog_pools | map(attribute='name') | list %}
+{% set pgdog_all_pools = pgdog_pools | list %}
+{% for database in postgresql_databases | default([]) if database.db not in pgdog_defined_names %}
+{%   set _ = pgdog_all_pools.append({'name': database.db, 'dbname': database.db}) %}
+{% endfor %}
+
+[general]
+host = {{ pgdog_listen_addr | to_json }}
+port = {{ pgdog_listen_port | int }}
+workers = {{ pgdog_workers | int }}
+default_pool_size = {{ pgdog_default_pool_size | int }}
+min_pool_size = {{ pgdog_min_pool_size | int }}
+pooler_mode = {{ pgdog_pooler_mode | to_json }}
+read_write_split = {{ pgdog_read_write_split | to_json }}
+read_write_strategy = {{ pgdog_read_write_strategy | to_json }}
+load_balancing_strategy = {{ pgdog_load_balancing_strategy | to_json }}
+# 'role = "auto"' needs the LSN check to detect the promotion of a replica.
+lsn_check_delay = 0
+lsn_check_interval = {{ pgdog_lsn_check_interval | int }}
+{% if pgdog_ban_replica_lag_bytes | string | length > 0 %}
+ban_replica_lag_bytes = {{ pgdog_ban_replica_lag_bytes | int }}
+{% endif %}
+ban_timeout = {{ pgdog_ban_timeout | int }}
+checkout_timeout = {{ pgdog_checkout_timeout | int }}
+shutdown_timeout = {{ pgdog_shutdown_timeout | int }}
+prepared_statements_limit = {{ pgdog_prepared_statements_limit | int }}
+passthrough_auth = {{ pgdog_passthrough_auth | to_json }}
+auth_type = {{ pgdog_auth_type | to_json }}
+log_connections = false
+log_disconnections = false
+{% if pgdog_tls %}
+tls_certificate = {{ (pgdog_tls_dir ~ '/' ~ pgdog_tls_cert_file) | to_json }}
+tls_private_key = {{ (pgdog_tls_dir ~ '/' ~ pgdog_tls_key_file) | to_json }}
+tls_client_required = {{ pgdog_client_tls_required | bool | to_json }}
+tls_server_ca_certificate = {{ (pgdog_tls_dir ~ '/' ~ pgdog_tls_ca_file) | to_json }}
+{% endif %}
+tls_verify = {{ pgdog_tls_verify | to_json }}
+{% if pgdog_healthcheck_port | string | length > 0 %}
+healthcheck_port = {{ pgdog_healthcheck_port | int }}
+{% endif %}
+{% if pgdog_openmetrics_port | string | length > 0 %}
+openmetrics_port = {{ pgdog_openmetrics_port | int }}
+{% endif %}
+{% for key, value in pgdog_general_parameters | default({}) | dictsort %}
+{{ key }} = {{ value | to_json }}
+{% endfor %}
+
+[admin]
+user = {{ pgdog_admin_username | to_json }}
+password = {{ pgdog_admin_password | to_json }}
+{% for pool in pgdog_all_pools %}
+{%   for host in pgdog_hosts | default(groups['postgres_cluster']) %}
+
+[[databases]]
+name = {{ pool.name | to_json }}
+database_name = {{ pool.dbname | to_json }}
+host = {{ (hostvars[host]['patroni_bind_address'] | default(hostvars[host]['bind_address'], true)) | to_json }}
+port = {{ postgresql_port | int }}
+role = "auto"
+{%     for key, value in (pool.pool_parameters | default({}, true)) | dictsort %}
+{{ key }} = {{ value | to_json }}
+{%     endfor %}
+{%   endfor %}
+{% endfor %}

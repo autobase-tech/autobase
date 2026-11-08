@@ -17,6 +17,7 @@
 - name: Get the list of service config files
   ansible.builtin.find:
     paths: "{{ consul_configd_path }}"
+    patterns: "service_*.json"
     file_type: file
   register: services_enabled_unix
   when: ansible_os_family != 'Windows'
@@ -24,6 +25,7 @@
 - name: Get the list of service config files [Windows]
   ansible.windows.win_find:
     paths: "{{ consul_configd_path }}"
+    patterns: "service_*.json"
     file_type: file
   register: services_enabled_windows
   when: ansible_os_family == 'Windows'

@@ -324,6 +324,9 @@
     - role: vitabaks.autobase.pgbouncer
       when: pgbouncer_install | default(true) | bool
 
+    - role: vitabaks.autobase.pgdog
+      when: pgdog_install | default(false) | bool
+
     - role: vitabaks.autobase.pgpass
 
     - role: vitabaks.autobase.patroni

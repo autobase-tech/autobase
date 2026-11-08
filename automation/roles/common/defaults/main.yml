@@ -31,7 +31,7 @@ synchronous_mode_strict: false # if 'true' then block all client writes to the m
 synchronous_node_count: 1 # number of synchronous standby databases
 
 # Load Balancing
-with_haproxy_load_balancing: false # or 'true' if you want to install and configure the HAProxy load balancers
+with_haproxy_load_balancing: false # or 'true' to use HAProxy with PgBouncer or directly with PostgreSQL; incompatible with PgDog.
 haproxy_listen_port:
   master: 5000
   replicas: 5001
@@ -211,11 +211,25 @@ consul_join: [] # List of LAN servers of an existing consul cluster, to join.
 # - "10.128.64.143"
 
 # https://developer.hashicorp.com/consul/docs/discovery/services
-consul_services:
+# Register PgDog with one tag, or PostgreSQL endpoints by role when PgDog is disabled.
+consul_services: "{{ consul_pgdog_services if pgdog_install | bool else consul_postgresql_services }}"
+consul_pgdog_address: "{{ bind_address if pgdog_listen_addr in ['0.0.0.0', '::'] else pgdog_listen_addr }}"
+consul_pgdog_services:
+  - name: "{{ patroni_cluster_name }}"
+    id: "{{ patroni_cluster_name }}-pgdog"
+    tags: ["pgdog"]
+    address: "{{ consul_pgdog_address }}"
+    port: "{{ pgdog_listen_port }}"
+    checks:
+      - tcp: "{{ consul_pgdog_address }}:{{ pgdog_listen_port }}"
+        interval: "5s"
+        timeout: "2s"
+
+consul_postgresql_services:
   - name: "{{ patroni_cluster_name }}"
     id: "{{ patroni_cluster_name }}-master"
     tags: ["master", "primary"]
-    port: "{{ pgbouncer_listen_port }}" # or "{{ postgresql_port }}" if pgbouncer_install: false
+    port: "{{ connection_pooler_port if connection_pooler_enabled | bool else postgresql_port }}"
     checks:
       - http: >-
           {{ patroni_restapi_protocol }}://{{ patroni_restapi_connect_addr
@@ -223,13 +237,12 @@ consul_services:
           | default(bind_address, true), true) }}:{{ patroni_restapi_port }}/primary
         tls_skip_verify: true
         interval: "2s"
-      # comment out this check if pgbouncer_install: false
-      - args: ["systemctl", "status", "pgbouncer"]
+      - args: ["systemctl", "status", "{{ connection_pooler_name | lower if connection_pooler_enabled | bool else 'patroni' }}"]
         interval: "5s"
   - name: "{{ patroni_cluster_name }}"
     id: "{{ patroni_cluster_name }}-replica"
     tags: ["replica"]
-    port: "{{ pgbouncer_listen_port }}"
+    port: "{{ connection_pooler_port if connection_pooler_enabled | bool else postgresql_port }}"
     checks:
       - http: >-
           {{ patroni_restapi_protocol }}://{{ patroni_restapi_connect_addr
@@ -237,12 +250,12 @@ consul_services:
           | default(bind_address, true), true) }}:{{ patroni_restapi_port }}/replica?lag={{ patroni_maximum_lag_on_replica }}
         tls_skip_verify: true
         interval: "2s"
-      - args: ["systemctl", "status", "pgbouncer"]
+      - args: ["systemctl", "status", "{{ connection_pooler_name | lower if connection_pooler_enabled | bool else 'patroni' }}"]
         interval: "5s"
 #  - name: "{{ patroni_cluster_name }}"
 #    id: "{{ patroni_cluster_name }}-sync-replica"
 #    tags: ['sync-replica']
-#    port: "{{ pgbouncer_listen_port }}"
+#    port: "{{ connection_pooler_port if connection_pooler_enabled | bool else postgresql_port }}"
 #    checks:
 #      - http: >-
 #          {{ patroni_restapi_protocol }}://{{ patroni_restapi_connect_addr
@@ -250,12 +263,12 @@ consul_services:
 #          | default(bind_address, true), true) }}:{{ patroni_restapi_port }}/sync
 #        tls_skip_verify: true
 #        interval: "2s"
-#      - args: ["systemctl", "status", "pgbouncer"]
+#      - args: ["systemctl", "status", "{{ connection_pooler_name | lower if connection_pooler_enabled | bool else 'patroni' }}"]
 #        interval: "5s"
 #  - name: "{{ patroni_cluster_name }}"
 #    id: "{{ patroni_cluster_name }}-async-replica"
 #    tags: ['async-replica']
-#    port: "{{ pgbouncer_listen_port }}"
+#    port: "{{ connection_pooler_port if connection_pooler_enabled | bool else postgresql_port }}"
 #    checks:
 #      - http: >-
 #          {{ patroni_restapi_protocol }}://{{ patroni_restapi_connect_addr
@@ -263,7 +276,7 @@ consul_services:
 #          | default(bind_address, true), true) }}:{{ patroni_restapi_port }}/async?lag={{ patroni_maximum_lag_on_replica }}
 #        tls_skip_verify: true
 #        interval: "2s"
-#      - args: ["systemctl", "status", "pgbouncer"]
+#      - args: ["systemctl", "status", "{{ connection_pooler_name | lower if connection_pooler_enabled | bool else 'patroni' }}"]
 #        interval: "5s"
 
 ############################################################
@@ -312,8 +325,7 @@ postgresql_stats_temp_directory_path: "/var/lib/pgsql_stats_tmp" # or 'none'
 postgresql_stats_temp_directory_size: "1024m"
 
 # List of users to be created
-postgresql_users:
-  - { name: "{{ pgbouncer_auth_username }}", password: "{{ pgbouncer_auth_password }}", flags: "LOGIN", role: "" }
+postgresql_users: []
 #  - { name: "monitoring_auth_username", password: "monitoring_user_password", flags: "LOGIN", role: "pg_monitor" } # monitoring Service Account
 #  - { name: "mydb-user", password: "mydb-user-pass", flags: "NOSUPERUSER", conn_limit: "10" }
 #  - { name: "app-user", password: "app-user-pass", secret: "/backend/production/app-db" } # exported to this secret (full name, without secrets_prefix)
@@ -478,14 +490,24 @@ postgresql_parameters_dcs: >-
 pending_restart: false
 
 # specify additional hosts that will be added to the pg_hba.conf
-postgresql_pg_hba:
-  - { type: "local", database: "all", user: "{{ patroni_superuser_username }}", address: "", method: "trust" }
-  - { type: "local", database: "all", user: "{{ pgbouncer_auth_username }}", address: "", method: "trust" }
+postgresql_pg_hba: >-
+  {{
+    [
+      {"type": "local", "database": "all", "user": patroni_superuser_username, "address": "", "method": "trust"}
+    ]
+    + (
+      [{"type": "local", "database": "all", "user": pgbouncer_auth_username, "address": "", "method": "trust"}]
+      if pgbouncer_install | bool and pgbouncer_auth_user | bool else []
+    )
+    + [
+      {"type": "local", "database": "all", "user": "all", "address": "", "method": postgresql_password_encryption_algorithm},
+      {"type": "host", "database": "all", "user": "all", "address": "127.0.0.1/32", "method": postgresql_password_encryption_algorithm},
+      {"type": "host", "database": "all", "user": "all", "address": "::1/128", "method": postgresql_password_encryption_algorithm},
+      {"type": host_type, "database": "all", "user": "all", "address": "0.0.0.0/0", "method": postgresql_password_encryption_algorithm}
+    ]
+  }}
+# Example rules for a custom postgresql_pg_hba list; put local exceptions before the general local rule.
 #  - { type: "local", database: "postgres", user: "{{ pgbackrest_db_user }}", address: "", method: "trust" }
-  - { type: "local", database: "all", user: "all", address: "", method: "{{ postgresql_password_encryption_algorithm }}" }
-  - { type: "host", database: "all", user: "all", address: "127.0.0.1/32", method: "{{ postgresql_password_encryption_algorithm }}" }
-  - { type: "host", database: "all", user: "all", address: "::1/128", method: "{{ postgresql_password_encryption_algorithm }}" }
-  - { type: "{{ host_type }}", database: "all", user: "all", address: "0.0.0.0/0", method: "{{ postgresql_password_encryption_algorithm }}" }
 #  - { type: "{{ host_type }}", database: "mydatabase", user: "mydb-user", address: "192.168.0.0/24", method: "{{ postgresql_password_encryption_algorithm }}" }
 #  - { type: "{{ host_type }}", database: "all", user: "all", address: "192.168.0.0/24", method: "ident", options: "map=main" }  # use pg_ident
 
@@ -504,7 +526,7 @@ postgresql_pg_ident: []
 postgresql_pgpass:
   - "localhost:{{ postgresql_port }}:*:{{ patroni_superuser_username }}:{{ patroni_superuser_password }}"
   - "{{ bind_address }}:{{ postgresql_port }}:*:{{ patroni_superuser_username }}:{{ patroni_superuser_password }}"
-  - "*:{{ pgbouncer_listen_port }}:*:{{ patroni_superuser_username }}:{{ patroni_superuser_password }}"
+  - "*:{{ connection_pooler_port }}:*:{{ patroni_superuser_username }}:{{ patroni_superuser_password }}"
 #  - hostname:port:database:username:password
 
 # Dedicated password file for Ansible CLI tasks. Keep separate from the
@@ -547,7 +569,7 @@ postgresql_index_maintenance_cron_jobs:
 # PgBouncer parameters
 ############################################################
 
-pgbouncer_install: true # or 'false' if you do not want to install and configure the pgbouncer service
+pgbouncer_install: "{{ not (pgdog_install | bool) }}" # Defaults to false with PgDog; can be explicitly disabled otherwise.
 pgbouncer_processes: 1 # Number of pgbouncer processes to be used. Multiple processes use the so_reuseport option for better performance.
 pgbouncer_conf_dir: "/etc/pgbouncer"
 pgbouncer_log_dir: "/var/log/pgbouncer"
@@ -586,6 +608,84 @@ pgbouncer_pools:
 #  - { name: "mydatabase", dbname: "mydatabase", pool_parameters: "pool_size=20 pool_mode=transaction" }
 #  - { name: "", dbname: "", pool_parameters: "" }
 #  - { name: "", dbname: "", pool_parameters: "" }
+
+############################################################
+# Connection pooler (derived, do not override)
+############################################################
+
+# Resolves to the pooler selected below: 'pgbouncer_install' or 'pgdog_install'.
+connection_pooler_enabled: "{{ pgbouncer_install | bool or pgdog_install | bool }}"
+connection_pooler_name: "{{ 'PgDog' if pgdog_install | bool else 'PgBouncer' }}"
+connection_pooler_port: "{{ pgdog_listen_port if pgdog_install | bool else pgbouncer_listen_port }}"
+
+############################################################
+# PgDog parameters
+############################################################
+
+# PgDog is a connection pooler and a load balancer in one process - https://github.com/pgdogdev/pgdog
+# It replaces both PgBouncer and HAProxy, so 'pgdog_install: true' also requires
+# 'pgbouncer_install: false' and 'with_haproxy_load_balancing: false' (enforced by the pre-checks).
+#
+# It is installed on every node of the 'postgres_cluster' group. Each instance knows all the nodes and
+# follows Patroni failovers on its own, sends writes to the primary and balances reads over the replicas.
+#
+# Note: PgDog is licensed under AGPL-3.0, unlike the other components installed by Autobase.
+
+pgdog_install: false # or 'true' to use PgDog instead of PgBouncer and HAProxy
+# renovate: datasource=github-releases depName=pgdogdev/pgdog extractVersion=^v(?<version>.*)$
+pgdog_version: 0.1.64
+pgdog_conf_dir: "/etc/pgdog"
+pgdog_listen_addr: "0.0.0.0" # Listen on all interfaces. Or use "{{ bind_address }}" to listen on a specific IP address.
+pgdog_listen_port: 6432
+pgdog_workers: "{{ (ansible_processor_vcpus | default(1) | int) * 2 }}" # the number of threads, two per vCPU are recommended
+# Every PgDog instance opens up to 'pool_size' connections to each node, per database and per user.
+# So a primary can receive 'pool_size * <number of nodes>' connections for a single database and user.
+pgdog_default_pool_size: 20
+pgdog_min_pool_size: 1
+pgdog_pooler_mode: "transaction" # transaction, session or statement (read/write splitting needs 'transaction')
+pgdog_read_write_split: "include_primary" # include_primary, exclude_primary, include_primary_if_replica_banned, prefer_primary
+pgdog_read_write_strategy: "conservative" # conservative, aggressive
+pgdog_load_balancing_strategy: "random" # random, round_robin, least_active_connections (ties go to the primary on idle clusters)
+pgdog_lsn_check_interval: 1000 # how often (in milliseconds) to check the role and the replication lag of each node
+# Stop reading from replicas that lag behind by this amount of bytes (100MB, like 'patroni_maximum_lag_on_replica'), or "" to disable.
+# Replicas without valid lag measurements can also be excluded until measurements are available and their ban expires.
+pgdog_ban_replica_lag_bytes: 104857600
+# Ban expiry timeout in milliseconds (upstream default: 5 minutes). Monitoring continues while a target is banned.
+# An expired ban is cleared only when the target is healthy and its replication lag is below the configured thresholds.
+pgdog_ban_timeout: 30000
+# Maximum time in milliseconds to wait for a server connection. This is not a guaranteed failover duration;
+# recovery also depends on role detection, connection errors and application retries.
+pgdog_checkout_timeout: 5000
+pgdog_shutdown_timeout: 60000 # how long (in milliseconds) to wait for active transactions on shutdown
+pgdog_prepared_statements_limit: 5000
+# PgDog does not support 'auth_query': with passthrough authentication it verifies the passwords against Postgres
+# on their first use and when they change. Clients have to send their passwords to PgDog in clear text, so it
+# requires TLS, unless the 'enabled_plain*' mode is used. Set "disabled" to authenticate only the 'pgdog_users'.
+pgdog_passthrough_auth: "{{ 'enabled_allow_change' if tls_cert_generate | bool else 'enabled_plain_allow_change' }}"
+pgdog_auth_type: "{{ 'md5' if postgresql_password_encryption_algorithm == 'md5' else 'scram' }}" # for 'pgdog_users'
+pgdog_admin_username: "admin"
+pgdog_admin_password: "" # If not defined, a password will be generated automatically during deployment
+pgdog_tls_dir: "{{ tls_dir }}"
+pgdog_client_tls_required: "{{ tls_cert_generate | bool }}" # reject the clients that do not use TLS
+pgdog_tls_cert_file: "{{ tls_cert }}"
+pgdog_tls_key_file: "{{ tls_privatekey }}"
+pgdog_tls_ca_file: "{{ tls_ca_cert }}"
+pgdog_tls_verify: "{{ 'verify_ca' if tls_cert_generate | bool else 'prefer' }}" # disabled, prefer, verify_ca, verify_full
+pgdog_healthcheck_port: "" # enable the HTTP health check for external load balancers on this port
+pgdog_openmetrics_port: "" # enable the OpenMetrics (Prometheus) endpoint on this port
+pgdog_general_parameters: {} # any other option of the [general] section, for example: { query_timeout: 60000 }
+
+# PgDog has no wildcard for databases, like the "*" of PgBouncer: it serves only the databases it is configured with.
+# All the 'postgresql_databases' are added automatically. Use this list to add others, or to change their settings.
+# 'pool_parameters' accepts the options of the [[databases]] section (https://docs.pgdog.dev/configuration/pgdog.toml/databases/)
+pgdog_pools:
+  - { name: "postgres", dbname: "postgres", pool_parameters: {} }
+#  - { name: "mydatabase", dbname: "mydatabase", pool_parameters: { pool_size: 20, pooler_mode: "session" } }
+
+# The users for the users.toml file (https://docs.pgdog.dev/configuration/users.toml/users/).
+# Only required if 'pgdog_passthrough_auth' is "disabled", or to customize the pool of a user.
+pgdog_users: []
+#  - { name: "mydb-user", database: "mydatabase", password: "mydb-user-pass", pool_size: 20 }
 
 ############################################################
 # Patroni parameters
@@ -1168,7 +1268,7 @@ firewall_allowed_tcp_ports_for:
   postgres_cluster:
     - "{{ ansible_ssh_port | default(22) }}"
     - "{{ postgresql_port }}"
-    - "{{ pgbouncer_listen_port }}"
+    - "{{ connection_pooler_port }}"
     - "{{ patroni_restapi_port }}"
     - "19999" # Netdata
   #    - "10050"  # Zabbix agent
@@ -1394,6 +1494,8 @@ glibc_langpack:
 etcd_package_repo: "https://github.com/etcd-io/etcd/releases/download/v{{ etcd_version }}/etcd-v{{ etcd_version }}-linux-{{ etcd_architecture_map[ansible_architecture] }}.tar.gz"
 vip_manager_package_repo: "https://github.com/cybertec-postgresql/vip-manager/releases/download/v{{ vip_manager_version }}/vip-manager_{{ vip_manager_version }}_Linux_{{ vip_manager_architecture_map[ansible_architecture] }}.{{ pkg_type }}"
 confd_package_repo: "https://github.com/abtreece/confd/releases/download/v{{ confd_version }}/confd-v{{ confd_version }}-linux-{{ confd_architecture_map[ansible_architecture] }}.tar.gz"
+pgdog_package_repo: "https://github.com/pgdogdev/pgdog/releases/download/v{{ pgdog_version }}/pgdog-v{{ pgdog_version }}-{{ ansible_architecture }}-unknown-linux-gnu.tar.gz"
+pgdog_package_checksum: "sha256:{{ pgdog_package_repo }}.sha256" # or "" to skip the verification, for example when using a mirror
 
 # You can also download the deb/rpm packages into the 'files/' directory.
 # Packages from this directory will be used during installation (optional).

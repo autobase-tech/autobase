@@ -1,0 +1,104 @@
+---
+# 🚀 These tests check the client-facing behaviour of PgDog, when the converge step installed it instead of PgBouncer and HAProxy.
+# They end with a switchover, so they should be included after the other tests.
+- name: Molecule.tests.roles.pgdog.main | Test PgDog
+  become: true
+  vars:
+    # 'postgresql_version' is redefined by the variable tests, use the version installed by converge.yml
+    psql_bin: "{{ '/usr/lib/postgresql/' ~ test_postgresql_version ~ '/bin/psql' if ansible_os_family == 'Debian'
+      else '/usr/pgsql-' ~ test_postgresql_version ~ '/bin/psql' }}"
+    client_uri: "postgresql://db1_user@127.0.0.1:6432/db1?sslmode=require&connect_timeout=10"
+  environment:
+    PGPASSWORD: "db1_user-test-pass"
+  when: pgdog_install | default(false) | bool
+  block:
+    - name: Check that the pgdog service is running
+      ansible.builtin.systemd:
+        name: pgdog
+      register: pgdog_service
+      failed_when: pgdog_service.status.ActiveState != "active"
+
+    - name: Check that PgBouncer and HAProxy are not installed
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop:
+        - /etc/systemd/system/pgbouncer.service
+        - /etc/haproxy/haproxy.cfg
+      register: replaced_services
+      failed_when: replaced_services.stat.exists
+
+    - name: Create a test table
+      ansible.builtin.command: >-
+        {{ psql_bin }} "{{ client_uri }}" -tAXc "CREATE TABLE IF NOT EXISTS pgdog_test (host text, stage text)"
+      run_once: true # noqa run-once
+      changed_when: true
+
+    - name: Check that every node accepts writes, whatever its role is
+      ansible.builtin.command: >-
+        {{ psql_bin }} "{{ client_uri }}" -tAXc "INSERT INTO pgdog_test VALUES ('{{ inventory_hostname }}', 'deploy') RETURNING host"
+      register: write_result
+      changed_when: true
+      failed_when: inventory_hostname not in write_result.stdout
+
+    - name: Check that the reads are balanced to the replicas
+      ansible.builtin.shell: |
+        set -o pipefail;
+        for i in $(seq 1 30); do
+          {{ psql_bin }} "{{ client_uri }}" -tAXc "SELECT pg_is_in_recovery()"
+        done | sort -u
+      args:
+        executable: /bin/bash
+      register: read_result
+      changed_when: false
+      # PgDog bans the replicas it has not checked yet, for up to 'pgdog_ban_timeout' after a restart
+      until: "'t' in read_result.stdout_lines"
+      retries: 12
+      delay: 5
+
+    - name: Check that a wrong password is rejected
+      ansible.builtin.command: >-
+        {{ psql_bin }} "{{ client_uri }}" -tAXc "SELECT 1"
+      environment:
+        PGPASSWORD: "wrong-password"
+      register: wrong_password_result
+      changed_when: false
+      failed_when: wrong_password_result.rc == 0
+
+    - name: Check that the clients are required to use TLS
+      ansible.builtin.command: >-
+        {{ psql_bin }} "postgresql://db1_user@127.0.0.1:6432/db1?sslmode=disable&connect_timeout=10" -tAXc "SELECT 1"
+      register: no_tls_result
+      changed_when: false
+      failed_when: no_tls_result.rc == 0
+
+    - name: Check that the clients can connect through the VIP
+      ansible.builtin.command: >-
+        {{ psql_bin }} "postgresql://db1_user@{{ test_cluster_vip }}:6432/db1?sslmode=require&connect_timeout=10" -tAXc "SELECT 1"
+      changed_when: false
+      when: test_cluster_vip | default('') | length > 0
+
+    - name: Get the Patroni leader
+      ansible.builtin.command: patronictl -c /etc/patroni/patroni.yml list -f json
+      register: patroni_members
+      changed_when: false
+      run_once: true # noqa run-once
+      environment:
+        PATH: "{{ ansible_env.PATH }}:/usr/bin:/usr/local/bin"
+
+    - name: Perform a switchover
+      ansible.builtin.command: >-
+        patronictl -c /etc/patroni/patroni.yml switchover test-pgcluster --force
+        --leader {{ (patroni_members.stdout | from_json | selectattr('Role', 'equalto', 'Leader') | first).Member }}
+      run_once: true # noqa run-once
+      changed_when: true
+      environment:
+        PATH: "{{ ansible_env.PATH }}:/usr/bin:/usr/local/bin"
+
+    - name: Check that every node follows the new leader
+      ansible.builtin.command: >-
+        {{ psql_bin }} "{{ client_uri }}" -tAXc "INSERT INTO pgdog_test VALUES ('{{ inventory_hostname }}', 'switchover') RETURNING host"
+      register: write_after_switchover
+      changed_when: true
+      until: write_after_switchover.rc == 0
+      retries: 10
+      delay: 3

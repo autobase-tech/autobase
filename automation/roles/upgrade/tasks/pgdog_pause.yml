@@ -1,0 +1,37 @@
+---
+- name: Enable PgDog maintenance mode and drain client transactions
+  become: true
+  become_user: postgres
+  vitabaks.autobase.pgdog_maintenance:
+    servers: >-
+      {% set servers = [] -%}
+      {% for host in groups['primary'] + groups.get('secondary', []) -%}
+      {% set _ = servers.append(hostvars[host]['patroni_bind_address'] | default(hostvars[host]['bind_address'], true)) -%}
+      {% endfor -%}
+      {{ servers }}
+    state: enabled
+    pgdog_port: "{{ pgdog_listen_port }}"
+    admin_user: "{{ pgdog_admin_username }}"
+    postgres_port: "{{ postgresql_port }}"
+    postgres_user: "{{ patroni_superuser_username }}"
+    passfile: "{{ _postgresql_cli_passfile_path }}"
+    terminate_after: "{{ pg_pool_pause_terminate_after }}"
+    timeout: "{{ pg_pool_pause_stop_after }}"
+    query_age_threshold: "{{ pg_slow_active_query_treshold_to_terminate }}"
+  register: pgdog_pool_pause_result
+  ignore_errors: true
+  when: inventory_hostname in groups['primary']
+
+# Stop, if it was not possible to hold the client queries
+- block:
+    - name: Perform rollback
+      ansible.builtin.include_tasks: rollback.yml
+
+    - name: "ERROR: Client queries cannot be held in PgDog"
+      ansible.builtin.fail:
+        msg:
+          - "{{ hostvars[groups['primary'][0]].pgdog_pool_pause_result.msg | default('Client transactions did not drain.') }}"
+          - "Operation errors: {{ hostvars[groups['primary'][0]].pgdog_pool_pause_result.errors | default({}) }}"
+          - "Maintenance cleanup errors: {{ hostvars[groups['primary'][0]].pgdog_pool_pause_result.cleanup_errors | default({}) }}"
+      run_once: true
+  when: hostvars[groups['primary'][0]].pgdog_pool_pause_result is failed

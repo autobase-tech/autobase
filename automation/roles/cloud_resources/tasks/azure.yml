@@ -232,8 +232,8 @@
                   haproxy_listen_port.replicas_sync | default('5002'),
                   haproxy_listen_port.replicas_async | default('5003')
                 ] if with_haproxy_load_balancing | bool else []) +
-                ([pgbouncer_listen_port | default('6432')] if not with_haproxy_load_balancing | bool and pgbouncer_install | bool else []) +
-                ([postgresql_port | default('5432')] if not with_haproxy_load_balancing | bool and not pgbouncer_install | bool else []),
+                ([connection_pooler_port | default('6432')] if not with_haproxy_load_balancing | bool and connection_pooler_enabled | bool else []) +
+                ([postgresql_port | default('5432')] if not with_haproxy_load_balancing | bool and not connection_pooler_enabled | bool else []),
               'source_address_prefix': '0.0.0.0/0',
               'access': 'Allow',
               'priority': 1300,
@@ -251,7 +251,7 @@
                   haproxy_listen_port.replicas_async | default('5003'),
                   haproxy_listen_port.stats | default('7000')
                 ] if with_haproxy_load_balancing | bool else []) +
-                ([pgbouncer_listen_port | default('6432')] if pgbouncer_install | bool else []) +
+                ([connection_pooler_port | default('6432')] if connection_pooler_enabled | bool else []) +
                 [
                   postgresql_port | default('5432'),
                   patroni_restapi_port | default('8008'),
@@ -359,22 +359,18 @@
         - item.ansible_facts.azure_vm.storage_profile.data_disks | length > 0
         - item.ansible_facts.azure_vm.storage_profile.data_disks[0].managed_disk is defined
 
-    # Each endpoint has its own pool and Patroni health probe.
+    # Each endpoint has its own pool; PgDog uses one endpoint and a TCP health probe.
     - name: "Set variable: azure_lb_roles, azure_load_balancer_endpoints, azure_existing_lbs"
       ansible.builtin.set_fact:
         azure_lb_roles: >-
-          {{ (['primary']
-            + (['replica'] if cloud_load_balancer_replica | bool and server_count | int > 1 else [])
-            + (['sync'] if cloud_load_balancer_replica_sync | bool and server_count | int > 1 and synchronous_mode | bool else [])
-            + (['async'] if cloud_load_balancer_replica_async | bool and server_count | int > 1 and synchronous_mode | bool else []))
-            if cloud_load_balancer | bool else [] }}
+          {{ cloud_load_balancer_roles if cloud_load_balancer | bool else [] }}
         azure_load_balancer_endpoints: {}
         azure_existing_lbs: {}
 
     - name: "Azure: Gather information about Load Balancers"
       azure.azcollection.azure_rm_loadbalancer_info:
         resource_group: "{{ azure_resource_group_name }}"
-        name: "{{ patroni_cluster_name }}-{{ azure_lb_role }}"
+        name: "{{ cloud_load_balancer_names[azure_lb_role] }}"
       loop: "{{ azure_lb_roles }}"
       loop_control:
         loop_var: azure_lb_role
@@ -394,7 +390,7 @@
             existing_frontend | length == 0 or
             ((existing_frontend.properties.publicIPAddress.id | default('') | length > 0) == (database_public_access | bool))
         fail_msg: >-
-          Load Balancer '{{ patroni_cluster_name }}-{{ azure_lb_role }}' has a frontend that does not match 'database_public_access'.
+          Load Balancer '{{ cloud_load_balancer_names[azure_lb_role] }}' has a frontend that does not match 'database_public_access'.
           Migrate the frontend separately before changing its public/private access mode.
         quiet: true
       loop: "{{ azure_lb_roles }}"
@@ -402,12 +398,12 @@
         loop_var: azure_lb_role
       vars:
         existing_frontend: "{{ azure_existing_lbs[azure_lb_role].properties.frontendIPConfigurations | default([])
-          | selectattr('name', 'equalto', patroni_cluster_name ~ '-' ~ azure_lb_role ~ '-frontend') | first | default({}) }}"
+          | selectattr('name', 'equalto', cloud_load_balancer_names[azure_lb_role] ~ '-frontend') | first | default({}) }}"
 
     - name: "Azure: WARNING: an existing Load Balancer frontend needs zone redundancy"
       ansible.builtin.debug:
         msg: >-
-          Load Balancer '{{ patroni_cluster_name }}-{{ azure_lb_role }}' has a zonal frontend or an internal frontend
+          Load Balancer '{{ cloud_load_balancer_names[azure_lb_role] }}' has a zonal frontend or an internal frontend
           without explicit zone redundancy.
           Its address and placement are preserved. Migrate this frontend to zone redundancy separately
           before relying on the load balancer to survive a zone failure.
@@ -423,12 +419,12 @@
           | selectattr('zones', 'defined') | selectattr('zones', '!=', None)
           | map(attribute='zones') | map('length') | select('equalto', 1) | list | length > 0)
           or (azure_existing_public_ips.publicipaddresses
-          | selectattr('name', 'equalto', patroni_cluster_name ~ '-' ~ azure_lb_role ~ '-public-ip')
+          | selectattr('name', 'equalto', cloud_load_balancer_names[azure_lb_role] ~ '-public-ip')
           | selectattr('zones', 'defined') | selectattr('zones', '!=', None)
           | map(attribute='zones') | map('length') | select('equalto', 1) | list | length > 0)
       vars:
         existing_frontend: "{{ azure_existing_lbs[azure_lb_role].properties.frontendIPConfigurations | default([])
-          | selectattr('name', 'equalto', patroni_cluster_name ~ '-' ~ azure_lb_role ~ '-frontend') | first | default({}) }}"
+          | selectattr('name', 'equalto', cloud_load_balancer_names[azure_lb_role] ~ '-frontend') | first | default({}) }}"
 
     - name: "Azure: Create public IP addresses for Load Balancers"
       azure.azcollection.azure_rm_publicipaddress:
@@ -445,7 +441,7 @@
       loop_control:
         loop_var: azure_lb_role
       vars:
-        ip_name: "{{ patroni_cluster_name }}-{{ azure_lb_role }}-public-ip"
+        ip_name: "{{ cloud_load_balancer_names[azure_lb_role] }}-public-ip"
         existing_ip_names: "{{ azure_existing_public_ips.publicipaddresses | map(attribute='name') | list }}"
       register: azure_lb_public_ips
       when: database_public_access | bool
@@ -454,8 +450,8 @@
     - name: "Azure: Gather existing backend addresses"
       azure.azcollection.azure_rm_loadbalancerbackendaddresspool_info:
         resource_group: "{{ azure_resource_group_name }}"
-        load_balancer_name: "{{ patroni_cluster_name }}-{{ azure_lb_role }}"
-        name: "{{ patroni_cluster_name }}-{{ azure_lb_role }}-backend"
+        load_balancer_name: "{{ cloud_load_balancer_names[azure_lb_role] }}"
+        name: "{{ cloud_load_balancer_names[azure_lb_role] }}-backend"
       loop: "{{ azure_lb_roles }}"
       loop_control:
         loop_var: azure_lb_role
@@ -482,9 +478,9 @@
           - name: "{{ lb_name }}-backend"
         probes:
           - name: "{{ lb_name }}-health-probe"
-            protocol: "{{ patroni_restapi_protocol | capitalize }}"
-            port: "{{ patroni_restapi_port | int }}"
-            request_path: "/{{ azure_lb_role }}"
+            protocol: "{{ 'Tcp' if pgdog_install | bool else patroni_restapi_protocol | capitalize }}"
+            port: "{{ (pgdog_listen_port if pgdog_install | bool else patroni_restapi_port) | int }}"
+            request_path: "{{ omit if pgdog_install | bool else '/' ~ azure_lb_role }}"
             interval: 5
             fail_count: 2
         load_balancing_rules:
@@ -505,8 +501,8 @@
         loop_var: azure_lb_role
       register: azure_load_balancers
       vars:
-        lb_name: "{{ patroni_cluster_name }}-{{ azure_lb_role }}"
-        lb_port: "{{ (pgbouncer_listen_port | default(6432) if pgbouncer_install | bool else postgresql_port | default(5432)) | int }}"
+        lb_name: "{{ cloud_load_balancer_names[azure_lb_role] }}"
+        lb_port: "{{ (connection_pooler_port | default(6432) if connection_pooler_enabled | bool else postgresql_port | default(5432)) | int }}"
         existing_frontend: "{{ azure_existing_lbs[azure_lb_role].properties.frontendIPConfigurations | default([])
           | selectattr('name', 'equalto', lb_name ~ '-frontend') | first | default({}) }}"
 
@@ -517,7 +513,7 @@
             'public_ip': (azure_lb_public_ips.results | selectattr('azure_lb_role', 'equalto', item.azure_lb_role)
               | map(attribute='state.ip_address') | first) if database_public_access | bool else '',
             'private_ip': (item.state.frontend_ip_configurations
-              | selectattr('name', 'equalto', patroni_cluster_name ~ '-' ~ item.azure_lb_role ~ '-frontend')
+              | selectattr('name', 'equalto', cloud_load_balancer_names[item.azure_lb_role] ~ '-frontend')
               | first).private_ip_address | default('', true)
           }}) }}
       loop: "{{ azure_load_balancers.results }}"
@@ -527,8 +523,8 @@
     - name: "Azure: Configure Load Balancer backend pools"
       azure.azcollection.azure_rm_loadbalancerbackendaddresspool:
         resource_group: "{{ azure_resource_group_name }}"
-        load_balancer_name: "{{ patroni_cluster_name }}-{{ azure_lb_role }}"
-        name: "{{ patroni_cluster_name }}-{{ azure_lb_role }}-backend"
+        load_balancer_name: "{{ cloud_load_balancer_names[azure_lb_role] }}"
+        name: "{{ cloud_load_balancer_names[azure_lb_role] }}-backend"
         virtual_network: "{{ existing_pool.virtual_network | default(omit, true) }}"
         sync_mode: "{{ existing_pool.sync_mode | default(omit, true) }}"
         drain_period_in_seconds: "{{ existing_pool.drain_period_in_seconds | default(omit) }}"
@@ -655,37 +651,23 @@
     - name: "Azure: Delete Load Balancer"
       azure.azcollection.azure_rm_loadbalancer:
         resource_group: "{{ azure_resource_group | default('postgres-cluster-resource-group-' ~ server_location, true) }}"
-        name: "{{ patroni_cluster_name }}-{{ item }}"
+        name: "{{ cloud_load_balancer_names[item] }}"
         location: "{{ server_location }}"
         state: absent
-      loop:
-        - "primary"
-        - "replica"
-        - "sync"
-        - "async"
+      loop: "{{ cloud_load_balancer_roles }}"
       loop_control:
-        label: "{{ patroni_cluster_name }}-{{ item }}"
-      when: cloud_load_balancer | bool and
-        (item == 'primary' or
-        (item == 'replica' and server_count | int > 1) or
-        (item in ['sync', 'async'] and server_count | int > 1 and synchronous_mode | bool))
+        label: "{{ cloud_load_balancer_names[item] }}"
+      when: cloud_load_balancer | bool
 
     - name: "Azure: Delete Load Balancer public IP address"
       azure.azcollection.azure_rm_publicipaddress:
         resource_group: "{{ azure_resource_group | default('postgres-cluster-resource-group-' ~ server_location, true) }}"
-        name: "{{ patroni_cluster_name }}-{{ item }}-public-ip"
+        name: "{{ cloud_load_balancer_names[item] }}-public-ip"
         state: absent
-      loop:
-        - "primary"
-        - "replica"
-        - "sync"
-        - "async"
+      loop: "{{ cloud_load_balancer_roles }}"
       loop_control:
-        label: "{{ patroni_cluster_name }}-{{ item }}-public-ip"
-      when: database_public_access | bool and cloud_load_balancer | bool and
-        (item == 'primary' or
-        (item == 'replica' and server_count | int > 1) or
-        (item in ['sync', 'async'] and server_count | int > 1 and synchronous_mode | bool))
+        label: "{{ cloud_load_balancer_names[item] }}-public-ip"
+      when: database_public_access | bool and cloud_load_balancer | bool
 
     - name: "Azure: Delete Security Group"
       azure.azcollection.azure_rm_securitygroup:

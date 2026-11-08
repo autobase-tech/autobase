@@ -1,0 +1,12 @@
+---
+# Release the client queries held in PgDog
+- name: Disable PgDog maintenance mode
+  become: true
+  become_user: postgres
+  vitabaks.autobase.pgdog_maintenance:
+    servers:
+      - "{{ patroni_bind_address | default(bind_address, true) }}"
+    state: disabled
+    pgdog_port: "{{ pgdog_listen_port }}"
+    admin_user: "{{ pgdog_admin_username }}"
+    passfile: "{{ _postgresql_cli_passfile_path }}"

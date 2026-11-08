@@ -1,0 +1,32 @@
+---
+- name: Install pgdog
+  ansible.builtin.import_tasks: install.yml
+
+- name: Configure pgdog systemd service file
+  ansible.builtin.template:
+    src: templates/pgdog.service.j2
+    dest: /etc/systemd/system/pgdog.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: "restart pgdog"
+  tags: pgdog_service, pgdog
+
+- name: Configure pgdog
+  ansible.builtin.import_tasks: config.yml
+
+- name: Disable PgBouncer before starting PgDog
+  ansible.builtin.import_role:
+    name: vitabaks.autobase.pgbouncer
+    tasks_from: disable
+  when: pgbouncer_disable | default(false) | bool
+  tags: pgdog
+
+# The handlers only restart it after a change, which does not start the service on a node that is added again.
+- name: Ensure pgdog service is enabled and running
+  ansible.builtin.systemd:
+    daemon_reload: true
+    name: pgdog
+    enabled: true
+    state: started
+  tags: pgdog_service, pgdog

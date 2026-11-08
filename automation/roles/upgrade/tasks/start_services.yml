@@ -41,6 +41,14 @@
     - hostvars[groups['primary'][0]].pgbouncer_pool_pause_result is defined
     - hostvars[groups['primary'][0]].pgbouncer_pool_pause_result is succeeded
 
+# if 'pgdog_install' is 'true' and 'pgdog_pool_pause' is 'true'
+- name: Disable maintenance mode of PgDog on the leader
+  ansible.builtin.include_tasks: pgdog_resume.yml
+  when:
+    - inventory_hostname in groups['primary']
+    - hostvars[groups['primary'][0]].pgdog_pool_pause_result is defined
+    - hostvars[groups['primary'][0]].pgdog_pool_pause_result is succeeded
+
 - name: Start Patroni service on the cluster replica
   become: true
   become_user: root
@@ -82,6 +90,14 @@
     - inventory_hostname in groups.get('secondary', [])
     - hostvars[groups['primary'][0]].pgbouncer_pool_pause_result is defined
     - hostvars[groups['primary'][0]].pgbouncer_pool_pause_result is succeeded
+
+# if 'pgdog_install' is 'true' and 'pgdog_pool_pause' is 'true'
+- name: Disable maintenance mode of PgDog on the replica
+  ansible.builtin.include_tasks: pgdog_resume.yml
+  when:
+    - inventory_hostname in groups.get('secondary', [])
+    - hostvars[groups['primary'][0]].pgdog_pool_pause_result is defined
+    - hostvars[groups['primary'][0]].pgdog_pool_pause_result is succeeded
 
 - name: Check PostgreSQL is started and accepting connections
   ansible.builtin.command: "{{ pg_new_bindir }}/pg_isready -p {{ postgresql_port }}"

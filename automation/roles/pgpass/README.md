@@ -15,7 +15,7 @@ Creates and manages the `~/.pgpass` file for the postgres user. The role ensures
 postgresql_pgpass:
   - "localhost:{{ postgresql_port }}:*:{{ patroni_superuser_username }}:{{ patroni_superuser_password }}"
   - "{{ bind_address }}:{{ postgresql_port }}:*:{{ patroni_superuser_username }}:{{ patroni_superuser_password }}"
-  - "*:{{ pgbouncer_listen_port }}:*:{{ patroni_superuser_username }}:{{ patroni_superuser_password }}"
+  - "*:{{ connection_pooler_port }}:*:{{ patroni_superuser_username }}:{{ patroni_superuser_password }}"
 ```
 
 
@@ -49,3 +49,7 @@ The file is owned by `postgres` with permissions `0600` and managed separately
 from the user's `~/.pgpass` and Patroni's `.pgpass_patroni`.
 
 PgBouncer pause requires the same `postgresql_cli_passfile` path on all database hosts.
+
+With `pgdog_install: true`, the file also holds the PgDog admin credentials
+(`pgdog_admin_username`, for the `admin` database on `pgdog_listen_port`), which
+the upgrade uses for the `MAINTENANCE` commands.

@@ -46,7 +46,9 @@
       vars:
         source_group: primary
         postgresql_cluster_maintenance: true
-      when: patroni_superuser_password | default('') | length < 1
+      when: >-
+        patroni_superuser_password | default('') | length < 1 or
+        (pgdog_install | default(false) | bool and pgdog_admin_password | default('') | length < 1)
 
     - name: "[Prepare] PostgreSQL CLI password files"
       ansible.builtin.import_role:
