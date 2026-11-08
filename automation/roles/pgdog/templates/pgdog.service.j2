@@ -1,0 +1,24 @@
+[Unit]
+Description=PgDog connection pooler, load balancer and database sharder for PostgreSQL
+Documentation=https://docs.pgdog.dev
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+
+User=postgres
+Group=postgres
+
+WorkingDirectory={{ pgdog_conf_dir }}
+ExecStart=/usr/local/bin/pgdog --config {{ pgdog_conf_dir }}/pgdog.toml --users {{ pgdog_conf_dir }}/users.toml run
+# The service counts as started once PgDog accepts connections, so a start or restart fails if it does not within 60 seconds.
+ExecStartPost=/bin/bash -c 'for i in $$(seq 60); do (exec 3<>/dev/tcp/{{ {'0.0.0.0': '127.0.0.1', '::': '::1'}.get(pgdog_listen_addr, pgdog_listen_addr) }}/{{ pgdog_listen_port }}) 2>/dev/null && exit 0; sleep 1; done; exit 1'
+ExecReload=/bin/kill -SIGHUP $MAINPID
+Restart=on-failure
+TimeoutStopSec={{ (pgdog_shutdown_timeout | int // 1000) + 15 }}
+
+LimitNOFILE=100000
+
+[Install]
+WantedBy=multi-user.target

@@ -65,6 +65,20 @@
     - name: Prepare PostgreSQL CLI password file
       ansible.builtin.import_tasks: "{{ role_path }}/../pgpass/tasks/automation.yml"
 
+    - name: "Check if {{ pgbouncer_auth_username | default('') }} user exists"
+      become: true
+      become_user: postgres
+      community.postgresql.postgresql_user:
+        name: "{{ pgbouncer_auth_username }}"
+        password: "{{ pgbouncer_auth_password | default(omit, true) }}"
+        role_attr_flags: "LOGIN"
+        login_host: "127.0.0.1"
+        login_port: "{{ postgresql_port }}"
+        login_user: "{{ patroni_superuser_username }}"
+        login_password: "{{ patroni_superuser_password }}"
+        login_db: "postgres"
+        state: present
+
     - name: "Check if 'user_search' function exists"
       become: true
       become_user: postgres
@@ -75,21 +89,6 @@
         PGPASSFILE: "{{ _postgresql_cli_passfile_path }}"
       register: exists_func_user
       changed_when: false
-
-    - name: "Check if {{ pgbouncer_auth_username | default('') }} user exists"
-      become: true
-      become_user: postgres
-      community.postgresql.postgresql_user:
-        name: "{{ pgbouncer_auth_username }}"
-        password: "{{ pgbouncer_auth_password | default(omit) }}"
-        role_attr_flags: "LOGIN"
-        login_host: "127.0.0.1"
-        login_port: "{{ postgresql_port }}"
-        login_user: "{{ patroni_superuser_username }}"
-        login_password: "{{ patroni_superuser_password }}"
-        login_db: "postgres"
-        state: present
-      when: exists_func_user.stdout == "f"
 
     - name: "Create 'user_search' function for pgbouncer 'auth_query' option"
       become: true

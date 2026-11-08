@@ -57,6 +57,10 @@
 - - pgbouncer_restart
 - - pgbouncer_generate_userlist
 - - pgbouncer_auth_query
+- pgdog
+- - pgdog_install
+- - pgdog_conf
+- - pgdog_service
 - load_balancing
 - - haproxy
 - - - haproxy_requirements

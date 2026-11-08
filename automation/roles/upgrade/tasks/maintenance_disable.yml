@@ -55,7 +55,7 @@
     - name: Make sure that the cluster ip address (VIP) "{{ cluster_vip | default('') }}" is running
       ansible.builtin.wait_for:
         host: "{{ cluster_vip }}"
-        port: "{{ pgbouncer_listen_port }}"
+        port: "{{ connection_pooler_port }}"
         state: started
         timeout: 30
         delay: 2
@@ -65,5 +65,4 @@
   when:
     - not with_haproxy_load_balancing | bool
     - cluster_vip | length > 0
-    - pgbouncer_install | bool
-    - pgbouncer_pool_pause | bool
+    - connection_pooler_pause | bool

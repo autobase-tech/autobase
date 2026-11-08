@@ -325,6 +325,9 @@
     - role: vitabaks.autobase.pgbouncer
       when: pgbouncer_install | default(true) | bool
 
+    - role: vitabaks.autobase.pgdog
+      when: pgdog_install | default(false) | bool
+
     - role: vitabaks.autobase.pgpass
 
     - role: vitabaks.autobase.patroni
@@ -343,10 +346,11 @@
     - role: vitabaks.autobase.postgresql_schemas
       when: inventory_hostname == groups['master'][0]
 
-    - role: vitabaks.autobase.postgresql_privs
+    - role: vitabaks.autobase.postgresql_extensions
       when: inventory_hostname == groups['master'][0]
 
-    - role: vitabaks.autobase.postgresql_extensions
+    # after the extensions, so that privileges can be granted on their objects
+    - role: vitabaks.autobase.postgresql_privs
       when: inventory_hostname == groups['master'][0]
 
     - role: vitabaks.autobase.postgresql_index_maintenance

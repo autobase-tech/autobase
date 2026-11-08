@@ -19,25 +19,26 @@ jobs:
           - distro: debian12
             tag: latest
             namespace: geerlingguy
+          - distro: ubuntu2604
+            tag: latest
+            namespace: geerlingguy
           - distro: ubuntu2404
             tag: latest
             namespace: geerlingguy
-          - distro: ubuntu2204
+          - distro: rockylinux10
             tag: latest
             namespace: geerlingguy
-# TODO: error "rsync: connection unexpectedly closed" in GitHub CI environment (need to investigate)
-#          - distro: rockylinux10
-#            tag: latest
-#            namespace: geerlingguy
-#          - distro: rockylinux9
-#            tag: latest
-#            namespace: geerlingguy
-#          - distro: almalinux10
-#            tag: latest
-#            namespace: glillico
-#          - distro: almalinux9
-#            tag: latest
-#            namespace: glillico
+          - distro: rockylinux9
+            tag: latest
+            namespace: geerlingguy
+          - distro: almalinux10
+            tag: latest
+            namespace: glillico
+          - distro: almalinux9
+            tag: latest
+            namespace: glillico
+# TODO: the PGDG repository URLs use "$releasever_major.$releasever_minor", and $releasever_minor
+# is empty in these images, so dnf requests "rhel-10.-x86_64" and gets a 404 (pgdg-redhat-repo 42.0-69)
 #          - distro: oraclelinux10
 #            tag: latest
 #            namespace: glillico
@@ -65,6 +66,16 @@ jobs:
 
       - name: Install dependencies
         run: make bootstrap-dev
+
+      # The Ubuntu runner confines unix_chkpwd with an AppArmor profile that is attached by path,
+      # so it also applies to the binary inside the RHEL containers. There /etc/shadow has mode 0000
+      # and the profile does not allow CAP_DAC_OVERRIDE, so the PAM account check of sshd fails for
+      # the postgres user, and rsync to the replicas fails with "connection unexpectedly closed".
+      - name: Unload the AppArmor profile for unix_chkpwd
+        run: |
+          if [ -f /etc/apparmor.d/unix-chkpwd ]; then
+            sudo apparmor_parser -R /etc/apparmor.d/unix-chkpwd
+          fi
 
       - name: Run Molecule tests for pg_upgrade
         run: make molecule-test-scenario

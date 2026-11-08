@@ -1,0 +1,23 @@
+---
+# One host at a time, so that the clients can use the other nodes in the meantime.
+# The restart only succeeds once PgDog accepts connections (see ExecStartPost in the unit).
+# Note: a failure does not stop the restart of the other hosts of the same play.
+# The update_pgcluster.yml playbook updates one host per play (serial: 1), so it stops after a failure.
+- name: Restart pgdog service
+  ansible.builtin.systemd:
+    daemon_reload: true
+    name: pgdog
+    enabled: true
+    state: restarted
+  register: pgdog_restart_result
+  retries: 3
+  delay: 5
+  until: pgdog_restart_result is success
+  throttle: 1
+  listen: "restart pgdog"
+
+- name: Reload pgdog service
+  ansible.builtin.systemd:
+    name: pgdog
+    state: reloaded
+  listen: "reload pgdog"

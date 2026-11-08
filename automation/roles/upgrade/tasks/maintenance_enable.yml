@@ -59,8 +59,9 @@
 
 # Enable maintenance mode for vip-manager (Type B scheme)
 # if 'pgbouncer_install' is 'true' and 'pgbouncer_pool_pause' is 'true'
+# or 'pgdog_install' is 'true' and 'pgdog_pool_pause' is 'true'
 # Temporarily disable vip-manager service to keep database connections after stopping the Patroni service
-# and then pause the pgbouncer pools.
+# and then pause the connection pooler.
 # This prevents the VIP from being removed when the Patroni leader is unavailable during maintenance.
 - block:
     - name: Update vip-manager service file (comment out 'ExecStopPost')
@@ -78,7 +79,7 @@
     - name: Make sure that the cluster ip address (VIP) "{{ cluster_vip | default('') }}" is running
       ansible.builtin.wait_for:
         host: "{{ cluster_vip }}"
-        port: "{{ pgbouncer_listen_port }}"
+        port: "{{ connection_pooler_port }}"
         state: started
         timeout: 30
         delay: 2
@@ -87,8 +88,7 @@
   when:
     - not with_haproxy_load_balancing | bool
     - cluster_vip | length > 0
-    - pgbouncer_install | bool
-    - pgbouncer_pool_pause | bool
+    - connection_pooler_pause | bool
 
 # Stop Patroni
 - name: Stop Patroni service

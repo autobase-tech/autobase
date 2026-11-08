@@ -243,12 +243,12 @@
             ([
               {
                 'protocol': 'tcp',
-                'ports': pgbouncer_listen_port | default('6432'),
+                'ports': connection_pooler_port | default('6432'),
                 'sources': {
                   'addresses': database_public_allowed_ips | default('0.0.0.0/0,::/0', true) | split(',')
                 }
               }
-            ] if database_public_access | bool and (not with_haproxy_load_balancing | bool and pgbouncer_install | bool) else []) +
+            ] if database_public_access | bool and (not with_haproxy_load_balancing | bool and connection_pooler_enabled | bool) else []) +
             ([
               {
                 'protocol': 'tcp',
@@ -257,7 +257,7 @@
                   'addresses': database_public_allowed_ips | default('0.0.0.0/0,::/0', true) | split(',')
                 }
               }
-            ] if database_public_access | bool and (not with_haproxy_load_balancing | bool and not pgbouncer_install | bool) else [])
+            ] if database_public_access | bool and (not with_haproxy_load_balancing | bool and not connection_pooler_enabled | bool) else [])
           }}
       when:
         - cloud_firewall | bool
@@ -346,12 +346,12 @@
             ([
               {
                 'protocol': 'tcp',
-                'ports': pgbouncer_listen_port | default('6432'),
+                'ports': connection_pooler_port | default('6432'),
                 'sources': {
                   'addresses': [sources_addresses]
                 }
               }
-            ] if pgbouncer_install | bool else []) +
+            ] if connection_pooler_enabled | bool else []) +
             ([
               {
                 'protocol': 'tcp',
@@ -496,27 +496,27 @@
     # Load Balancer
     - name: "Set variable: digital_ocean_load_balancer_port"
       ansible.builtin.set_fact:
-        digital_ocean_load_balancer_port: "{{ pgbouncer_listen_port }}"
+        digital_ocean_load_balancer_port: "{{ connection_pooler_port }}"
       when:
         - cloud_load_balancer | bool
-        - pgbouncer_install | bool
+        - connection_pooler_enabled | bool
         - digital_ocean_load_balancer_port | default('') | length < 1
 
     - name: "Set variable: digital_ocean_load_balancer_target_port"
       ansible.builtin.set_fact:
-        digital_ocean_load_balancer_target_port: "{{ pgbouncer_listen_port }}"
+        digital_ocean_load_balancer_target_port: "{{ connection_pooler_port }}"
       when:
         - cloud_load_balancer | bool
-        - pgbouncer_install | bool
+        - connection_pooler_enabled | bool
         - digital_ocean_load_balancer_target_port | default('') | length < 1
 
-    # if 'pgbouncer_install' is 'false'
+    # if 'connection_pooler_enabled' is 'false'
     - name: "Set variable: digital_ocean_load_balancer_port"
       ansible.builtin.set_fact:
         digital_ocean_load_balancer_port: "{{ postgresql_port }}"
       when:
         - cloud_load_balancer | bool
-        - not pgbouncer_install | bool
+        - not connection_pooler_enabled | bool
         - digital_ocean_load_balancer_port | default('') | length < 1
 
     - name: "Set variable: digital_ocean_load_balancer_target_port"
@@ -524,14 +524,14 @@
         digital_ocean_load_balancer_target_port: "{{ postgresql_port }}"
       when:
         - cloud_load_balancer | bool
-        - not pgbouncer_install | bool
+        - not connection_pooler_enabled | bool
         - digital_ocean_load_balancer_target_port | default('') | length < 1
 
     - name: "DigitalOcean: Create or modify Load Balancer"
       community.digitalocean.digital_ocean_load_balancer:
         oauth_token: "{{ lookup('ansible.builtin.env', 'DO_API_TOKEN') }}"
         state: present
-        name: "{{ patroni_cluster_name }}-{{ item }}"
+        name: "{{ cloud_load_balancer_names[item] }}"
         region: "{{ server_location }}"
         forwarding_rules:
           - entry_protocol: tcp
@@ -539,9 +539,9 @@
             target_protocol: tcp
             target_port: "{{ digital_ocean_load_balancer_target_port }}"
         health_check:
-          protocol: "{{ patroni_restapi_protocol }}"
-          port: "{{ patroni_restapi_port }}"
-          path: "/{{ item }}"
+          protocol: "{{ 'tcp' if pgdog_install | bool else patroni_restapi_protocol }}"
+          port: "{{ pgdog_listen_port if pgdog_install | bool else patroni_restapi_port }}"
+          path: "{{ omit if pgdog_install | bool else '/' ~ item }}"
           check_interval_seconds: 5
           response_timeout_seconds: 3
           unhealthy_threshold: 2
@@ -550,18 +550,10 @@
         size_unit: "{{ (digital_ocean_load_balancer_size_unit | default(3)) if server_location not in ['ams2', 'nyc2', 'sfo1'] else omit }}"
         vpc_uuid: "{{ vpc_id | default(omit) }}"
         tag: "{{ patroni_cluster_name }}" # a tag associated with droplets for load balancing.
-      loop:
-        - primary
-        - replica
-        - sync
-        - async
+      loop: "{{ cloud_load_balancer_roles }}"
       loop_control:
-        label: "{{ patroni_cluster_name }}-{{ item }}"
-      when: cloud_load_balancer | bool and
-        (item == 'primary' or
-        (item == 'replica' and cloud_load_balancer_replica | bool and server_count | int > 1) or
-        (item == 'sync' and cloud_load_balancer_replica_sync | bool and server_count | int > 1 and synchronous_mode | bool) or
-        (item == 'async' and cloud_load_balancer_replica_async | bool and server_count | int > 1 and synchronous_mode | bool))
+        label: "{{ cloud_load_balancer_names[item] }}"
+      when: cloud_load_balancer | bool
 
     - name: "DigitalOcean: Gather information about load balancers"
       community.digitalocean.digital_ocean_load_balancer_info:
@@ -672,21 +664,14 @@
       community.digitalocean.digital_ocean_load_balancer:
         oauth_token: "{{ lookup('ansible.builtin.env', 'DO_API_TOKEN') }}"
         state: absent
-        name: "{{ patroni_cluster_name }}-{{ item }}"
+        name: "{{ cloud_load_balancer_names[item] }}"
         region: "{{ server_location }}"
-      loop:
-        - primary
-        - replica
-        - sync
-        - async
+      loop: "{{ cloud_load_balancer_roles }}"
       loop_control:
-        label: "{{ patroni_cluster_name }}-{{ item }}"
+        label: "{{ cloud_load_balancer_names[item] }}"
       register: do_lb_del_result
       failed_when: do_lb_del_result is failed and ('not found' not in (do_lb_del_result.msg | default('') | lower))
-      when: cloud_load_balancer | bool and
-        (item == 'primary' or
-        (item == 'replica' and server_count | int > 1) or
-        (item in ['sync', 'async'] and server_count | int > 1 and synchronous_mode | bool))
+      when: cloud_load_balancer | bool
 
     - name: "DigitalOcean: Delete public firewall"
       community.digitalocean.digital_ocean_firewall:

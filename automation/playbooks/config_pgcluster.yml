@@ -232,9 +232,6 @@
     - role: vitabaks.autobase.postgresql_schemas
       when: inventory_hostname in groups['primary']
 
-    - role: vitabaks.autobase.postgresql_privs
-      when: inventory_hostname in groups['primary']
-
     - role: vitabaks.autobase.postgresql_index_maintenance
 
     - role: vitabaks.autobase.wal_g
@@ -251,6 +248,11 @@
         name: vitabaks.autobase.pgbouncer
         tasks_from: config
       when: pgbouncer_install | default(true) | bool
+
+    - name: Configure pgdog
+      ansible.builtin.import_role:
+        name: vitabaks.autobase.pgdog
+      when: pgdog_install | default(false) | bool
 
     - name: Configure PgBouncer monitoring
       ansible.builtin.import_role:
@@ -315,6 +317,10 @@
       tags: always
   roles:
     - role: vitabaks.autobase.postgresql_extensions
+      when: current_patroni_leader_result.status | default(0) == 200
+
+    # after the extensions, so that privileges can be granted on their objects
+    - role: vitabaks.autobase.postgresql_privs
       when: current_patroni_leader_result.status | default(0) == 200
 
     # finish (info)

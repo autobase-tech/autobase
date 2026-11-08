@@ -69,7 +69,7 @@ etcd3:
 {% if dcs_type == 'consul' %}
 consul:
   host: {{ patroni_consul_host | default('127.0.0.1:8500') }}
-  register_service: true
+  register_service: {{ (not (pgdog_install | default(false) | bool)) | lower }}
   {% if consul_tls_enable | default(false) | bool %}
   scheme: https
   cacert: {{ patroni_consul_cacert | default('/etc/patroni/tls/consul/ca.crt') }}
@@ -137,7 +137,13 @@ bootstrap:
       {% endif %}
       {% if patroni_standby_cluster.recovery_min_apply_delay is defined and patroni_standby_cluster.recovery_min_apply_delay | length > 0 %}
       recovery_min_apply_delay: {{ patroni_standby_cluster.recovery_min_apply_delay }}
-     {% endif %}
+      {% endif %}
+      {% if patroni_standby_cluster.create_replica_methods is defined and patroni_standby_cluster.create_replica_methods | length > 0 %}
+      create_replica_methods:
+        {% for create_replica_method in patroni_standby_cluster.create_replica_methods %}
+        - {{ create_replica_method }}
+        {% endfor %}
+      {% endif %}
     {% endif %}
     {% if patroni_slots is defined and patroni_slots | length > 0 %}
     slots:

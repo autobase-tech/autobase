@@ -33,7 +33,7 @@ This role installs and configures [PgBouncer](https://www.pgbouncer.org/), a lig
 | `pgbouncer_auth_type` | `"{{ postgresql_password_encryption_algorithm }}"` | Authentication method (commonly `scram-sha-256` or `md5`) |
 | `pgbouncer_auth_user` | `true` | Use auth_user function for authentication |
 | `pgbouncer_auth_username` | `"pgbouncer"` | Username for auth_user queries |
-| `pgbouncer_auth_password` | `""` | Password for auth_user (auto-generated if empty) |
+| `pgbouncer_auth_password` | `""` | Optional password for auth_user; an empty value preserves the existing password |
 | `pgbouncer_auth_dbname` | `"postgres"` | Database name for auth_user queries |
 | `pgbouncer_admin_users` | `"{{ patroni_superuser_username }}"` | Comma-separated list of admin users |
 | `pgbouncer_stats_users` | `"{{ patroni_superuser_username }}"` | Comma-separated list of users who can view statistics |

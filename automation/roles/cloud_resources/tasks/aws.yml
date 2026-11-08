@@ -2,10 +2,10 @@
 - name: "AWS: Validate cluster name length for NLB target groups"
   ansible.builtin.assert:
     that:
-      - patroni_cluster_name | length <= 21
+      - patroni_cluster_name | length <= (29 if pgdog_install | bool else 21)
     fail_msg: >-
-      AWS NLB requires patroni_cluster_name to be 21 characters or fewer because
-      the generated target group name adds the '-tg-primary' suffix and cannot exceed 32 characters.
+      AWS NLB requires patroni_cluster_name to be {{ 29 if pgdog_install | bool else 21 }} characters or fewer because
+      the target group suffix is '{{ '-tg' if pgdog_install | bool else '-tg-primary' }}' and its name cannot exceed 32 characters.
   when:
     - state == 'present'
     - cloud_load_balancer | bool
@@ -196,11 +196,11 @@
                     haproxy_listen_port.replicas_async | default('5003')
                   ] if with_haproxy_load_balancing | bool else []) +
                   ([
-                    pgbouncer_listen_port | default('6432')
-                  ] if not with_haproxy_load_balancing | bool and pgbouncer_install | bool else []) +
+                    connection_pooler_port | default('6432')
+                  ] if not with_haproxy_load_balancing | bool and connection_pooler_enabled | bool else []) +
                   ([
                     postgresql_port | default('5432')
-                  ] if not with_haproxy_load_balancing | bool and not pgbouncer_install | bool else []),
+                  ] if not with_haproxy_load_balancing | bool and not connection_pooler_enabled | bool else []),
                 'cidr_ip': database_public_allowed_ips | default('0.0.0.0/0', true) | split(',')
               }
             ] if database_public_access | bool else []) +
@@ -210,10 +210,10 @@
               'ports': [netdata_port | default('19999')],
               'cidr_ip': vpc_cidr_blocks }] if netdata_install | bool else []) +
             ([{
-              'rule_desc': 'PgBouncer internal access',
+              'rule_desc': connection_pooler_name ~ ' internal access',
               'proto': 'tcp',
-              'ports': [pgbouncer_listen_port | default('6432')],
-              'cidr_ip': vpc_cidr_blocks }] if pgbouncer_install | bool else []) +
+              'ports': [connection_pooler_port | default('6432')],
+              'cidr_ip': vpc_cidr_blocks }] if connection_pooler_enabled | bool else []) +
             ([{
               'rule_desc': 'PostgreSQL internal access',
               'proto': 'tcp',
@@ -519,25 +519,17 @@
     # the subnets of the existing NLB after the change, or all requested subnets for a new NLB (nothing is done then).
     - name: "AWS: Add Availability Zones to existing NLB (if any)"
       vitabaks.autobase.aws_nlb_subnets:
-        name: "{{ patroni_cluster_name }}-{{ item }}"
+        name: "{{ cloud_load_balancer_names[item] }}"
         region: "{{ server_location }}"
         subnets: "{{ dict(instances | map(attribute='placement.availability_zone') | zip(instances | map(attribute='subnet_id'))).values() | list }}"
-      loop:
-        - "primary"
-        - "replica"
-        - "sync"
-        - "async"
+      loop: "{{ cloud_load_balancer_roles }}"
       loop_control:
-        label: "{{ patroni_cluster_name }}-{{ item }}"
+        label: "{{ cloud_load_balancer_names[item] }}"
       register: aws_nlb_subnets_result
       vars:
         # NLBs are enabled in the zones of all servers (one subnet per zone)
         instances: "{{ server_result.results | map(attribute='instances') | map('first') | list }}"
-      when: cloud_load_balancer | bool and
-        (item == 'primary' or
-        (item == 'replica' and cloud_load_balancer_replica | bool and server_count | int > 1) or
-        (item == 'sync' and cloud_load_balancer_replica_sync | bool and server_count | int > 1 and synchronous_mode | bool) or
-        (item == 'async' and cloud_load_balancer_replica_async | bool and server_count | int > 1 and synchronous_mode | bool))
+      when: cloud_load_balancer | bool
 
     - name: Build NLB targets
       ansible.builtin.set_fact:
@@ -545,27 +537,27 @@
       loop: "{{ instance_ids | default([]) }}"
       vars:
         instance_ids: "{{ (server_result | default({'results': []})) | json_query('results[].instances[].instance_id') }}"
-        target_port: "{{ pgbouncer_listen_port | default('6432') if pgbouncer_install | bool else postgresql_port | default('5432') }}"
+        target_port: "{{ connection_pooler_port | default('6432') if connection_pooler_enabled | bool else postgresql_port | default('5432') }}"
       when: cloud_load_balancer | bool
 
     - name: "AWS: Create or modify NLB Target Group"
       community.aws.elb_target_group:
         access_key: "{{ lookup('ansible.builtin.env', 'AWS_ACCESS_KEY_ID') }}"
         secret_key: "{{ lookup('ansible.builtin.env', 'AWS_SECRET_ACCESS_KEY') }}"
-        name: "{{ patroni_cluster_name }}-tg-{{ item }}"
+        name: "{{ patroni_cluster_name }}-tg{{ '-' ~ item if item != 'pgdog' else '' }}"
         region: "{{ server_location }}"
         vpc_id: "{{ vpc_id }}"
         protocol: "TCP"
         port: "{{ target_port }}"
         preserve_client_ip_enabled: true
-        health_check_protocol: "{{ patroni_restapi_protocol | default('http') }}"
-        health_check_port: "{{ patroni_restapi_port | default('8008') }}"
-        health_check_path: "/{{ item }}"
+        health_check_protocol: "{{ 'tcp' if pgdog_install | bool else patroni_restapi_protocol | default('http') }}"
+        health_check_port: "{{ pgdog_listen_port if pgdog_install | bool else patroni_restapi_port | default('8008') }}"
+        health_check_path: "{{ omit if pgdog_install | bool else '/' ~ item }}"
         health_check_interval: 5
         health_check_timeout: 2
         unhealthy_threshold_count: 2
         healthy_threshold_count: 3
-        successful_response_codes: "200"
+        successful_response_codes: "{{ omit if pgdog_install | bool else '200' }}"
         target_type: instance
         targets: "{{ nlb_targets | default([]) }}"
         modify_targets: true
@@ -573,26 +565,18 @@
         state: present
         tags: "{{ cloud_provider_tags | combine({'Cluster': patroni_cluster_name}) }}"
         purge_tags: false
-      loop:
-        - "primary"
-        - "replica"
-        - "sync"
-        - "async"
+      loop: "{{ cloud_load_balancer_roles }}"
       loop_control:
-        label: "{{ patroni_cluster_name }}-tg-{{ item }}"
+        label: "{{ patroni_cluster_name }}-tg{{ '-' ~ item if item != 'pgdog' else '' }}"
       vars:
-        target_port: "{{ pgbouncer_listen_port | default('6432') if pgbouncer_install | bool else postgresql_port | default('5432') }}"
-      when: cloud_load_balancer | bool and
-        (item == 'primary' or
-        (item == 'replica' and cloud_load_balancer_replica | bool and server_count | int > 1) or
-        (item == 'sync' and cloud_load_balancer_replica_sync | bool and server_count | int > 1 and synchronous_mode | bool) or
-        (item == 'async' and cloud_load_balancer_replica_async | bool and server_count | int > 1 and synchronous_mode | bool))
+        target_port: "{{ connection_pooler_port | default('6432') if connection_pooler_enabled | bool else postgresql_port | default('5432') }}"
+      when: cloud_load_balancer | bool
 
     - name: "AWS: Create Network Load Balancer (NLB)"
       community.aws.elb_network_lb:
         access_key: "{{ lookup('ansible.builtin.env', 'AWS_ACCESS_KEY_ID') }}"
         secret_key: "{{ lookup('ansible.builtin.env', 'AWS_SECRET_ACCESS_KEY') }}"
-        name: "{{ patroni_cluster_name }}-{{ item }}"
+        name: "{{ cloud_load_balancer_names[item] }}"
         region: "{{ server_location }}"
         subnets: "{{ aws_nlb_subnets_result.results[idx].subnets }}"
         listeners:
@@ -600,44 +584,36 @@
             Port: "{{ target_port }}"
             DefaultActions:
               - Type: forward
-                TargetGroupName: "{{ patroni_cluster_name }}-tg-{{ item }}"
-        cross_zone_load_balancing: "{{ true if item == 'primary' else aws_nlb_replica_cross_zone | bool }}"
+                TargetGroupName: "{{ patroni_cluster_name }}-tg{{ '-' ~ item if item != 'pgdog' else '' }}"
+        cross_zone_load_balancing: "{{ true if item in ['primary', 'pgdog'] else aws_nlb_replica_cross_zone | bool }}"
         scheme: "{{ 'internet-facing' if database_public_access | bool else 'internal' }}"
         wait: false
         state: present
         tags: "{{ cloud_provider_tags | combine({'Cluster': patroni_cluster_name}) }}"
         purge_tags: false
-      loop:
-        - "primary"
-        - "replica"
-        - "sync"
-        - "async"
+      loop: "{{ cloud_load_balancer_roles }}"
       loop_control:
         index_var: idx
-        label: "{{ patroni_cluster_name }}-{{ item }}"
+        label: "{{ cloud_load_balancer_names[item] }}"
       register: aws_elb_network_lb
       until: aws_elb_network_lb is success
       retries: 3
       delay: 10
       vars:
-        target_port: "{{ pgbouncer_listen_port | default('6432') if pgbouncer_install | bool else postgresql_port | default('5432') }}"
-      when: cloud_load_balancer | bool and
-        (item == 'primary' or
-        (item == 'replica' and cloud_load_balancer_replica | bool and server_count | int > 1) or
-        (item == 'sync' and cloud_load_balancer_replica_sync | bool and server_count | int > 1 and synchronous_mode | bool) or
-        (item == 'async' and cloud_load_balancer_replica_async | bool and server_count | int > 1 and synchronous_mode | bool))
+        target_port: "{{ connection_pooler_port | default('6432') if connection_pooler_enabled | bool else postgresql_port | default('5432') }}"
+      when: cloud_load_balancer | bool
 
     # Availability Zone affinity: clients resolve the NLB IP address in their own zone.
     # TODO: remove when community.aws.elb_network_lb supports the 'dns_record.client_routing_policy' attribute.
     - name: "AWS: Set NLB client routing policy"
       vitabaks.autobase.aws_nlb_attributes:
-        name: "{{ patroni_cluster_name }}-{{ item }}"
+        name: "{{ cloud_load_balancer_names[item] }}"
         region: "{{ server_location }}"
         attributes:
           dns_record.client_routing_policy: "{{ aws_nlb_client_routing_policy }}"
       loop: "{{ aws_elb_network_lb.results | default([]) | selectattr('load_balancer', 'defined') | map(attribute='item') | list }}"
       loop_control:
-        label: "{{ patroni_cluster_name }}-{{ item }}"
+        label: "{{ cloud_load_balancer_names[item] }}"
       register: aws_nlb_attributes_result
       until: aws_nlb_attributes_result is success
       retries: 3
@@ -738,46 +714,32 @@
       community.aws.elb_network_lb:
         access_key: "{{ lookup('ansible.builtin.env', 'AWS_ACCESS_KEY_ID') }}"
         secret_key: "{{ lookup('ansible.builtin.env', 'AWS_SECRET_ACCESS_KEY') }}"
-        name: "{{ patroni_cluster_name }}-{{ item }}"
+        name: "{{ cloud_load_balancer_names[item] }}"
         region: "{{ server_location }}"
         wait: true
         state: absent
-      loop:
-        - "primary"
-        - "replica"
-        - "sync"
-        - "async"
+      loop: "{{ cloud_load_balancer_roles }}"
       loop_control:
-        label: "{{ patroni_cluster_name }}-{{ item }}"
+        label: "{{ cloud_load_balancer_names[item] }}"
       register: aws_elb_network_lb_delete
       until: aws_elb_network_lb_delete is success
       retries: 3
       delay: 10
-      when: (item == 'primary' or
-        (item == 'replica' and server_count | int > 1) or
-        (item in ['sync', 'async'] and server_count | int > 1 and synchronous_mode | bool))
 
     - name: "AWS: Delete NLB Target Group"
       community.aws.elb_target_group:
         access_key: "{{ lookup('ansible.builtin.env', 'AWS_ACCESS_KEY_ID') }}"
         secret_key: "{{ lookup('ansible.builtin.env', 'AWS_SECRET_ACCESS_KEY') }}"
-        name: "{{ patroni_cluster_name }}-tg-{{ item }}"
+        name: "{{ patroni_cluster_name }}-tg{{ '-' ~ item if item != 'pgdog' else '' }}"
         region: "{{ server_location }}"
         state: absent
-      loop:
-        - "primary"
-        - "replica"
-        - "sync"
-        - "async"
+      loop: "{{ cloud_load_balancer_roles }}"
       loop_control:
-        label: "{{ patroni_cluster_name }}-tg-{{ item }}"
+        label: "{{ patroni_cluster_name }}-tg{{ '-' ~ item if item != 'pgdog' else '' }}"
       register: aws_elb_target_group_delete
       until: aws_elb_target_group_delete is success
       retries: 3
       delay: 10
-      when: (item == 'primary' or
-        (item == 'replica' and server_count | int > 1) or
-        (item in ['sync', 'async'] and server_count | int > 1 and synchronous_mode | bool))
 
     - name: "AWS: Delete Security Group"
       amazon.aws.ec2_security_group:

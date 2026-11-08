@@ -1,0 +1,8 @@
+# {{ ansible_managed }}
+{% for user in pgdog_users | default([]) %}
+
+[[users]]
+{%   for key, value in user.items() %}
+{{ key }} = {{ value | to_json }}
+{%   endfor %}
+{% endfor %}

@@ -4,7 +4,7 @@ Provision the PostgreSQL cluster infrastructure in public clouds (AWS, GCP, Azur
 
 - Create/delete servers (count, size, image, region), distributed across availability zones (AWS, GCP, Azure)
 - Configure private networking/VPC/VNet and firewalls/Security Groups
-- Optionally create Load Balancers (AWS NLB, GCP TCP Proxy, Azure LB, DigitalOcean LB, Hetzner LB)
+- Optionally create Load Balancers (AWS NLB, GCP TCP Proxy or internal passthrough NLB for PgDog, Azure LB, DigitalOcean LB, Hetzner LB)
 - Optionally create object storage for backups (S3/GCS/Azure Blob/Spaces/Hetzner Object Storage)
 - Generate in-memory inventory (postgres_cluster, master/replica, etcd_cluster/consul_instances).
 
@@ -61,11 +61,11 @@ The zone placement variables apply to AWS, GCP and Azure; see [Availability zone
 | database_public_access | bool | false | Allow public DB access |
 | database_public_allowed_ips | string | "" | Comma-separated CIDRs for DB |
 | cloud_load_balancer | bool | true | Create cloud Load Balancers (master switch) |
-| cloud_load_balancer_replica | bool | true | Create a Load Balancer for all replicas |
-| cloud_load_balancer_replica_sync | bool | false | Create a Load Balancer for synchronous replicas (requires synchronous_mode) |
-| cloud_load_balancer_replica_async | bool | false | Create a Load Balancer for asynchronous replicas (requires synchronous_mode) |
+| cloud_load_balancer_replica | bool | true | Create a Load Balancer for all replicas; ignored with PgDog |
+| cloud_load_balancer_replica_sync | bool | false | Create a Load Balancer for synchronous replicas (requires synchronous_mode); ignored with PgDog |
+| cloud_load_balancer_replica_async | bool | false | Create a Load Balancer for asynchronous replicas (requires synchronous_mode); ignored with PgDog |
 | aws_nlb_client_routing_policy | string | availability_zone_affinity | NLB DNS client routing policy: `availability_zone_affinity`, `partial_availability_zone_affinity` or `any_availability_zone` |
-| aws_nlb_replica_cross_zone | bool | false | Cross-zone load balancing for replica NLBs (replica, sync, async). Always enabled for the primary NLB |
+| aws_nlb_replica_cross_zone | bool | false | Cross-zone load balancing for replica NLBs (replica, sync, async). Always enabled for the primary and PgDog NLBs |
 | cloud_backup_storage_id | string | "" | Stable, globally unique backup storage ID. Adds a deterministic suffix to generated bucket and Azure Storage Account names; see [Backup storage names](#backup-storage-names). |
 | cloud_backup_storage_suffix | string | First 12 hex characters of SHA-256 of the ID, or empty | Optional explicit suffix for generated names. |
 | cloud_backup_bucket_name | string | Generated bucket name | Optional common name for S3, GCS, Spaces and Hetzner buckets. Provider-specific names override it. |
@@ -307,11 +307,24 @@ resolve the NLB IP address in their own zone, if it has a healthy target.
   To make sure that such connections never use the primary, connect with `target_session_attrs=standby` (or `prefer-standby`),
   or set `aws_nlb_replica_cross_zone: true` to distribute connections across replicas in all zones.
 
+##### PgDog load balancing
+
+With `pgdog_install: true`, each provider creates one load balancer named after `patroni_cluster_name`, without a `-primary` suffix.
+All PgDog instances are targets. Health checks use TCP on `pgdog_listen_port`; replica load balancer flags are ignored.
+Connection info contains one address and port. Existing load balancers with role suffixes are not automatically removed when switching to PgDog.
+Deletion uses the same endpoint list as creation. Keep the pooler and load balancer settings unchanged when deleting a cluster to include all its endpoints.
+
+For GCP, `database_public_access: false` creates a regional internal passthrough Network Load Balancer with a reserved private IP
+in the selected `gcp_subnetwork`. The endpoint allows access from other VPC regions, subject to routing and firewall rules.
+PgDog must use `pgdog_listen_addr: "0.0.0.0"` (the default) to accept packets addressed to the load balancer IP.
+With public access enabled, PgDog uses the global external TCP proxy load balancer.
+Deployments without PgDog continue to use external TCP proxy load balancers on GCP.
+
 ##### Azure Load Balancer
 
 In regions with three availability zones, new Standard public IPs (for VMs and load balancers) and internal load balancer frontends use zone redundancy.
 Frontend placement uses the region's zones independently of VM SKU availability. Internal frontends use `azure_subnet`.
-Each enabled primary/replica/sync/async endpoint uses the corresponding Patroni health probe.
+Each enabled primary/replica/sync/async endpoint uses the corresponding Patroni health probe; PgDog uses one endpoint with a TCP probe.
 Backend pool settings and members are read before load balancer updates and reapplied afterwards; scaling adds the new servers' addresses.
 
 Existing IP addresses and frontend zone settings are preserved. The role warns about zonal frontends/public IPs and internal frontends without explicit zone redundancy.

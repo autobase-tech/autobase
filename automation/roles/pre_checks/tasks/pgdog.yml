@@ -1,0 +1,96 @@
+---
+# PgDog replaces both of them: all of them use the same port, and a load balancer in front of PgDog
+# could not tell the roles of the nodes apart, since PgDog accepts reads and writes on each node.
+- name: PgDog | Check that it is not combined with PgBouncer and HAProxy
+  ansible.builtin.fail:
+    msg:
+      - "PgDog is a connection pooler and a load balancer, and it replaces PgBouncer and HAProxy."
+      - "Set 'pgbouncer_install: false' and 'with_haproxy_load_balancing: false' to use it."
+  when: pgbouncer_install | bool or with_haproxy_load_balancing | bool
+
+- name: PgDog | Check the PostgreSQL version
+  ansible.builtin.fail:
+    msg: >-
+      PgDog {{ pgdog_version }} requires PostgreSQL 12 or newer for automatic role detection and replication lag monitoring.
+      Configured: {{ postgresql_version }}.
+  when: postgresql_version | int < 12
+
+- name: PgDog | Check the architecture
+  ansible.builtin.fail:
+    msg: "PgDog provides no binaries for {{ ansible_architecture }}. Supported: x86_64, aarch64."
+  when: ansible_architecture not in ['x86_64', 'aarch64']
+
+- name: PgDog | Get the glibc version
+  ansible.builtin.command: getconf GNU_LIBC_VERSION
+  register: pgdog_glibc_version
+  changed_when: false
+  check_mode: false
+
+- name: PgDog | Check the glibc version
+  ansible.builtin.fail:
+    msg:
+      - "PgDog {{ pgdog_version }} requires glibc {{ pgdog_min_glibc_version }} or newer."
+      - "This server has {{ pgdog_glibc_version.stdout }} ({{ ansible_distribution }} {{ ansible_distribution_version }})."
+      - "Use Ubuntu 24.04+, Debian 13+, or a RHEL 10 compatible distribution."
+  vars:
+    pgdog_min_glibc_version: "2.39"
+  when: pgdog_glibc_version.stdout.split() | last is version(pgdog_min_glibc_version, '<')
+
+- name: PgDog | Check that passthrough authentication can work without TLS
+  ansible.builtin.fail:
+    msg: "pgdog_passthrough_auth: '{{ pgdog_passthrough_auth }}' requires 'tls_cert_generate: true', or an 'enabled_plain*' mode."
+  when:
+    - pgdog_passthrough_auth in ['enabled', 'enabled_allow_change']
+    - not tls_cert_generate | bool
+
+- name: PgDog | Check that clients can authenticate
+  ansible.builtin.fail:
+    msg: "No client could connect: define 'pgdog_users' when 'pgdog_passthrough_auth' is 'disabled'."
+  when:
+    - pgdog_passthrough_auth == 'disabled'
+    - pgdog_users | default([]) | length < 1
+
+- name: PgDog | Check the admin password
+  ansible.builtin.fail:
+    msg: "'pgdog_admin_password' must not contain double quotes or backslashes."
+  when: pgdog_admin_password | default('') is search('["\\\\]')
+
+- name: PgDog | Check that 'pool_parameters' of 'pgdog_pools' are dictionaries
+  ansible.builtin.fail:
+    msg: "pgdog_pools: 'pool_parameters' of '{{ item.name }}' must be a dictionary, for example: {{ '{' }} pool_size: 20 {{ '}' }}"
+  when: item.pool_parameters | default({}, true) is not mapping
+  loop: "{{ pgdog_pools | default([]) }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: PgDog | Get max_connections
+  ansible.builtin.import_tasks: max_connections.yml
+
+# Every PgDog instance has its own pools, so the primary receives connections from all the nodes.
+# This counts a single user for each database, so it is the lowest amount of connections needed.
+- name: PgDog | Calculate total pool_size
+  ansible.builtin.set_fact:
+    pgdog_total_pool_size: >-
+      {{
+        (
+          (pgdog_pools | default([]) | map(attribute='pool_parameters', default={})
+           | map('default', {}, true) | map(attribute='pool_size', default=pgdog_default_pool_size) | map('int') | sum)
+          +
+          (postgresql_databases | default([])
+           | rejectattr('db', 'in', pgdog_pools | default([]) | map(attribute='name') | list) | length)
+          * (pgdog_default_pool_size | int)
+        ) * (groups['postgres_cluster'] | length)
+      }}
+  when: inventory_hostname == groups['master'][0]
+
+- name: PgDog | Show total pool_size
+  ansible.builtin.debug:
+    var: pgdog_total_pool_size
+  when: inventory_hostname == groups['master'][0]
+
+- name: PgDog | Failed when pgdog_total_pool_size > max_connections
+  ansible.builtin.fail:
+    msg: "pgdog_total_pool_size: {{ pgdog_total_pool_size }} > max_connections: {{ max_connections }}. Need change settings"
+  when:
+    - inventory_hostname == groups['master'][0]
+    - pgdog_total_pool_size | int > max_connections | default(100) | int
