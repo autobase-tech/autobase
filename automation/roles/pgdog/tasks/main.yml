@@ -1,39 +1,6 @@
 ---
-# The upstream releases provide no rpm or deb packages, so the tar archive is used on all distributions.
-- block:
-    - name: Download PgDog {{ pgdog_version | default('') }}
-      ansible.builtin.get_url:
-        url: "{{ pgdog_package_repo }}"
-        dest: "/tmp/{{ pgdog_package_repo | basename }}"
-        checksum: "{{ pgdog_package_checksum | default(omit, true) }}"
-        mode: "0644"
-        timeout: 60
-      register: get_url_result
-      until: get_url_result is success
-      delay: 5
-      retries: 3
-      environment: "{{ proxy_env | default({}) }}"
-
-    - name: Extract PgDog {{ pgdog_version | default('') }} into /tmp
-      ansible.builtin.unarchive:
-        src: "/tmp/{{ pgdog_package_repo | basename }}"
-        dest: /tmp/
-        extra_opts:
-          - --no-same-owner
-        remote_src: true
-
-    - name: Copy the PgDog {{ pgdog_version | default('') }} binary file to /usr/local/bin/
-      ansible.builtin.copy:
-        src: "/tmp/{{ pgdog_package_repo | basename | regex_replace('\\.tar\\.gz$', '') }}/pgdog"
-        dest: /usr/local/bin/pgdog
-        owner: root
-        group: root
-        mode: "0755"
-        remote_src: true
-      notify: "restart pgdog"
-
-  when: not ansible_check_mode
-  tags: pgdog_install, pgdog
+- name: Install pgdog
+  ansible.builtin.import_tasks: install.yml
 
 - name: Configure pgdog systemd service file
   ansible.builtin.template:

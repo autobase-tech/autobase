@@ -16,6 +16,10 @@ Update Patroni:
 
 `ansible-playbook update_pgcluster.yml -e target=patroni`
 
+Update PgDog to `pgdog_version`:
+
+`ansible-playbook update_pgcluster.yml -e target=pgdog`
+
 Update all system packages:
 
 `ansible-playbook update_pgcluster.yml -e target=system`
@@ -24,7 +28,8 @@ Update all system packages:
 
 - `target`
   - Defines the target for the update.
-  - Available values: 'postgres', 'patroni', 'system'
+  - Available values: 'postgres', 'patroni', 'pgdog', 'system'
+  - Note: 'pgdog' only restarts PgDog, one node at a time. PostgreSQL and Patroni keep running, and no switchover is done.
   - Default value: `postgres`
 - `max_replication_lag_bytes`
   - Determines the size of the replication lag above which the update will not be performed.
@@ -93,6 +98,9 @@ When using load balancing for read-only traffic (the "Type A" and "Type C" schem
 - Update Patroni
   - if `target=patroni` (or `system`)
   - Install the latest version of Patroni package
+- Update PgDog
+  - if `target=pgdog` (or `system`), and `pgdog_install: true`
+  - Install `pgdog_version` and restart PgDog if the binary has changed
 - Update all system packages (includes PostgreSQL and Patroni)
   - if `target=system`
   - Update all system packages
@@ -133,6 +141,9 @@ When using load balancing for read-only traffic (the "Type A" and "Type C" schem
 - Update Patroni
   - if `target=patroni` (or `system`)
   - Install the latest version of Patroni package
+- Update PgDog
+  - if `target=pgdog` (or `system`), and `pgdog_install: true`
+  - Install `pgdog_version` and restart PgDog if the binary has changed
 - Update all system packages (includes PostgreSQL and Patroni)
   - if `target=system`
   - Update all system packages

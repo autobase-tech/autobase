@@ -103,6 +103,14 @@
   become_user: postgres
   any_errors_fatal: true
   tasks:
+    - name: "[Pre-Check] PgDog is installed"
+      ansible.builtin.fail:
+        msg: "The update target 'pgdog' requires 'pgdog_install: true'."
+      run_once: true # noqa run-once
+      when:
+        - target | default('postgres') == 'pgdog'
+        - not pgdog_install | default(false) | bool
+
     - name: Running Pre-Checks
       ansible.builtin.include_role:
         name: vitabaks.autobase.update
@@ -132,11 +140,13 @@
       ansible.builtin.include_role:
         name: vitabaks.autobase.update
         tasks_from: stop_traffic
+      when: target | default('postgres') != 'pgdog'
 
     - name: Stop Services
       ansible.builtin.include_role:
         name: vitabaks.autobase.update
         tasks_from: stop_services
+      when: target | default('postgres') != 'pgdog'
 
     - name: Update PostgreSQL
       ansible.builtin.include_role:
@@ -150,6 +160,14 @@
         tasks_from: patroni
       when: target | default('postgres') == 'patroni' or target | default('postgres') == 'system'
 
+    - name: Update PgDog
+      ansible.builtin.include_role:
+        name: vitabaks.autobase.update
+        tasks_from: pgdog
+      when:
+        - target | default('postgres') == 'pgdog' or target | default('postgres') == 'system'
+        - pgdog_install | default(false) | bool
+
     - name: Update all system packages
       ansible.builtin.include_role:
         name: vitabaks.autobase.update
@@ -160,11 +178,13 @@
       ansible.builtin.include_role:
         name: vitabaks.autobase.update
         tasks_from: start_services
+      when: target | default('postgres') != 'pgdog'
 
     - name: Start read-only traffic
       ansible.builtin.include_role:
         name: vitabaks.autobase.update
         tasks_from: start_traffic
+      when: target | default('postgres') != 'pgdog'
   tags:
     - update
     - update-secondary
@@ -181,17 +201,21 @@
       ansible.builtin.include_role:
         name: vitabaks.autobase.patroni
         tasks_from: switchover
-      when: groups['postgres_cluster'] | length > 1
+      when:
+        - groups['postgres_cluster'] | length > 1
+        - target | default('postgres') != 'pgdog'
 
     - name: Stop read-only traffic
       ansible.builtin.include_role:
         name: vitabaks.autobase.update
         tasks_from: stop_traffic
+      when: target | default('postgres') != 'pgdog'
 
     - name: Stop Services
       ansible.builtin.include_role:
         name: vitabaks.autobase.update
         tasks_from: stop_services
+      when: target | default('postgres') != 'pgdog'
 
     - name: Update PostgreSQL
       ansible.builtin.include_role:
@@ -205,6 +229,14 @@
         tasks_from: patroni
       when: target | default('postgres') == 'patroni' or target | default('postgres') == 'system'
 
+    - name: Update PgDog
+      ansible.builtin.include_role:
+        name: vitabaks.autobase.update
+        tasks_from: pgdog
+      when:
+        - target | default('postgres') == 'pgdog' or target | default('postgres') == 'system'
+        - pgdog_install | default(false) | bool
+
     - name: Update all system packages
       ansible.builtin.include_role:
         name: vitabaks.autobase.update
@@ -215,11 +247,13 @@
       ansible.builtin.include_role:
         name: vitabaks.autobase.update
         tasks_from: start_services
+      when: target | default('postgres') != 'pgdog'
 
     - name: Start read-only traffic
       ansible.builtin.include_role:
         name: vitabaks.autobase.update
         tasks_from: start_traffic
+      when: target | default('postgres') != 'pgdog'
   tags:
     - update
     - update-primary
@@ -235,7 +269,9 @@
       ansible.builtin.include_role:
         name: vitabaks.autobase.update
         tasks_from: extensions
-      when: update_extensions | default(true) | bool
+      when:
+        - update_extensions | default(true) | bool
+        - target | default('postgres') != 'pgdog'
 
     # finish (info)
     - name: Check for any update failure

@@ -1,0 +1,12 @@
+---
+# PgDog is installed from the release archive of 'pgdog_version', not from a package.
+# The service is restarted only if the binary has changed.
+# Unlike the package updates, a failure is not ignored: it stops the playbook, so the other nodes keep a working PgDog.
+- name: Install PgDog {{ pgdog_version }}
+  ansible.builtin.include_role:
+    name: vitabaks.autobase.pgdog
+    tasks_from: install
+
+# Restart it on this host before the next one is updated
+- name: Restart PgDog if it was updated
+  ansible.builtin.meta: flush_handlers

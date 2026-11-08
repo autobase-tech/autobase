@@ -140,7 +140,11 @@ Changes are applied with a reload, without closing client connections. `pgdog_li
 
 After a failover, some replicas can be left out of the load balancer until PgDog has checked them and their bans have expired. Bans normally expire after `pgdog_ban_timeout` (30 seconds); an unhealthy or lagging replica can remain excluded longer. Reads go to the other eligible nodes in the meantime. If all targets are unavailable, PgDog can clear bans earlier to retry them.
 
-The `add_node.yml` and `remove_node.yml` playbooks update the list of nodes on the whole cluster. New versions are installed by changing `pgdog_version` and running `config_pgcluster.yml` with the tag `pgdog`, which restarts the service.
+The `add_node.yml` and `remove_node.yml` playbooks update the list of nodes on the whole cluster. New versions are installed by changing `pgdog_version` and running `update_pgcluster.yml -e target=pgdog`. It updates one node at a time, the replicas first and the leader last, and restarts PgDog only if the binary has changed. If PgDog fails to start on a node, the playbook stops there, and the other nodes keep the previous version. `target=system` also updates PgDog.
+
+`config_pgcluster.yml` with the tag `pgdog` installs the new version too, but on all nodes at once. It restarts PgDog on one node at a time, but does not stop after a failed restart, so prefer `update_pgcluster.yml` for new versions.
+
+A restart waits for running transactions to finish, for up to `pgdog_shutdown_timeout`, and fails if PgDog does not accept connections within 60 seconds. Clients connected to the restarted node have to reconnect. Clients that use the cluster VIP or a single node lose their connection while the leader, or that node, is restarted.
 
 To inspect a running instance, connect to the admin database:
 
