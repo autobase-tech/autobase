@@ -101,6 +101,7 @@ When using load balancing for read-only traffic (the "Type A" and "Type C" schem
 - Update PgDog
   - if `target=pgdog` (or `system`), and `pgdog_install: true`
   - Install `pgdog_version` and restart PgDog if the binary has changed
+  - Ensure PgDog is running and accepts connections before updating the next node, even if the binary has not changed
 - Update all system packages (includes PostgreSQL and Patroni)
   - if `target=system`
   - Update all system packages
@@ -144,6 +145,7 @@ When using load balancing for read-only traffic (the "Type A" and "Type C" schem
 - Update PgDog
   - if `target=pgdog` (or `system`), and `pgdog_install: true`
   - Install `pgdog_version` and restart PgDog if the binary has changed
+  - Ensure PgDog is running and accepts connections before updating the next node, even if the binary has not changed
 - Update all system packages (includes PostgreSQL and Patroni)
   - if `target=system`
   - Update all system packages

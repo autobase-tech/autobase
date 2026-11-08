@@ -10,3 +10,18 @@
 # Restart it on this host before the next one is updated
 - name: Restart PgDog if it was updated
   ansible.builtin.meta: flush_handlers
+
+# A previous attempt may have installed the binary but failed to restart the service.
+- name: Ensure PgDog is enabled and running
+  ansible.builtin.systemd:
+    name: pgdog
+    enabled: true
+    state: started
+
+- name: Wait for PgDog to accept connections
+  ansible.builtin.wait_for:
+    host: "{{ {'0.0.0.0': '127.0.0.1', '::': '::1'}.get(pgdog_listen_addr, pgdog_listen_addr) }}"
+    port: "{{ pgdog_listen_port }}"
+    state: started
+    connect_timeout: 1
+    timeout: 60
