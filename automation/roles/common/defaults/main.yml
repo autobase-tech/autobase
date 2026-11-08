@@ -325,8 +325,7 @@ postgresql_stats_temp_directory_path: "/var/lib/pgsql_stats_tmp" # or 'none'
 postgresql_stats_temp_directory_size: "1024m"
 
 # List of users to be created
-postgresql_users:
-  - { name: "{{ pgbouncer_auth_username }}", password: "{{ pgbouncer_auth_password }}", flags: "LOGIN", role: "" }
+postgresql_users: []
 #  - { name: "monitoring_auth_username", password: "monitoring_user_password", flags: "LOGIN", role: "pg_monitor" } # monitoring Service Account
 #  - { name: "mydb-user", password: "mydb-user-pass", flags: "NOSUPERUSER", conn_limit: "10" }
 #  - { name: "app-user", password: "app-user-pass", secret: "/backend/production/app-db" } # exported to this secret (full name, without secrets_prefix)
