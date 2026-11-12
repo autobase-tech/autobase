@@ -69,10 +69,30 @@
           ] + pgbackrest_exporter_extra_args | default([])
         }) -%}
       {%- endif -%}
+      {%- if consul_exporter_install | bool -%}
+        {#- A client certificate is only required by Consul with 'verify_incoming'. Its key is readable by the consul user. -#}
+        {%- set consul_client_cert = consul_tls_enable | bool
+              and (consul_tls_verify_incoming | default(false) | bool or consul_tls_verify_incoming_https | default(false) | bool) -%}
+        {%- set _ = services.append({
+          'name': 'consul_exporter',
+          'binary': 'consul_exporter',
+          'description': 'Prometheus exporter for Consul',
+          'documentation': 'https://github.com/prometheus/consul_exporter',
+          'user': consul_user | default('consul') if consul_client_cert else prometheus_exporters_user,
+          'port': consul_exporter_port,
+          'env_template': 'consul_exporter.env.j2' if consul_exporter_acl_token | default('', true) | length > 0 else '',
+          'args': ['--consul.server=' ~ ('https' if consul_tls_enable | bool else 'http') ~ '://' ~ consul_exporter_server]
+                  + (['--consul.ca-file=' ~ prometheus_exporters_conf_dir ~ '/consul-ca.crt'] if consul_tls_enable | bool else [])
+                  + (['--consul.cert-file=' ~ consul_tls_dir ~ '/' ~ consul_tls_server_crt,
+                      '--consul.key-file=' ~ consul_tls_dir ~ '/' ~ consul_tls_server_key] if consul_client_cert else [])
+                  + (['--consul.agent-only'] if consul_exporter_agent_only | bool else [])
+                  + consul_exporter_extra_args | default([])
+        }) -%}
+      {%- endif -%}
       {{ services }}
     _packages: >-
       {%- set packages = [] -%}
-      {%- for name in ['node_exporter', 'postgres_exporter', 'pgbouncer_exporter', 'pgbackrest_exporter'] -%}
+      {%- for name in ['node_exporter', 'postgres_exporter', 'pgbouncer_exporter', 'pgbackrest_exporter', 'consul_exporter'] -%}
         {%- if lookup('vars', name ~ '_install') | bool -%}
           {%- set _ = packages.append({
             'binary': name,

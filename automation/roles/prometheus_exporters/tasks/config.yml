@@ -29,6 +29,20 @@
   register: prometheus_exporters_web_config_removed_result
   when: prometheus_exporters_web_config | default({}, true) | length == 0
 
+# The Consul configuration directory is only readable by the consul user. The CA certificate is public.
+- name: Copy the CA certificate of Consul for consul_exporter
+  ansible.builtin.copy:
+    src: "{{ consul_tls_dir }}/{{ consul_tls_ca_crt }}"
+    dest: "{{ prometheus_exporters_conf_dir }}/consul-ca.crt"
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0644"
+  register: prometheus_exporters_consul_ca_result
+  when:
+    - consul_exporter_install | bool
+    - consul_tls_enable | bool
+
 # The connection strings contain the password, so they are not passed on the command line.
 - name: Configure the database connections of the exporters
   ansible.builtin.template:
@@ -70,6 +84,7 @@
     or item.name in (prometheus_exporters_unit_result.results | default([]) | selectattr('changed') | map(attribute='item.name') | list)
     or prometheus_exporters_web_config_result is changed
     or prometheus_exporters_web_config_removed_result is changed
+    or (item.name == 'consul_exporter' and prometheus_exporters_consul_ca_result is changed)
 
 - name: Ensure the exporters are enabled and running
   ansible.builtin.systemd:

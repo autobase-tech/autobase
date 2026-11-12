@@ -396,6 +396,53 @@ groups:
         annotations:
           summary: "etcd WAL fsync takes {{ $value | humanizeDuration }} (p99) on {{ $labels.instance }}"
 
+  # consul_exporter ('dcs_type: consul'). All nodes report the cluster-wide metrics, hence the aggregations.
+  - name: autobase-consul
+    rules:
+      # Patroni uses the local agent: without it, Patroni loses the DCS on this node.
+      - alert: ConsulAgentDown
+        expr: consul_up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "consul_exporter cannot query the local Consul agent on {{ $labels.instance }}"
+
+      - alert: ConsulNoLeader
+        expr: consul_raft_leader == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "The Consul cluster has no Raft leader (seen from {{ $labels.instance }})"
+
+      - alert: ConsulMemberFailed
+        expr: min by (member) (consul_serf_lan_member_status) == 4
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Consul member {{ $labels.member }} has failed"
+
+      # Clients using the DNS name of the primary (e.g. master.<cluster>.service.consul) get no address.
+      # Patroni registers the '<cluster>-master' service on every node; only the primary passes its checks.
+      - alert: ConsulNoHealthyPrimaryService
+        expr: max by (service_name) (consul_catalog_service_node_healthy{service_id=~".+-master"}) == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "No healthy primary in the Consul service {{ $labels.service_name }}"
+
+      # With PgDog, every node registers the '<cluster>-pgdog' service.
+      - alert: ConsulPgDogServiceUnhealthy
+        expr: max by (service_name, node) (consul_catalog_service_node_healthy{service_id=~".+-pgdog"}) == 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "PgDog on {{ $labels.node }} is unhealthy in the Consul service {{ $labels.service_name }}"
+
   # Requires 'haproxy_prometheus_port'.
   - name: autobase-haproxy
     rules:

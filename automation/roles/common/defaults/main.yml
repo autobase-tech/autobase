@@ -1123,6 +1123,7 @@ netdata_conf:
 #   postgres_exporter    http://NODE:9187/metrics  (PostgreSQL)
 #   pgbouncer_exporter   http://NODE:9127/metrics  (PgBouncer; the next ports for additional 'pgbouncer_processes')
 #   pgbackrest_exporter  http://NODE:9854/metrics  (pgBackRest, if 'pgbackrest_install' is 'true')
+#   consul_exporter      http://NODE:9107/metrics  (Consul, if 'dcs_type' is 'consul')
 #   Patroni              http(s)://NODE:8008/metrics (built-in, see 'patroni_restapi_port')
 #   PgDog                http://NODE:9090/metrics  (built-in, if 'pgdog_install' is 'true', see 'pgdog_openmetrics_port')
 #   etcd                 http://NODE:2381/metrics  (built-in, see 'etcd_metrics_port')
@@ -1199,6 +1200,21 @@ pgbackrest_exporter_collect_interval: 600 # seconds between the 'pgbackrest info
 # Other command-line flags. The per-backup metrics have a 'backup_name' label: a series per backup kept in the repository.
 pgbackrest_exporter_extra_args: [] # for example: ["--backrest.backup-type=full"]
 
+# Consul exporter - https://github.com/prometheus/consul_exporter
+# Runs on every node and queries the local Consul agent (its HTTP API listens on 127.0.0.1 only).
+# All nodes report the cluster-wide metrics (Raft, members, health of the services): aggregate them in the alerts.
+consul_exporter_install: "{{ prometheus_exporters_install | bool and dcs_type == 'consul' }}"
+# renovate: datasource=github-releases depName=prometheus/consul_exporter extractVersion=^v(?<version>.*)$
+consul_exporter_version: 0.13.0
+consul_exporter_port: 9107
+consul_exporter_server: "{{ patroni_consul_host | default('127.0.0.1:8500') }}" # the local Consul agent, like Patroni
+# ACL token, if the ACLs deny access by default. It needs read access to the nodes, services, agent and operator (Raft).
+consul_exporter_acl_token: ""
+# Report only the services of the local agent, for example with a Consul cluster shared by many Postgres clusters
+# ('dcs_exists'). Note: this disables the Raft and members metrics.
+consul_exporter_agent_only: false
+consul_exporter_extra_args: []
+
 # The metrics ports of the Postgres cluster nodes, for the firewall and the cloud security groups (derived, do not override).
 # Patroni metrics use 'patroni_restapi_port', which is always open.
 prometheus_exporters_ports: >-
@@ -1208,6 +1224,7 @@ prometheus_exporters_ports: >-
     + (range(pgbouncer_exporter_port | int, pgbouncer_exporter_port | int + pgbouncer_processes | default(1) | int) | list
        if pgbouncer_exporter_install | bool else [])
     + ([pgbackrest_exporter_port] if pgbackrest_exporter_install | bool else [])
+    + ([consul_exporter_port] if consul_exporter_install | bool else [])
     + ([pgdog_openmetrics_port] if pgdog_install | bool and pgdog_openmetrics_port | string | length > 0 else [])
   }}
 
@@ -1611,6 +1628,8 @@ pgbouncer_exporter_package_repo: "https://github.com/prometheus-community/pgboun
 pgbouncer_exporter_package_checksum: "sha256:{{ pgbouncer_exporter_package_repo | dirname }}/sha256sums.txt"
 pgbackrest_exporter_package_repo: "https://github.com/woblerr/pgbackrest_exporter/releases/download/v{{ pgbackrest_exporter_version }}/pgbackrest_exporter-{{ pgbackrest_exporter_version }}-linux-{{ pgbackrest_exporter_architecture_map[ansible_architecture] }}.tar.gz"
 pgbackrest_exporter_package_checksum: "sha256:{{ pgbackrest_exporter_package_repo | dirname }}/pgbackrest_exporter_checksums.txt"
+consul_exporter_package_repo: "https://github.com/prometheus/consul_exporter/releases/download/v{{ consul_exporter_version }}/consul_exporter-{{ consul_exporter_version }}.linux-{{ prometheus_exporters_architecture_map[ansible_architecture] }}.tar.gz"
+consul_exporter_package_checksum: "sha256:{{ consul_exporter_package_repo | dirname }}/sha256sums.txt"
 
 # You can also download the deb/rpm packages into the 'files/' directory.
 # Packages from this directory will be used during installation (optional).

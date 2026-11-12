@@ -45,6 +45,19 @@
         - dcs_type == 'etcd'
         - inventory_hostname in groups['etcd_cluster']
 
+    - name: Check the Consul metrics
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ consul_exporter_port }}/metrics"
+        return_content: true
+      register: consul_metrics
+      until: >-
+        consul_metrics.status == 200
+        and 'consul_up 1' in consul_metrics.content
+        and 'consul_raft_leader 1' in consul_metrics.content
+      retries: 6
+      delay: 5
+      when: dcs_type == 'consul'
+
     - name: Check the PgDog metrics
       ansible.builtin.uri:
         url: "http://127.0.0.1:{{ pgdog_openmetrics_port }}/metrics"

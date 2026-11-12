@@ -18,6 +18,7 @@ This enables all the endpoints available for the components of the cluster:
 | PostgreSQL | `http://NODE:9187/metrics` ([postgres_exporter](https://github.com/prometheus-community/postgres_exporter)) | `postgres_exporter_install` |
 | PgBouncer | `http://NODE:9127/metrics` ([pgbouncer_exporter](https://github.com/prometheus-community/pgbouncer_exporter)), and the next ports for the additional `pgbouncer_processes` | `pgbouncer_exporter_install`, if `pgbouncer_install` |
 | pgBackRest | `http://NODE:9854/metrics` ([pgbackrest_exporter](https://github.com/woblerr/pgbackrest_exporter)) | `pgbackrest_exporter_install`, if `pgbackrest_install` |
+| Consul | `http://NODE:9107/metrics` ([consul_exporter](https://github.com/prometheus/consul_exporter)) | `consul_exporter_install`, if `dcs_type: consul` |
 | Patroni | `http(s)://NODE:8008/metrics` (REST API) | always available |
 | PgDog | `http://NODE:9090/metrics` (built-in) | `pgdog_openmetrics_port`, if `pgdog_install` |
 | etcd | `http://NODE:2381/metrics` (built-in, plain HTTP, no client certificate) | `etcd_metrics_port`, if `dcs_type: etcd` |
@@ -25,7 +26,7 @@ This enables all the endpoints available for the components of the cluster:
 
 Each exporter can also be enabled or disabled individually, for example `node_exporter_install: false`. Disabled exporters are stopped and removed on the next run. The HAProxy endpoint is opt-in because it requires HAProxy built with the Prometheus exporter (`haproxy -vv` shows "Prometheus exporter").
 
-The exporters are installed from the upstream release archives into `/usr/local/bin`, with the checksums verified, and run as systemd services named after them (`node_exporter`, `postgres_exporter`, `pgbouncer_exporter`, `pgbouncer_exporter-2`, `pgbackrest_exporter`). For offline installations, point `*_package_repo` to a mirror that also contains the checksum file, or set `*_package_checksum: ""`.
+The exporters are installed from the upstream release archives into `/usr/local/bin`, with the checksums verified, and run as systemd services named after them (`node_exporter`, `postgres_exporter`, `pgbouncer_exporter`, `pgbouncer_exporter-2`, `pgbackrest_exporter`, `consul_exporter`). For offline installations, point `*_package_repo` to a mirror that also contains the checksum file, or set `*_package_checksum: ""`.
 
 The Prometheus server, the scrape configuration (including the discovery of the nodes) and the alerting rules are not managed by this role. See [`files/prometheus_alerts.yml`](files/prometheus_alerts.yml) for example rules.
 
@@ -57,6 +58,14 @@ postgres_exporter connects to the database `postgres_exporter_dbname` (`postgres
 The user is not created on a standby cluster (`patroni_standby_cluster`), which is read-only: create it on the source cluster, and set the same `prometheus_exporters_db_password`.
 
 pgbackrest_exporter runs as `postgres`, to read the pgBackRest configuration and use the same repository access as the backups. It runs on every node, and all nodes report the same backups: aggregate them in the alerts, for example with `max by (stanza)`.
+
+## Consul
+
+The HTTP API of the Consul agents listens on `127.0.0.1` only, so its built-in metrics cannot be scraped remotely. consul_exporter runs on every node and queries the local agent (`consul_exporter_server`, like Patroni), over HTTPS when `consul_tls_enable` is `true`, with a copy of the CA certificate of Consul in `/etc/prometheus-exporters/consul-ca.crt` (the Consul configuration directory is only readable by the `consul` user). With `consul_tls_verify_incoming`, it also uses the client certificate of Consul and runs as the `consul` user, which can read its key.
+
+All nodes report the cluster-wide metrics: the Raft leader and peers, the members, and the health of all the services in the catalog. Aggregate them in the alerts. With a Consul cluster shared by many Postgres clusters (`dcs_exists`), the catalog can be large: `consul_exporter_agent_only: true` reports only the services of the local agent, but it also disables the Raft and members metrics.
+
+If the ACLs deny access by default, set `consul_exporter_acl_token` to a token with read access to the nodes, services, agent and operator. It is passed in an environment file, not on the command line.
 
 ## Network access
 
@@ -103,6 +112,13 @@ The variables are defined in [`roles/common/defaults/main.yml`](../common/defaul
 | `pgbackrest_exporter_port` | `9854` | Port of pgbackrest_exporter |
 | `pgbackrest_exporter_collect_interval` | `600` | Seconds between the `pgbackrest info` calls |
 | `pgbackrest_exporter_extra_args` | `[]` | Other command-line flags |
+| `consul_exporter_install` | `prometheus_exporters_install` and `dcs_type: consul` | Install consul_exporter |
+| `consul_exporter_version` | see defaults | consul_exporter version |
+| `consul_exporter_port` | `9107` | Port of consul_exporter |
+| `consul_exporter_server` | `patroni_consul_host` or `127.0.0.1:8500` | Address of the local Consul agent |
+| `consul_exporter_acl_token` | `""` | ACL token, if the ACLs deny access by default |
+| `consul_exporter_agent_only` | `false` | Report only the services of the local agent (disables the Raft and members metrics) |
+| `consul_exporter_extra_args` | `[]` | Other command-line flags |
 | `*_package_repo` | GitHub release | URL of the release archive |
 | `*_package_checksum` | `sha256:<checksum file URL>` | Checksum of the archive, or `""` to skip the verification |
 | `pgdog_openmetrics_port` | `9090` with `prometheus_exporters_install` | Port of the PgDog OpenMetrics endpoint, or `""` |

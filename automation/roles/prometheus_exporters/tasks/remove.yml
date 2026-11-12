@@ -10,6 +10,7 @@
       - pgbouncer_exporter.service
       - pgbouncer_exporter-*.service
       - pgbackrest_exporter.service
+      - consul_exporter.service
     contains: "^# Managed by Autobase \\(prometheus_exporters role\\)$"
   register: prometheus_exporters_units_found
 
