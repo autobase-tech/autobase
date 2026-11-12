@@ -15,7 +15,7 @@
       loop: >-
         {{
           [
-            {'name': 'node_exporter', 'port': node_exporter_port, 'expected': 'node_cpu_seconds_total'},
+            {'name': 'node_exporter', 'port': node_exporter_port, 'expected': 'node_memory_MemAvailable_bytes'},
             {'name': 'postgres_exporter', 'port': postgres_exporter_port, 'expected': 'pg_up 1'}
           ]
           + (range(pgbouncer_exporter_port | int, pgbouncer_exporter_port | int + pgbouncer_processes | default(1) | int)

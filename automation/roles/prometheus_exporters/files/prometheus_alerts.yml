@@ -3,6 +3,8 @@
 # This file is not deployed: copy it to your Prometheus configuration ('rule_files') and adapt it.
 # The thresholds are examples; review them for your workload, backup schedule and alert routing.
 # Validate with: promtool check rules prometheus_alerts.yml
+# The list of alerts, and how to collect only the metrics they use: see the "Alerts" and
+# "Collecting only the needed metrics" sections of the role README (roles/prometheus_exporters/README.md).
 groups:
   - name: autobase-node
     rules:
@@ -178,7 +180,7 @@ groups:
       # The age stays below 'autovacuum_freeze_max_age' (200 million by default) while autovacuum keeps up.
       # Requires the 'database_wraparound' collector (enabled by Autobase). The value is a number of transactions.
       - alert: PostgresTxidWraparound
-        expr: max by (instance, datname) (pg_database_wraparound_age_datfrozenxid_seconds) > 1000000000
+        expr: max by (instance, datname) (pg_database_wraparound_age_datfrozenxid_seconds) > 500000000
         for: 5m
         labels:
           severity: warning
@@ -186,7 +188,7 @@ groups:
           summary: "The oldest unfrozen transaction ID of {{ $labels.datname }} is {{ $value | humanize }} transactions old on {{ $labels.instance }}"
 
       - alert: PostgresTxidWraparound
-        expr: max by (instance, datname) (pg_database_wraparound_age_datfrozenxid_seconds) > 1500000000
+        expr: max by (instance, datname) (pg_database_wraparound_age_datfrozenxid_seconds) > 1000000000
         for: 5m
         labels:
           severity: critical
@@ -249,12 +251,13 @@ groups:
         annotations:
           summary: "A session in {{ $labels.datname }} has been idle in transaction for {{ $value | humanizeDuration }} on {{ $labels.instance }}"
 
+      # Occasional deadlocks are resolved by PostgreSQL (one transaction is aborted); alert on repeated ones only.
       - alert: PostgresDeadlocks
-        expr: increase(pg_stat_database_deadlocks[5m]) > 0
+        expr: increase(pg_stat_database_deadlocks[1h]) > 5
         labels:
           severity: warning
         annotations:
-          summary: "Deadlocks in the database {{ $labels.datname }} on {{ $labels.instance }}"
+          summary: "{{ $value | humanize }} deadlocks in an hour in the database {{ $labels.datname }} on {{ $labels.instance }}"
 
       # The alerts using 'pg_settings_*' require the 'settings' collector (enabled by default). If it is too verbose,
       # keep only the settings used here with 'metric_relabel_configs' in your Prometheus.
@@ -347,7 +350,14 @@ groups:
       # The default schedule ('pgbackrest_cron_jobs') is a weekly full, a daily diff and an incremental every 4 hours.
       # The "incr" value is the age of the last backup of any type.
       - alert: PgBackRestNoRecentBackup
-        expr: min by (stanza) (pgbackrest_backup_since_last_completion_seconds{backup_type="incr"}) > 12 * 3600
+        expr: min by (stanza) (pgbackrest_backup_since_last_completion_seconds{backup_type="incr"}) > 86400
+        labels:
+          severity: warning
+        annotations:
+          summary: "No backup of the stanza {{ $labels.stanza }} for {{ $value | humanizeDuration }}"
+
+      - alert: PgBackRestNoRecentBackup
+        expr: min by (stanza) (pgbackrest_backup_since_last_completion_seconds{backup_type="incr"}) > 2 * 86400
         labels:
           severity: critical
         annotations:
