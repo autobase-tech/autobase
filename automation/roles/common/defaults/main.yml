@@ -1168,6 +1168,7 @@ postgres_exporter_port: 9187
 # Collectors to enable (true) or disable (false), in addition to the defaults of the exporter:
 # https://github.com/prometheus-community/postgres_exporter#flags
 postgres_exporter_collectors:
+  database_wraparound: true # age of the oldest transaction ID and multixact ID, per database
   long_running_transactions: true
   postmaster: true
 #  stat_statements: true # requires the 'pg_stat_statements' extension in the 'postgres' database

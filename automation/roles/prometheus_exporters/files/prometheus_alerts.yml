@@ -37,6 +37,17 @@ groups:
         annotations:
           summary: "Disk {{ $labels.mountpoint }} on {{ $labels.instance }} is predicted to fill up within 24 hours"
 
+      - alert: NodeFilesystemInodesAlmostExhausted
+        expr: >-
+          node_filesystem_files_free{fstype!~"tmpfs|overlay|squashfs"}
+          / node_filesystem_files{fstype!~"tmpfs|overlay|squashfs"} * 100 < 10
+          and node_filesystem_readonly == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Less than 10% of inodes left on {{ $labels.instance }} ({{ $labels.mountpoint }})"
+
       - alert: NodeMemoryLow
         expr: node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes * 100 < 5
         for: 5m
@@ -44,6 +55,22 @@ groups:
           severity: warning
         annotations:
           summary: "Less than 5% of memory available on {{ $labels.instance }}"
+
+      # The OOM killer terminating a PostgreSQL backend makes the postmaster restart all connections (crash recovery).
+      - alert: NodeOomKill
+        expr: increase(node_vmstat_oom_kill[5m]) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: "The OOM killer terminated a process on {{ $labels.instance }}"
+
+      - alert: NodeClockNotSynchronised
+        expr: min_over_time(node_timex_sync_status[5m]) == 0 and node_timex_maxerror_seconds >= 16
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "The clock of {{ $labels.instance }} is not synchronised (NTP)"
 
   - name: autobase-patroni
     rules:
@@ -69,6 +96,40 @@ groups:
           severity: warning
         annotations:
           summary: "Failover or switchover in the Patroni cluster {{ $labels.scope }} (new timeline)"
+
+      - alert: PatroniFrequentLeaderChanges
+        expr: changes(max by (scope) (patroni_postgres_timeline)[1h:1m]) > 2
+        labels:
+          severity: critical
+        annotations:
+          summary: "The leader of the Patroni cluster {{ $labels.scope }} changed {{ $value }} times in an hour"
+
+      - alert: PatroniDcsUnreachable
+        expr: time() - patroni_dcs_last_seen > 300
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Patroni on {{ $labels.name }} has not reached the DCS for {{ $value | humanizeDuration }}"
+
+      # A replica that does not stream from the primary falls behind, and may not be able to take over.
+      - alert: PatroniReplicaNotStreaming
+        expr: patroni_replica == 1 and patroni_postgres_streaming == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Replica {{ $labels.name }} of the cluster {{ $labels.scope }} is not streaming from the primary"
+
+      # Only with 'synchronous_mode: true': without a synchronous standby, the commits are not replicated synchronously
+      # (or are blocked with 'synchronous_mode_strict: true').
+      # - alert: PatroniNoSynchronousStandby
+      #   expr: max by (scope) (patroni_sync_standby) == 0
+      #   for: 1m
+      #   labels:
+      #     severity: critical
+      #   annotations:
+      #     summary: "The Patroni cluster {{ $labels.scope }} has no synchronous standby"
 
       - alert: PatroniPaused
         expr: max by (scope) (patroni_is_paused) == 1
@@ -96,6 +157,50 @@ groups:
         annotations:
           summary: "postgres_exporter cannot connect to PostgreSQL on {{ $labels.instance }}"
 
+      # A failing collector leaves gaps in the metrics, while 'pg_up' stays 1.
+      - alert: PostgresExporterCollectorFailing
+        expr: pg_scrape_collector_success == 0 and on (instance) pg_up == 1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "postgres_exporter collector '{{ $labels.collector }}' fails on {{ $labels.instance }}"
+
+      # A crash (e.g. a backend killed by the OOM killer) restarts the postmaster, without a Patroni failover.
+      - alert: PostgresRestarted
+        expr: time() - pg_postmaster_start_time_seconds < 300
+        labels:
+          severity: warning
+        annotations:
+          summary: "PostgreSQL on {{ $labels.instance }} has been restarted"
+
+      # PostgreSQL stops accepting writes 3 million transactions before the wraparound (2^31).
+      # The age stays below 'autovacuum_freeze_max_age' (200 million by default) while autovacuum keeps up.
+      # Requires the 'database_wraparound' collector (enabled by Autobase). The value is a number of transactions.
+      - alert: PostgresTxidWraparound
+        expr: max by (instance, datname) (pg_database_wraparound_age_datfrozenxid_seconds) > 1000000000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "The oldest unfrozen transaction ID of {{ $labels.datname }} is {{ $value | humanize }} transactions old on {{ $labels.instance }}"
+
+      - alert: PostgresTxidWraparound
+        expr: max by (instance, datname) (pg_database_wraparound_age_datfrozenxid_seconds) > 1500000000
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.datname }} is approaching the transaction ID wraparound on {{ $labels.instance }} ({{ $value | humanize }})"
+
+      - alert: PostgresMultixactWraparound
+        expr: max by (instance, datname) (pg_database_wraparound_age_datminmxid_seconds) > 1000000000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "The oldest multixact ID of {{ $labels.datname }} is {{ $value | humanize }} old on {{ $labels.instance }}"
+
       - alert: PostgresReplicationLag
         expr: pg_replication_lag_seconds > 300 and pg_replication_is_replica == 1
         for: 5m
@@ -112,6 +217,15 @@ groups:
         annotations:
           summary: "Inactive replication slot {{ $labels.slot_name }} on the primary {{ $labels.instance }} retains WAL"
 
+      # Adapt the threshold to the size of the WAL disk.
+      - alert: PostgresReplicationSlotRetainsWal
+        expr: pg_replication_slots_pg_wal_lsn_diff > 10 * 1024 * 1024 * 1024 and on (instance) pg_replication_is_replica == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Replication slot {{ $labels.slot_name }} retains {{ $value | humanize1024 }}B of WAL on {{ $labels.instance }}"
+
       - alert: PostgresWalArchivingFailing
         expr: increase(pg_stat_archiver_failed_count[15m]) > 0 and on (instance) pg_replication_is_replica == 0
         labels:
@@ -126,6 +240,15 @@ groups:
         annotations:
           summary: "A transaction has been running for {{ $value | humanizeDuration }} on {{ $labels.instance }}"
 
+      # An idle transaction keeps its locks and prevents vacuum from removing the dead rows.
+      - alert: PostgresIdleInTransaction
+        expr: max by (instance, datname) (pg_stat_activity_max_tx_duration{state=~"idle in transaction.*"}) > 300
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "A session in {{ $labels.datname }} has been idle in transaction for {{ $value | humanizeDuration }} on {{ $labels.instance }}"
+
       - alert: PostgresDeadlocks
         expr: increase(pg_stat_database_deadlocks[5m]) > 0
         labels:
@@ -133,8 +256,8 @@ groups:
         annotations:
           summary: "Deadlocks in the database {{ $labels.datname }} on {{ $labels.instance }}"
 
-      # Requires the 'settings' collector (enabled by default). If it is too verbose, keep only
-      # 'pg_settings_max_connections' with 'metric_relabel_configs' in your Prometheus.
+      # The alerts using 'pg_settings_*' require the 'settings' collector (enabled by default). If it is too verbose,
+      # keep only the settings used here with 'metric_relabel_configs' in your Prometheus.
       - alert: PostgresTooManyConnections
         expr: >-
           sum by (instance) (pg_stat_activity_count)
@@ -144,6 +267,27 @@ groups:
           severity: warning
         annotations:
           summary: "{{ $value | humanize }}% of max_connections are used on {{ $labels.instance }}"
+
+      - alert: PostgresTooManyConnections
+        expr: >-
+          sum by (instance) (pg_stat_activity_count)
+          / on (instance) pg_settings_max_connections * 100 > 90
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $value | humanize }}% of max_connections are used on {{ $labels.instance }}"
+
+      # The lock table is sized by max_locks_per_transaction * max_connections; when it is full, queries fail.
+      - alert: PostgresTooManyLocks
+        expr: >-
+          sum by (instance) (pg_locks_count)
+          / on (instance) (pg_settings_max_locks_per_transaction * pg_settings_max_connections) * 100 > 20
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $value | humanize }}% of the lock table is used on {{ $labels.instance }}"
 
   - name: autobase-pgbouncer
     rules:
@@ -162,6 +306,17 @@ groups:
           severity: warning
         annotations:
           summary: "Clients of {{ $labels.database }}/{{ $labels.user }} wait {{ $value | humanizeDuration }} for a connection on {{ $labels.instance }}"
+
+      # Each PgBouncer process ('pgbouncer_processes') has its own 'max_client_conn'.
+      - alert: PgBouncerClientConnectionsNearLimit
+        expr: >-
+          sum by (instance) (pgbouncer_pools_client_active_connections + pgbouncer_pools_client_waiting_connections)
+          / on (instance) pgbouncer_config_max_client_connections * 100 > 90
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $value | humanize }}% of max_client_conn are used on {{ $labels.instance }}"
 
   # All nodes report the same backups, hence the aggregation by stanza.
   - name: autobase-pgbackrest
@@ -221,6 +376,25 @@ groups:
           severity: warning
         annotations:
           summary: "etcd leader changed {{ $value | humanize }} times in an hour ({{ $labels.instance }})"
+
+      # When the database reaches the quota, etcd only accepts reads: Patroni cannot renew the leader lock
+      # and the primary is demoted.
+      - alert: EtcdDatabaseQuotaAlmostFull
+        expr: etcd_mvcc_db_total_size_in_bytes / etcd_server_quota_backend_bytes * 100 > 80
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "etcd database on {{ $labels.instance }} uses {{ $value | humanize }}% of its quota"
+
+      # Slow disks delay the heartbeats and cause leader elections.
+      - alert: EtcdSlowWalFsync
+        expr: histogram_quantile(0.99, sum by (instance, le) (rate(etcd_disk_wal_fsync_duration_seconds_bucket[5m]))) > 0.5
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "etcd WAL fsync takes {{ $value | humanizeDuration }} (p99) on {{ $labels.instance }}"
 
   # Requires 'haproxy_prometheus_port'.
   - name: autobase-haproxy
