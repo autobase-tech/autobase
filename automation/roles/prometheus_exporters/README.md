@@ -34,7 +34,7 @@ The Prometheus server, the scrape configuration (including the discovery of the 
 Only the metrics that are needed should be collected:
 
 - `node_exporter_collectors` limits node_exporter to the listed collectors (with `--collector.disable-defaults`).
-- `postgres_exporter_collectors` enables or disables [collectors](https://github.com/prometheus-community/postgres_exporter#flags) on top of the exporter defaults. By default, `database_wraparound`, `long_running_transactions` and `postmaster` are added to the default collectors (they are used by the example alerts), and none is disabled. The collectors with the most series are `stat_user_tables` and `statio_user_tables` (per table of the `postgres` database), `settings` (per setting) and `stat_activity` (per database, user, application and state).
+- `postgres_exporter_collectors` enables or disables [collectors](https://github.com/prometheus-community/postgres_exporter#flags) on top of the exporter defaults. By default, `database_wraparound`, `long_running_transactions` and `postmaster` are added to the default collectors (they are used by the example alerts), and none is disabled. The collectors with the most series are `stat_user_tables` and `statio_user_tables` (per table of the `postgres_exporter_dbname` database), `settings` (per setting) and `stat_activity` (per database, user, application and state).
 - pgbackrest_exporter exports a series per backup kept in the repository for the `pgbackrest_backup_*` metrics (`backup_name` label). The alerts usually need only the `pgbackrest_backup_*last*` and `pgbackrest_backup_since_last_completion_seconds` metrics. Use `pgbackrest_exporter_extra_args`, for example `["--backrest.backup-type=full"]`, or drop the series in Prometheus.
 - PgDog, Patroni, etcd and HAProxy expose a fixed set of metrics. The rest can be dropped on the Prometheus side with `metric_relabel_configs`.
 
@@ -44,13 +44,15 @@ postgres_exporter_collectors:
   settings: false
   stat_user_tables: false
   statio_user_tables: false
-  stat_statements: true # requires the 'pg_stat_statements' extension in the 'postgres' database
+  stat_statements: true # requires the 'pg_stat_statements' extension in the 'postgres_exporter_dbname' database
 postgres_exporter_extra_args: ["--collector.stat_statements.limit=20"]
 ```
 
 ## Database access
 
 postgres_exporter and pgbouncer_exporter connect through the Unix sockets with the PostgreSQL user `prometheus_exporters_db_user` (`postgres_exporter`). It is created on the primary with the [`pg_monitor`](https://www.postgresql.org/docs/current/predefined-roles.html) role, and added to the `stats_users` of PgBouncer. The password is generated if `prometheus_exporters_db_password` is not defined, and is kept in `/etc/prometheus-exporters/postgres.pass` (mode `0600`) for the next runs. The connection strings are in `/etc/prometheus-exporters/*.env`, readable only by root and the exporters, and are not passed on the command line.
+
+postgres_exporter connects to the database `postgres_exporter_dbname` (`postgres`). The instance-wide metrics, such as `pg_stat_database`, the database sizes, the transaction ID wraparound, the replication and the WAL, cover all databases. The per-table and per-index metrics (`stat_user_tables`, `statio_user_tables`, `statio_user_indexes`) only cover the database the exporter connects to: set `postgres_exporter_dbname` to the main database of the application to get them. The user needs the `CONNECT` privilege on it, which is granted to `PUBLIC` by default.
 
 The user is not created on a standby cluster (`patroni_standby_cluster`), which is read-only: create it on the source cluster, and set the same `prometheus_exporters_db_password`.
 
@@ -89,6 +91,7 @@ The variables are defined in [`roles/common/defaults/main.yml`](../common/defaul
 | `postgres_exporter_install` | `prometheus_exporters_install` | Install postgres_exporter |
 | `postgres_exporter_version` | see defaults | postgres_exporter version |
 | `postgres_exporter_port` | `9187` | Port of postgres_exporter |
+| `postgres_exporter_dbname` | `"postgres"` | Database to connect to (per-table metrics are collected for this database only) |
 | `postgres_exporter_collectors` | see defaults | Collectors to enable (`true`) or disable (`false`) |
 | `postgres_exporter_extra_args` | `[]` | Other command-line flags |
 | `pgbouncer_exporter_install` | `prometheus_exporters_install` and `pgbouncer_install` | Install pgbouncer_exporter |

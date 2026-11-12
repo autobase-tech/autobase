@@ -1165,13 +1165,16 @@ postgres_exporter_install: "{{ prometheus_exporters_install }}"
 # renovate: datasource=github-releases depName=prometheus-community/postgres_exporter extractVersion=^v(?<version>.*)$
 postgres_exporter_version: 0.20.1
 postgres_exporter_port: 9187
+# The database to connect to. The instance-wide metrics (pg_stat_database, sizes, wraparound, replication, WAL...)
+# cover all databases; the per-table and per-index metrics ('stat_user_tables', 'statio_user_*') only cover this one.
+postgres_exporter_dbname: "postgres"
 # Collectors to enable (true) or disable (false), in addition to the defaults of the exporter:
 # https://github.com/prometheus-community/postgres_exporter#flags
 postgres_exporter_collectors:
   database_wraparound: true # age of the oldest transaction ID and multixact ID, per database
   long_running_transactions: true
   postmaster: true
-#  stat_statements: true # requires the 'pg_stat_statements' extension in the 'postgres' database
+#  stat_statements: true # requires the 'pg_stat_statements' extension in the 'postgres_exporter_dbname' database
 #  To reduce the cardinality, disable the collectors with a series per table or per setting:
 #  stat_user_tables: false
 #  statio_user_tables: false
