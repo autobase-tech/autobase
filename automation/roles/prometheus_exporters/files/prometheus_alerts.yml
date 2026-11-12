@@ -1,0 +1,234 @@
+---
+# Example Prometheus alerting rules for the metrics exposed by Autobase (see 'prometheus_exporters_install').
+# This file is not deployed: copy it to your Prometheus configuration ('rule_files') and adapt it.
+# The thresholds are examples; review them for your workload, backup schedule and alert routing.
+# Validate with: promtool check rules prometheus_alerts.yml
+groups:
+  - name: autobase-node
+    rules:
+      - alert: MetricsTargetDown
+        expr: up == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Metrics endpoint {{ $labels.instance }} ({{ $labels.job }}) is down"
+
+      - alert: NodeFilesystemAlmostFull
+        expr: >-
+          node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs"}
+          / node_filesystem_size_bytes{fstype!~"tmpfs|overlay|squashfs"} * 100 < 10
+          and node_filesystem_readonly == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Less than 10% of disk space left on {{ $labels.instance }} ({{ $labels.mountpoint }})"
+
+      - alert: NodeFilesystemFillingUp
+        expr: >-
+          predict_linear(node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs"}[6h], 24 * 3600) < 0
+          and node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs"}
+          / node_filesystem_size_bytes{fstype!~"tmpfs|overlay|squashfs"} * 100 < 30
+          and node_filesystem_readonly == 0
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "Disk {{ $labels.mountpoint }} on {{ $labels.instance }} is predicted to fill up within 24 hours"
+
+      - alert: NodeMemoryLow
+        expr: node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes * 100 < 5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Less than 5% of memory available on {{ $labels.instance }}"
+
+  - name: autobase-patroni
+    rules:
+      - alert: PatroniPostgresNotRunning
+        expr: patroni_postgres_running == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "PostgreSQL is not running on {{ $labels.name }} (cluster {{ $labels.scope }})"
+
+      - alert: PatroniClusterUnlocked
+        expr: max by (scope) (patroni_cluster_unlocked) == 1
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Patroni cluster {{ $labels.scope }} has no leader"
+
+      - alert: PatroniLeaderChanged
+        expr: changes(max by (scope) (patroni_postgres_timeline)[15m:1m]) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: "Failover or switchover in the Patroni cluster {{ $labels.scope }} (new timeline)"
+
+      - alert: PatroniPaused
+        expr: max by (scope) (patroni_is_paused) == 1
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "Patroni cluster {{ $labels.scope }} is in maintenance mode (automatic failover is disabled)"
+
+      - alert: PatroniPendingRestart
+        expr: patroni_pending_restart == 1
+        for: 1h
+        labels:
+          severity: info
+        annotations:
+          summary: "PostgreSQL on {{ $labels.name }} needs a restart to apply the configuration"
+
+  - name: autobase-postgres
+    rules:
+      - alert: PostgresDown
+        expr: pg_up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "postgres_exporter cannot connect to PostgreSQL on {{ $labels.instance }}"
+
+      - alert: PostgresReplicationLag
+        expr: pg_replication_lag_seconds > 300 and pg_replication_is_replica == 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Replica {{ $labels.instance }} is {{ $value | humanizeDuration }} behind the primary"
+
+      - alert: PostgresInactiveReplicationSlot
+        expr: pg_replication_slots_active == 0 and on (instance) pg_replication_is_replica == 0
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Inactive replication slot {{ $labels.slot_name }} on the primary {{ $labels.instance }} retains WAL"
+
+      - alert: PostgresWalArchivingFailing
+        expr: increase(pg_stat_archiver_failed_count[15m]) > 0 and on (instance) pg_replication_is_replica == 0
+        labels:
+          severity: critical
+        annotations:
+          summary: "WAL archiving fails on {{ $labels.instance }}"
+
+      - alert: PostgresLongRunningTransaction
+        expr: pg_long_running_transactions_oldest_timestamp_seconds > 3600
+        labels:
+          severity: warning
+        annotations:
+          summary: "A transaction has been running for {{ $value | humanizeDuration }} on {{ $labels.instance }}"
+
+      - alert: PostgresDeadlocks
+        expr: increase(pg_stat_database_deadlocks[5m]) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: "Deadlocks in the database {{ $labels.datname }} on {{ $labels.instance }}"
+
+      # Requires the 'settings' collector (enabled by default). If it is too verbose, keep only
+      # 'pg_settings_max_connections' with 'metric_relabel_configs' in your Prometheus.
+      - alert: PostgresTooManyConnections
+        expr: >-
+          sum by (instance) (pg_stat_activity_count)
+          / on (instance) pg_settings_max_connections * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $value | humanize }}% of max_connections are used on {{ $labels.instance }}"
+
+  - name: autobase-pgbouncer
+    rules:
+      - alert: PgBouncerDown
+        expr: pgbouncer_up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "pgbouncer_exporter cannot connect to PgBouncer on {{ $labels.instance }}"
+
+      - alert: PgBouncerClientsWaiting
+        expr: max by (instance, database, user) (pgbouncer_pools_client_maxwait_seconds) > 10
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Clients of {{ $labels.database }}/{{ $labels.user }} wait {{ $value | humanizeDuration }} for a connection on {{ $labels.instance }}"
+
+  # All nodes report the same backups, hence the aggregation by stanza.
+  - name: autobase-pgbackrest
+    rules:
+      - alert: PgBackRestInfoFailing
+        expr: max by (stanza) (pgbackrest_exporter_status) == 0
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "pgbackrest_exporter cannot get the backup information of the stanza {{ $labels.stanza }}"
+
+      - alert: PgBackRestStanzaError
+        expr: min by (stanza) (pgbackrest_stanza_status) > 0
+        for: 30m
+        labels:
+          severity: critical
+        annotations:
+          summary: "pgBackRest stanza {{ $labels.stanza }} has an error status ({{ $value }})"
+
+      - alert: PgBackRestBackupError
+        expr: max by (stanza, backup_type) (pgbackrest_backup_last_error_status) == 1
+        labels:
+          severity: critical
+        annotations:
+          summary: "The last {{ $labels.backup_type }} backup of the stanza {{ $labels.stanza }} contains page checksum errors"
+
+      # The default schedule ('pgbackrest_cron_jobs') is a weekly full, a daily diff and an incremental every 4 hours.
+      # The "incr" value is the age of the last backup of any type.
+      - alert: PgBackRestNoRecentBackup
+        expr: min by (stanza) (pgbackrest_backup_since_last_completion_seconds{backup_type="incr"}) > 12 * 3600
+        labels:
+          severity: critical
+        annotations:
+          summary: "No backup of the stanza {{ $labels.stanza }} for {{ $value | humanizeDuration }}"
+
+      - alert: PgBackRestNoRecentFullBackup
+        expr: min by (stanza) (pgbackrest_backup_since_last_completion_seconds{backup_type="full"}) > 8 * 86400
+        labels:
+          severity: warning
+        annotations:
+          summary: "No full backup of the stanza {{ $labels.stanza }} for {{ $value | humanizeDuration }}"
+
+  - name: autobase-etcd
+    rules:
+      - alert: EtcdNoLeader
+        expr: etcd_server_has_leader == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "etcd member {{ $labels.instance }} has no leader"
+
+      - alert: EtcdFrequentLeaderChanges
+        expr: increase(etcd_server_leader_changes_seen_total[1h]) > 3
+        labels:
+          severity: warning
+        annotations:
+          summary: "etcd leader changed {{ $value | humanize }} times in an hour ({{ $labels.instance }})"
+
+  # Requires 'haproxy_prometheus_port'.
+  - name: autobase-haproxy
+    rules:
+      - alert: HAProxyNoPrimary
+        expr: haproxy_backend_active_servers{proxy="master"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "HAProxy on {{ $labels.instance }} has no primary in the 'master' backend"

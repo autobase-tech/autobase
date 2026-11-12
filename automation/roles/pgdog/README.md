@@ -59,7 +59,7 @@ If PgBouncer was explicitly enabled in your inventory, also set `pgbouncer_insta
 | Pool size | Local to each node | Each instance connects to the primary, so count `pool_size * <number of nodes>`, per database and per user. The pre-checks compare the lowest possible total with `max_connections` |
 | In-place major upgrade | `PAUSE` | `MAINTENANCE ON` holds the client queries and lets the running transactions finish |
 | Blue-green upgrade | Traffic redirected automatically | Not supported yet, follow the [manual steps](../upgrade/README.md) |
-| Monitoring | Netdata collector | Not configured. Set `pgdog_openmetrics_port` to expose the metrics in the OpenMetrics format |
+| Monitoring | Netdata collector, `pgbouncer_exporter` | Built-in OpenMetrics endpoint on `pgdog_openmetrics_port`, enabled by `prometheus_exporters_install` |
 
 ## Role Variables
 
@@ -96,7 +96,7 @@ The variables are defined in [`roles/common/defaults/main.yml`](../common/defaul
 | `pgdog_shutdown_timeout` | `60000` | How long to wait for active transactions on shutdown, in milliseconds |
 | `pgdog_prepared_statements_limit` | `5000` | Maximum prepared statements per server connection |
 | `pgdog_healthcheck_port` | `""` | Port for the HTTP health check, for external load balancers |
-| `pgdog_openmetrics_port` | `""` | Port for the OpenMetrics endpoint |
+| `pgdog_openmetrics_port` | `9090` with `prometheus_exporters_install`, otherwise `""` | Port for the OpenMetrics (Prometheus) endpoint, or `""` to disable it |
 
 ### Databases and users
 

@@ -1,0 +1,34 @@
+# Managed by Autobase (prometheus_exporters role)
+{% set listen_addr = '[' ~ prometheus_exporters_listen_addr ~ ']' if ':' in prometheus_exporters_listen_addr else prometheus_exporters_listen_addr %}
+{% set args = ['--web.listen-address=' ~ listen_addr ~ ':' ~ item.port] %}
+{% if prometheus_exporters_web_config | default({}, true) | length > 0 %}
+{%   set _ = args.append('--web.config.file=' ~ prometheus_exporters_conf_dir ~ '/web.yml') %}
+{% endif %}
+{% set _ = args.extend(item.args) %}
+[Unit]
+Description={{ item.description }}
+Documentation={{ item.documentation }}
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+
+User={{ item.user }}
+Group={{ item.user }}
+{% if item.env_template | length > 0 %}
+EnvironmentFile={{ prometheus_exporters_conf_dir }}/{{ item.name }}.env
+{% endif %}
+
+ExecStart=/usr/local/bin/{{ item.binary }}{% for arg in args %} \
+    "{{ arg | replace('\\', '\\\\') | replace('"', '\\"') | replace('%', '%%') | replace('$', '$$') }}"{% endfor %}
+
+Restart=always
+RestartSec=5
+
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=read-only
+
+[Install]
+WantedBy=multi-user.target

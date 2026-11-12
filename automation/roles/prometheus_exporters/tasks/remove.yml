@@ -1,0 +1,47 @@
+---
+# Stop and remove the exporters that are no longer enabled, for example after 'node_exporter_install: false',
+# or after reducing 'pgbouncer_processes'. Only the services created by this role are removed.
+- name: Find the exporter services created by Autobase
+  ansible.builtin.find:
+    paths: /etc/systemd/system
+    patterns:
+      - node_exporter.service
+      - postgres_exporter.service
+      - pgbouncer_exporter.service
+      - pgbouncer_exporter-*.service
+      - pgbackrest_exporter.service
+    contains: "^# Managed by Autobase \\(prometheus_exporters role\\)$"
+  register: prometheus_exporters_units_found
+
+- name: Stop and remove the disabled exporters
+  when: prometheus_exporters_units_disabled | length > 0
+  vars:
+    prometheus_exporters_units_disabled: >-
+      {{
+        prometheus_exporters_units_found.files | default([])
+        | map(attribute='path') | map('basename') | map('regex_replace', '[.]service$', '')
+        | difference(prometheus_exporters_services | default([]) | map(attribute='name'))
+      }}
+  block:
+    - name: Stop and disable the disabled exporters
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        enabled: false
+        state: stopped
+      loop: "{{ prometheus_exporters_units_disabled }}"
+
+    - name: Remove the systemd services of the disabled exporters
+      ansible.builtin.file:
+        path: "/etc/systemd/system/{{ item }}.service"
+        state: absent
+      loop: "{{ prometheus_exporters_units_disabled }}"
+
+    - name: Remove the database connections of the disabled exporters
+      ansible.builtin.file:
+        path: "{{ prometheus_exporters_conf_dir }}/{{ item }}.env"
+        state: absent
+      loop: "{{ prometheus_exporters_units_disabled }}"
+
+    - name: Reload systemd
+      ansible.builtin.systemd:
+        daemon_reload: true

@@ -252,6 +252,26 @@
         - netdata_public_access | bool
         - cloud_firewall | bool
 
+    - name: "GCP: Create or modify Prometheus firewall rule"
+      google.cloud.gcp_compute_firewall:
+        auth_kind: "serviceaccount"
+        service_account_contents: "{{ gcp_service_account_contents }}"
+        project: "{{ gcp_project | default('') }}"
+        name: "{{ patroni_cluster_name }}-prometheus"
+        description: "Firewall rule for the metrics access of Prometheus servers"
+        allowed:
+          - ip_protocol: tcp
+            ports: "{{ (cloud_metrics_ports + [patroni_restapi_port | default('8008')]) | map('string') | list }}"
+        source_ranges: "{{ prometheus_allowed_ips | split(',') }}"
+        target_tags:
+          - "{{ patroni_cluster_name }}" # Only VMs with this tag will be affected
+        network:
+          selfLink: "{{ gcp_network_info.resources[0].selfLink }}"
+        state: present
+      when:
+        - prometheus_allowed_ips | length > 0
+        - cloud_firewall | bool
+
     - name: "GCP: Create or modify Database public firewall rule"
       google.cloud.gcp_compute_firewall:
         auth_kind: "serviceaccount"
@@ -303,6 +323,7 @@
           {{
             [ansible_ssh_port | default('22')] +
             ([netdata_port | default('19999')] if netdata_install | bool else []) +
+            cloud_metrics_ports +
             ([connection_pooler_port | default('6432')] if connection_pooler_enabled | bool else []) +
             [postgresql_port | default('5432')] +
             [patroni_restapi_port | default('8008')] +
@@ -827,6 +848,14 @@
         service_account_contents: "{{ gcp_service_account_contents }}"
         project: "{{ gcp_project | default('') }}"
         name: "{{ patroni_cluster_name }}-netdata-public"
+        state: absent
+
+    - name: "GCP: Delete Prometheus firewall rule"
+      google.cloud.gcp_compute_firewall:
+        auth_kind: "serviceaccount"
+        service_account_contents: "{{ gcp_service_account_contents }}"
+        project: "{{ gcp_project | default('') }}"
+        name: "{{ patroni_cluster_name }}-prometheus"
         state: absent
 
     - name: "GCP: Delete Database public firewall rule"

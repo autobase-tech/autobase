@@ -1,0 +1,68 @@
+---
+# 🚀 These tests check that the metrics endpoints enabled by 'prometheus_exporters_install' respond,
+# and that the exporters can connect to the components they monitor.
+- name: Molecule.tests.roles.prometheus_exporters.main | Test the metrics endpoints
+  when: prometheus_exporters_install | default(false) | bool
+  block:
+    - name: Check the exporters of the node
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ item.port }}/metrics"
+        return_content: true
+      register: exporter_metrics
+      until: exporter_metrics.status == 200 and item.expected in exporter_metrics.content
+      retries: 6
+      delay: 5
+      loop: >-
+        {{
+          [
+            {'name': 'node_exporter', 'port': node_exporter_port, 'expected': 'node_cpu_seconds_total'},
+            {'name': 'postgres_exporter', 'port': postgres_exporter_port, 'expected': 'pg_up 1'}
+          ]
+          + (range(pgbouncer_exporter_port | int, pgbouncer_exporter_port | int + pgbouncer_processes | default(1) | int)
+             | map('community.general.dict_kv', 'port')
+             | map('combine', {'name': 'pgbouncer_exporter', 'expected': 'pgbouncer_up 1'}) | list
+             if not pgdog_install | bool else [])
+        }}
+      loop_control:
+        label: "{{ item.name }} :{{ item.port }}"
+
+    - name: Check the Patroni metrics
+      ansible.builtin.uri:
+        # 'patroni_restapi_protocol' is redefined by the variable tests, use the protocol of the deployment
+        url: "{{ 'https' if tls_cert_generate | default(true) | bool else 'http' }}://{{ bind_address }}:{{ patroni_restapi_port }}/metrics"
+        validate_certs: false
+        return_content: true
+      register: patroni_metrics
+      failed_when: patroni_metrics.content is not search('patroni_postgres_running[{][^}]*[}] 1')
+
+    - name: Check the etcd metrics
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ etcd_metrics_port }}/metrics"
+        return_content: true
+      register: etcd_metrics
+      failed_when: "'etcd_server_has_leader 1' not in etcd_metrics.content"
+      when:
+        - dcs_type == 'etcd'
+        - inventory_hostname in groups['etcd_cluster']
+
+    - name: Check the PgDog metrics
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ pgdog_openmetrics_port }}/metrics"
+        return_content: true
+      register: pgdog_metrics
+      failed_when: pgdog_metrics.content | length == 0
+      when: pgdog_install | bool
+
+    - name: Check that the exporters connect with the dedicated user
+      become: true
+      become_user: postgres
+      ansible.builtin.command: >-
+        {{ psql_bin }} -p {{ postgresql_port }} -U {{ patroni_superuser_username }} -d postgres -tAXc
+        "SELECT pg_has_role('{{ prometheus_exporters_db_user }}', 'pg_monitor', 'MEMBER')"
+      register: exporter_user_result
+      changed_when: false
+      failed_when: exporter_user_result.stdout != 't'
+      vars:
+        # 'postgresql_version' is redefined by the variable tests, use the version installed by converge.yml
+        psql_bin: "{{ '/usr/lib/postgresql/' ~ test_postgresql_version ~ '/bin/psql' if ansible_os_family == 'Debian'
+          else '/usr/pgsql-' ~ test_postgresql_version ~ '/bin/psql' }}"

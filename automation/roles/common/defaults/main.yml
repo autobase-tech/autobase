@@ -67,6 +67,9 @@ haproxy_default_server:
   rise_master: 4
   rise_replica: 2
   on_marked_down: "shutdown-sessions"
+# Expose the HAProxy metrics in the Prometheus format on this port (http://NODE:PORT/metrics), or "" to disable.
+# Requires HAProxy built with the Prometheus exporter ('haproxy -vv' shows "Prometheus exporter").
+haproxy_prometheus_port: ""
 # Optionally declare log format for haproxy.
 # Uncomment following lines (and remove extra space in front of variable definition) for JSON structured log format.
 # haproxy_log_format: "{
@@ -155,6 +158,9 @@ etcd_tls_ca_key: "ca.key"
 etcd_tls_server_crt: "server.crt"
 etcd_tls_server_key: "server.key"
 etcd_client_cert_auth: "{{ 'true' if not etcd_on_dedicated_nodes | bool else 'false' }}"
+# Expose the etcd metrics over plain HTTP on this port (http://NODE:PORT/metrics), or "" to disable.
+# Unlike the client port, it does not require a client certificate. A change requires a restart of etcd.
+etcd_metrics_port: "{{ '2381' if prometheus_exporters_install | bool else '' }}"
 # We disable client certificate authentication when etcd runs on dedicated nodes.
 # This allows Patroni to connect without requiring a client certificate, ensuring secure encrypted communication
 # using only the CA certificate while avoiding the need to regenerate etcd certificates when adding new Patroni clusters.
@@ -672,7 +678,7 @@ pgdog_tls_key_file: "{{ tls_privatekey }}"
 pgdog_tls_ca_file: "{{ tls_ca_cert }}"
 pgdog_tls_verify: "{{ 'verify_ca' if tls_cert_generate | bool else 'prefer' }}" # disabled, prefer, verify_ca, verify_full
 pgdog_healthcheck_port: "" # enable the HTTP health check for external load balancers on this port
-pgdog_openmetrics_port: "" # enable the OpenMetrics (Prometheus) endpoint on this port
+pgdog_openmetrics_port: "{{ '9090' if prometheus_exporters_install | bool else '' }}" # enable the OpenMetrics (Prometheus) endpoint on this port
 pgdog_general_parameters: {} # any other option of the [general] section, for example: { query_timeout: 60000 }
 
 # PgDog has no wildcard for databases, like the "*" of PgBouncer: it serves only the databases it is configured with.
@@ -1109,6 +1115,98 @@ netdata_conf:
 # More options you can specify in the roles/netdata/templates/netdata.conf.j2
 # https://learn.netdata.cloud/docs/netdata-agent/configuration
 
+# Prometheus exporters - https://prometheus.io/docs/instrumenting/exporters/
+# Expose the metrics in the Prometheus format, to be scraped by your Prometheus server.
+# Can be used together with Netdata, or instead of it ('netdata_install: false').
+# Metrics endpoints of the Postgres cluster nodes:
+#   node_exporter        http://NODE:9100/metrics  (system)
+#   postgres_exporter    http://NODE:9187/metrics  (PostgreSQL)
+#   pgbouncer_exporter   http://NODE:9127/metrics  (PgBouncer; the next ports for additional 'pgbouncer_processes')
+#   pgbackrest_exporter  http://NODE:9854/metrics  (pgBackRest, if 'pgbackrest_install' is 'true')
+#   Patroni              http(s)://NODE:8008/metrics (built-in, see 'patroni_restapi_port')
+#   PgDog                http://NODE:9090/metrics  (built-in, if 'pgdog_install' is 'true', see 'pgdog_openmetrics_port')
+#   etcd                 http://NODE:2381/metrics  (built-in, see 'etcd_metrics_port')
+#   HAProxy              http://NODE:PORT/metrics  (built-in, opt-in, see 'haproxy_prometheus_port')
+prometheus_exporters_install: false # or 'true' to install all exporters available for the cluster components
+prometheus_exporters_listen_addr: "0.0.0.0" # Listen on all interfaces. Or use "{{ bind_address }}" to listen on a specific IP address.
+prometheus_exporters_user: "prometheus" # system user for the exporters (pgbackrest_exporter runs as 'postgres' to read the pgBackRest configuration)
+prometheus_exporters_conf_dir: "/etc/prometheus-exporters"
+# TLS and basic authentication for all exporters, in the exporter-toolkit format:
+# https://github.com/prometheus/exporter-toolkit/blob/master/docs/web-configuration.md
+prometheus_exporters_web_config: {}
+#  tls_server_config:
+#    cert_file: "{{ tls_dir }}/{{ tls_cert }}"
+#    key_file: "{{ tls_dir }}/{{ tls_privatekey }}"
+#  basic_auth_users:
+#    prometheus: "<bcrypt hash>" # e.g. htpasswd -nBC 10 "" | tr -d ':\n'
+# PostgreSQL user for postgres_exporter and pgbouncer_exporter. It is created with the 'pg_monitor' role (least privilege).
+prometheus_exporters_db_user: "postgres_exporter"
+prometheus_exporters_db_password: "" # If not defined, a password will be generated automatically during deployment
+
+# Node exporter (system metrics) - https://github.com/prometheus/node_exporter
+node_exporter_install: "{{ prometheus_exporters_install }}"
+# renovate: datasource=github-releases depName=prometheus/node_exporter extractVersion=^v(?<version>.*)$
+node_exporter_version: 1.12.1
+node_exporter_port: 9100
+# Limit the metrics to these collectors (with '--collector.disable-defaults'), or [] for the default collectors.
+node_exporter_collectors: []
+#  - cpu
+#  - diskstats
+#  - filesystem
+#  - loadavg
+#  - meminfo
+#  - netdev
+#  - pressure
+#  - time
+node_exporter_extra_args: [] # other command-line flags, for example: ["--collector.systemd"]
+
+# Postgres exporter - https://github.com/prometheus-community/postgres_exporter
+postgres_exporter_install: "{{ prometheus_exporters_install }}"
+# renovate: datasource=github-releases depName=prometheus-community/postgres_exporter extractVersion=^v(?<version>.*)$
+postgres_exporter_version: 0.20.1
+postgres_exporter_port: 9187
+# Collectors to enable (true) or disable (false), in addition to the defaults of the exporter:
+# https://github.com/prometheus-community/postgres_exporter#flags
+postgres_exporter_collectors:
+  long_running_transactions: true
+  postmaster: true
+#  stat_statements: true # requires the 'pg_stat_statements' extension in the 'postgres' database
+#  To reduce the cardinality, disable the collectors with a series per table or per setting:
+#  stat_user_tables: false
+#  statio_user_tables: false
+#  settings: false
+postgres_exporter_extra_args: [] # other command-line flags, for example: ["--collector.stat_statements.limit=20"]
+
+# PgBouncer exporter - https://github.com/prometheus-community/pgbouncer_exporter
+# One exporter per PgBouncer process ('pgbouncer_processes'), on consecutive ports.
+pgbouncer_exporter_install: "{{ prometheus_exporters_install | bool and pgbouncer_install | bool }}"
+# renovate: datasource=github-releases depName=prometheus-community/pgbouncer_exporter extractVersion=^v(?<version>.*)$
+pgbouncer_exporter_version: 0.12.1
+pgbouncer_exporter_port: 9127
+pgbouncer_exporter_extra_args: []
+
+# pgBackRest exporter - https://github.com/woblerr/pgbackrest_exporter
+# Runs on every node. All nodes report the same backups, so aggregate them in the alerts (e.g. with 'max by (stanza)').
+pgbackrest_exporter_install: "{{ prometheus_exporters_install | bool and pgbackrest_install | bool }}"
+# renovate: datasource=github-releases depName=woblerr/pgbackrest_exporter extractVersion=^v(?<version>.*)$
+pgbackrest_exporter_version: 0.24.0
+pgbackrest_exporter_port: 9854
+pgbackrest_exporter_collect_interval: 600 # seconds between the 'pgbackrest info' calls
+# Other command-line flags. The per-backup metrics have a 'backup_name' label: a series per backup kept in the repository.
+pgbackrest_exporter_extra_args: [] # for example: ["--backrest.backup-type=full"]
+
+# The metrics ports of the Postgres cluster nodes, for the firewall and the cloud security groups (derived, do not override).
+# Patroni metrics use 'patroni_restapi_port', which is always open.
+prometheus_exporters_ports: >-
+  {{
+    ([node_exporter_port] if node_exporter_install | bool else [])
+    + ([postgres_exporter_port] if postgres_exporter_install | bool else [])
+    + (range(pgbouncer_exporter_port | int, pgbouncer_exporter_port | int + pgbouncer_processes | default(1) | int) | list
+       if pgbouncer_exporter_install | bool else [])
+    + ([pgbackrest_exporter_port] if pgbackrest_exporter_install | bool else [])
+    + ([pgdog_openmetrics_port] if pgdog_install | bool and pgdog_openmetrics_port | string | length > 0 else [])
+  }}
+
 ############################################################
 # System parameters
 ############################################################
@@ -1271,12 +1369,14 @@ firewall_allowed_tcp_ports_for:
     - "{{ connection_pooler_port }}"
     - "{{ patroni_restapi_port }}"
     - "19999" # Netdata
+    - "{{ prometheus_exporters_ports }}" # Prometheus exporters (a list)
   #    - "10050"  # Zabbix agent
   #    - ""
   etcd_cluster:
     - "{{ ansible_ssh_port | default(22) }}"
     - "2379" # ETCD port
     - "2380" # ETCD port
+    - "{{ [etcd_metrics_port] if etcd_metrics_port | string | length > 0 else [] }}" # ETCD metrics port (a list)
   #    - ""
   consul_instances:
     - 8300
@@ -1292,6 +1392,7 @@ firewall_allowed_tcp_ports_for:
       + ([haproxy_listen_port.replicas_sync] if haproxy_replicas_sync_enabled | bool else [])
       + ([haproxy_listen_port.replicas_async] if haproxy_replicas_async_enabled | bool else [])
       + [haproxy_listen_port.stats]
+      + ([haproxy_prometheus_port] if haproxy_prometheus_port | string | length > 0 else [])
     }}
 #    - ""
 
@@ -1496,6 +1597,16 @@ vip_manager_package_repo: "https://github.com/cybertec-postgresql/vip-manager/re
 confd_package_repo: "https://github.com/abtreece/confd/releases/download/v{{ confd_version }}/confd-v{{ confd_version }}-linux-{{ confd_architecture_map[ansible_architecture] }}.tar.gz"
 pgdog_package_repo: "https://github.com/pgdogdev/pgdog/releases/download/v{{ pgdog_version }}/pgdog-v{{ pgdog_version }}-{{ ansible_architecture }}-unknown-linux-gnu.tar.gz"
 pgdog_package_checksum: "sha256:{{ pgdog_package_repo }}.sha256" # or "" to skip the verification, for example when using a mirror
+# Prometheus exporters: release archives and their checksum files (or "" to skip the verification).
+# To use a mirror, keep the archive and its checksum file in the same directory, or override both.
+node_exporter_package_repo: "https://github.com/prometheus/node_exporter/releases/download/v{{ node_exporter_version }}/node_exporter-{{ node_exporter_version }}.linux-{{ prometheus_exporters_architecture_map[ansible_architecture] }}.tar.gz"
+node_exporter_package_checksum: "sha256:{{ node_exporter_package_repo | dirname }}/sha256sums.txt"
+postgres_exporter_package_repo: "https://github.com/prometheus-community/postgres_exporter/releases/download/v{{ postgres_exporter_version }}/postgres_exporter-{{ postgres_exporter_version }}.linux-{{ prometheus_exporters_architecture_map[ansible_architecture] }}.tar.gz"
+postgres_exporter_package_checksum: "sha256:{{ postgres_exporter_package_repo | dirname }}/sha256sums.txt"
+pgbouncer_exporter_package_repo: "https://github.com/prometheus-community/pgbouncer_exporter/releases/download/v{{ pgbouncer_exporter_version }}/pgbouncer_exporter-{{ pgbouncer_exporter_version }}.linux-{{ prometheus_exporters_architecture_map[ansible_architecture] }}.tar.gz"
+pgbouncer_exporter_package_checksum: "sha256:{{ pgbouncer_exporter_package_repo | dirname }}/sha256sums.txt"
+pgbackrest_exporter_package_repo: "https://github.com/woblerr/pgbackrest_exporter/releases/download/v{{ pgbackrest_exporter_version }}/pgbackrest_exporter-{{ pgbackrest_exporter_version }}-linux-{{ pgbackrest_exporter_architecture_map[ansible_architecture] }}.tar.gz"
+pgbackrest_exporter_package_checksum: "sha256:{{ pgbackrest_exporter_package_repo | dirname }}/pgbackrest_exporter_checksums.txt"
 
 # You can also download the deb/rpm packages into the 'files/' directory.
 # Packages from this directory will be used during installation (optional).

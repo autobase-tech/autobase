@@ -1,0 +1,44 @@
+---
+# postgres_exporter and pgbouncer_exporter connect with a dedicated user that has the 'pg_monitor' role.
+# The user is created on the primary: by deploy_pgcluster.yml and config_pgcluster.yml, but not by add_node.yml
+# (the user already exists), nor on a standby cluster (read-only; the user comes from the source cluster).
+- block:
+    - name: Create the PostgreSQL user for the Prometheus exporters
+      become: true
+      become_user: postgres
+      community.postgresql.postgresql_user:
+        name: "{{ prometheus_exporters_db_user }}"
+        password: "{{ prometheus_exporters_db_password }}"
+        encrypted: true
+        role_attr_flags: "LOGIN"
+        login_host: "127.0.0.1"
+        login_port: "{{ postgresql_port }}"
+        login_user: "{{ patroni_superuser_username }}"
+        login_password: "{{ patroni_superuser_password }}"
+        login_db: "postgres"
+      no_log: true
+
+    - name: Grant the pg_monitor role to the PostgreSQL user for the Prometheus exporters
+      become: true
+      become_user: postgres
+      community.postgresql.postgresql_membership:
+        group: pg_monitor
+        target_role: "{{ prometheus_exporters_db_user }}"
+        login_host: "127.0.0.1"
+        login_port: "{{ postgresql_port }}"
+        login_user: "{{ patroni_superuser_username }}"
+        login_password: "{{ patroni_superuser_password }}"
+        login_db: "postgres"
+      no_log: true
+      when: not ansible_check_mode # the user is not actually created in check mode
+  vars:
+    prometheus_exporters_db_primary_host: >-
+      {{
+        (groups['primary'] | default([]))[0]
+        | default(groups['master'][0] if not postgresql_cluster_maintenance | default(false) | bool else '', true)
+      }}
+  when:
+    - postgres_exporter_install | bool or pgbouncer_exporter_install | bool
+    - prometheus_exporters_db_user != patroni_superuser_username # an existing superuser is used as is
+    - patroni_standby_cluster.host | default('') | length < 1 # do not perform on the standby cluster
+    - inventory_hostname == prometheus_exporters_db_primary_host

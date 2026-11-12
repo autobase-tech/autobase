@@ -37,6 +37,8 @@
         postgresql_icu_locale: "{{ ['und', 'en-US'] | random }}"
         postgresql_builtin_locale: "{{ ['C', 'C.UTF-8', 'PG_UNICODE_FAST'] | random }}"
         pgbouncer_processes: 2 # Test multiple pgbouncer processes (so_reuseport)
+        prometheus_exporters_install: true # Test the Prometheus exporters and the built-in metrics endpoints
+        node_exporter_collectors: [cpu, diskstats, filesystem, loadavg, meminfo, netdev] # Test limiting the collectors
         patroni_tags: "datacenter=dc1,key1=value1"
         balancer_tags: "datacenter=dc1"
         enable_ssh_key_based_authentication: true
@@ -71,6 +73,8 @@
           ---
           dcs_type: "{{ dcs_type }}"
           pgdog_install: {{ pgdog_install | bool | lower }}
+          pgbouncer_processes: {{ pgbouncer_processes }}
+          prometheus_exporters_install: {{ prometheus_exporters_install | bool | lower }}
           test_postgresql_version: {{ postgresql_version }}
           test_cluster_vip: "{{ cluster_vip | default('') }}"
           postgresql_locale_provider: "{{ postgresql_locale_provider }}"
