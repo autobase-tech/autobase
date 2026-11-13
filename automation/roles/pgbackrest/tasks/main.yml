@@ -118,7 +118,7 @@
         dest: "{{ pgbackrest_conf_file }}"
         owner: postgres
         group: postgres
-        mode: "0644"
+        mode: "0600"
       no_log: true # do not output contents to the ansible log
       diff: false
   when:
@@ -174,7 +174,7 @@
         dest: "{{ pgbackrest_conf_file }}"
         owner: "{{ pgbackrest_repo_user }}"
         group: "{{ pgbackrest_repo_user }}"
-        mode: "0644"
+        mode: "0600"
 
     - name: "Generate stanza conf file {{ pgbackrest_conf_file | default('') | dirname }}/conf.d/{{ pgbackrest_stanza | default('') }}.conf"
       ansible.builtin.template:
@@ -182,7 +182,7 @@
         dest: "{{ pgbackrest_conf_file | dirname }}/conf.d/{{ pgbackrest_stanza }}.conf"
         owner: "{{ pgbackrest_repo_user }}"
         group: "{{ pgbackrest_repo_user }}"
-        mode: "0644"
+        mode: "0600"
   when:
     - "'pgbackrest' in group_names"
     - pgbackrest_server_conf is defined
