@@ -34,3 +34,14 @@
 
   when: not ansible_check_mode
   tags: pgdog_install, pgdog
+
+# Also used by update_pgcluster.yml before it restarts an updated binary.
+- name: Apply SELinux file contexts to the PgDog binary
+  ansible.builtin.include_role:
+    name: vitabaks.autobase.selinux
+    tasks_from: relabel
+    apply:
+      tags: pgdog_install, pgdog, selinux
+  vars:
+    selinux_relabel_paths: ["/usr/local/bin/pgdog"]
+  tags: pgdog_install, pgdog, selinux

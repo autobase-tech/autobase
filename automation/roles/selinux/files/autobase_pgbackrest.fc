@@ -1,0 +1,5 @@
+/usr/bin/pgbackrest	--	gen_context(system_u:object_r:pgbackrest_exec_t,s0)
+/var/log/pgbackrest(/.*)?	gen_context(system_u:object_r:pgbackrest_log_t,s0)
+/var/lib/pgbackrest(/.*)?	gen_context(system_u:object_r:pgbackrest_var_lib_t,s0)
+/var/spool/pgbackrest(/.*)?	gen_context(system_u:object_r:pgbackrest_spool_t,s0)
+/tmp/pgbackrest(/.*)?	gen_context(system_u:object_r:pgbackrest_tmp_t,s0)

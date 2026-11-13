@@ -1,0 +1,14 @@
+---
+# PgDog with TLS, etcd, vip-manager and pgBackRest on Rocky Linux 10.
+dcs_type: "etcd"
+with_haproxy_load_balancing: false
+pgdog_install: true
+pgbouncer_install: false
+pgbackrest_install: true
+patroni_restapi_port: 18008
+# Exercise non-default paths and listener ports, including the optional HTTP endpoints.
+pgdog_conf_dir: "/pool/pgdog"
+pgdog_listen_port: 16432
+pgdog_healthcheck_port: 18081
+pgdog_openmetrics_port: 19090
+tls_dir: "/pool/tls"

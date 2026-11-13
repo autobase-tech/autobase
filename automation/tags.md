@@ -17,6 +17,7 @@
 - - swap_create
 - - swap_remove
 - sysctl, kernel
+- selinux
 - disable_thp
 - limits
 - scheduler

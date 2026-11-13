@@ -1,0 +1,3 @@
+/usr/bin/etcd	--	gen_context(system_u:object_r:etcd_exec_t,s0)
+/usr/local/bin/etcd	--	gen_context(system_u:object_r:etcd_exec_t,s0)
+/var/lib/etcd(/.*)?	gen_context(system_u:object_r:etcd_var_lib_t,s0)

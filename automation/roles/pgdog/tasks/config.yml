@@ -31,6 +31,18 @@
   notify: "reload pgdog"
   tags: pgdog_conf, pgdog
 
+- name: Apply SELinux file contexts to PgDog configuration and TLS files
+  ansible.builtin.include_role:
+    name: vitabaks.autobase.selinux
+    tasks_from: relabel
+    apply:
+      tags: pgdog_conf, pgdog, selinux
+  vars:
+    selinux_relabel_paths: >-
+      {{ ['/usr/local/bin/pgdog', pgdog_conf_dir]
+         + ([pgdog_tls_dir] if tls_cert_generate | default(false) | bool else []) }}
+  tags: pgdog_conf, pgdog, selinux
+
 - name: Configure PgDog service discovery in Consul
   ansible.builtin.import_role:
     name: vitabaks.autobase.consul

@@ -433,6 +433,12 @@
     mode: "02775"
   tags: patroni, point_in_time_recovery
 
+- name: Prepare PostgreSQL | apply SELinux file contexts to the PostgreSQL directories
+  ansible.builtin.include_role:
+    name: vitabaks.autobase.selinux
+    tasks_from: contexts
+  tags: patroni, point_in_time_recovery, selinux
+
 - block: # when postgresql NOT exists or PITR
     # for Debian based distros only
     # patroni bootstrap failure is possible if the PostgreSQL config files are missing

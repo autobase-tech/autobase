@@ -1,0 +1,46 @@
+---
+# Custom paths such as /pool/pgdog need searchable parents as well. Preserve all
+# existing context rules, and label only parents whose expected type is default_t.
+- name: SELinux | find service parent directories
+  ansible.builtin.shell: |
+    set -o pipefail
+    for path in {{ selinux_relabel_paths | map('quote') | join(' ') }}; do
+      dir=$(dirname "$path")
+      while [ "$dir" != "/" ] && [ "$dir" != "." ]; do
+        printf '%s\n' "$dir"
+        dir=$(dirname "$dir")
+      done
+    done | sort -u
+  args:
+    executable: /bin/bash
+  register: selinux_service_parents
+  changed_when: false
+
+- name: SELinux | check the expected contexts of the service parent directories
+  ansible.builtin.command: matchpathcon -n {{ item | quote }}
+  loop: "{{ selinux_service_parents.stdout_lines }}"
+  register: selinux_service_parent_contexts
+  changed_when: false
+
+- name: SELinux | add file context rules for the service parent directories
+  community.general.sefcontext:
+    target: "{{ item.item | regex_escape }}"
+    ftype: d
+    setype: etc_t
+    state: present
+  loop: "{{ selinux_service_parent_contexts.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when: "':default_t:' in item.stdout"
+
+# Do not recurse through a shared parent: other services may have data there.
+# Missing parents will get their rule when the directory is created later.
+# Reapply existing rules too, so an interrupted relabel is retried on the next run.
+- name: SELinux | apply file contexts to the service parent directories
+  ansible.builtin.shell: |
+    if [ -d {{ item | quote }} ]; then
+      restorecon -v -- {{ item | quote }}
+    fi
+  loop: "{{ selinux_service_parents.stdout_lines }}"
+  register: selinux_service_parent_relabel
+  changed_when: selinux_service_parent_relabel.stdout | length > 0

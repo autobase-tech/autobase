@@ -1,0 +1,3 @@
+/usr/local/bin/wal-g	--	gen_context(system_u:object_r:walg_exec_t,s0)
+/usr/bin/wal-g	--	gen_context(system_u:object_r:walg_exec_t,s0)
+/var/lib/wal-g(/.*)?	gen_context(system_u:object_r:walg_var_lib_t,s0)

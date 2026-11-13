@@ -1,0 +1,1 @@
+/etc/haproxy(/.*)?	gen_context(system_u:object_r:haproxy_conf_t,s0)

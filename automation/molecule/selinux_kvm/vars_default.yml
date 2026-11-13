@@ -1,0 +1,6 @@
+---
+# etcd, HAProxy with confd, keepalived holding the VIP, PgBouncer, pgBackRest
+dcs_type: "etcd"
+with_haproxy_load_balancing: true
+pgbouncer_install: true
+pgbackrest_install: true

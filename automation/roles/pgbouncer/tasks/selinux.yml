@@ -1,0 +1,16 @@
+---
+# Shared by initial deployment and config_pgcluster.yml (tasks_from: config).
+# Both binary paths are needed when /usr/bin/pgbouncer links to /usr/sbin/pgbouncer.
+- name: Apply SELinux file contexts to the PgBouncer binaries and directories
+  ansible.builtin.include_role:
+    name: vitabaks.autobase.selinux
+    tasks_from: relabel
+    apply:
+      tags: pgbouncer_conf, pgbouncer, selinux
+  vars:
+    selinux_relabel_paths:
+      - /usr/bin/pgbouncer
+      - /usr/sbin/pgbouncer
+      - "{{ pgbouncer_conf_dir }}"
+      - "{{ pgbouncer_log_dir }}"
+  tags: pgbouncer_conf, pgbouncer, selinux

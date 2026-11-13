@@ -1,0 +1,90 @@
+---
+# Label the PostgreSQL directories so that a confined PostgreSQL (postgresql_t) can use them.
+# The distribution policy already labels the default locations (/var/lib/pgsql, /var/log/postgresql);
+# custom ones such as /pgdata are default_t without these rules, and their parent directories too.
+- block:
+    - name: SELinux | build the list of PostgreSQL directories to label
+      ansible.builtin.set_fact:
+        selinux_postgresql_paths: >-
+          {{ [{'path': postgresql_data_dir, 'setype': 'postgresql_db_t'},
+              {'path': postgresql_log_dir, 'setype': 'postgresql_log_t'}]
+             + ([{'path': postgresql_wal_dir, 'setype': 'postgresql_db_t'}]
+                if postgresql_wal_dir | default('') | length > 0 else []) }}
+
+    - name: SELinux | add file context rules for the PostgreSQL directories
+      community.general.sefcontext:
+        target: "{{ item.path }}(/.*)?"
+        setype: "{{ item.setype }}"
+        state: present
+      loop: "{{ selinux_postgresql_paths }}"
+      register: selinux_fcontext_result
+
+    # A confined process cannot search a default_t directory, so /pgdata in /pgdata/18/main
+    # needs a label as well. Only parents without any other file context are touched.
+    - name: SELinux | find parent directories without a file context
+      ansible.builtin.shell: |
+        set -o pipefail
+        for path in {{ selinux_postgresql_paths | map(attribute='path') | map('quote') | join(' ') }}; do
+          dir=$(dirname "$path")
+          while [ "$dir" != "/" ]; do
+            matchpathcon -n "$dir" | grep -q ':default_t:' && echo "$dir"
+            dir=$(dirname "$dir")
+          done
+        done | sort -u
+      args:
+        executable: /bin/bash
+      register: selinux_unlabelled_parents
+      changed_when: false
+
+    - name: SELinux | add file context rules for the parent directories
+      community.general.sefcontext:
+        target: "{{ item }}"
+        ftype: d
+        setype: postgresql_db_t
+        state: present
+      loop: "{{ selinux_unlabelled_parents.stdout_lines }}"
+      register: selinux_fcontext_parents_result
+
+    - name: SELinux | check the labels of the PostgreSQL directories
+      ansible.builtin.shell: |
+        [ -e {{ item.path | quote }} ] || exit 0
+        matchpathcon -V {{ item.path | quote }}
+      loop: "{{ selinux_postgresql_paths }}"
+      register: selinux_label_check
+      changed_when: false
+      failed_when: false
+
+    # restorecon walks the whole tree, so it only runs when a rule changed or a label is wrong.
+    - name: SELinux | apply the file contexts
+      ansible.builtin.command: >-
+        restorecon -R -v {{ item.item.path | quote }}
+        {{ selinux_unlabelled_parents.stdout_lines | map('quote') | join(' ') }}
+      loop: "{{ selinux_label_check.results }}"
+      loop_control:
+        label: "{{ item.item.path }}"
+      register: selinux_restorecon_result
+      changed_when: selinux_restorecon_result.stdout | length > 0
+      when:
+        - item.stdout | length > 0
+        - selinux_fcontext_result is changed or selinux_fcontext_parents_result is changed
+          or 'verified' not in item.stdout
+  when:
+    - ansible_os_family == "RedHat"
+    - ansible_selinux.status is defined
+    - ansible_selinux.status == "enabled"
+    - inventory_hostname in groups['postgres_cluster'] | default([])
+  tags: selinux, selinux_contexts
+
+# Patroni installed by pip lands in /usr/local/bin as bin_t, and the pgBackRest directories
+# exist before the policy modules are loaded; file context rules apply only after a relabel.
+- name: SELinux | apply the file contexts to the Patroni, PostgreSQL and pgBackRest files
+  ansible.builtin.include_tasks: relabel.yml
+  vars:
+    selinux_relabel_paths: >-
+      {{ ['/usr/bin/patroni', '/usr/local/bin/patroni', patroni_log_dir]
+         + ['postgres', 'initdb', 'pg_ctl'] | map('regex_replace', '^', postgresql_bin_dir + '/') | list
+         + ['/usr/bin/pgbackrest']
+         + (pgbackrest_conf.global | default([]) | selectattr('option', 'in', ['log-path', 'repo1-path', 'spool-path'])
+            | map(attribute='value') | list) }}
+  when: inventory_hostname in groups['postgres_cluster'] | default([])
+  tags: selinux, selinux_contexts

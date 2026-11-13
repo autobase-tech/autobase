@@ -1,0 +1,109 @@
+policy_module(autobase_pgbackrest, 1.0.0)
+
+########################################
+#
+# pgBackRest runs in its own domain (pgbackrest_t) when PostgreSQL starts it as
+# archive_command/restore_command, when Patroni starts it to create a replica,
+# and when systemd or cron start a backup. Without this module it would run in
+# the domain of its caller: confined postgresql_t cannot write the repository,
+# the spool or the log, nor reach object storage.
+#
+
+require {
+	type postgresql_t;
+	type postgresql_db_t;
+	type postgresql_var_run_t;
+	type patroni_t;
+}
+
+type pgbackrest_t;
+type pgbackrest_exec_t;
+init_daemon_domain(pgbackrest_t, pgbackrest_exec_t)
+cron_system_entry(pgbackrest_t, pgbackrest_exec_t)
+
+type pgbackrest_log_t;
+logging_log_file(pgbackrest_log_t)
+
+# Repository (repo1-type=posix) and the asynchronous archiving spool
+type pgbackrest_var_lib_t;
+files_type(pgbackrest_var_lib_t)
+
+type pgbackrest_spool_t;
+files_type(pgbackrest_spool_t)
+
+# Lock files (lock-path, /tmp/pgbackrest by default)
+type pgbackrest_tmp_t;
+files_tmp_file(pgbackrest_tmp_t)
+
+domtrans_pattern(postgresql_t, pgbackrest_exec_t, pgbackrest_t)
+# PostgreSQL stops a running archive_command on shutdown
+allow postgresql_t pgbackrest_t:process signal_perms;
+domtrans_pattern(patroni_t, pgbackrest_exec_t, pgbackrest_t)
+
+########################################
+#
+# Local policy
+#
+
+allow pgbackrest_t self:process { fork signal_perms setsched getsched };
+allow pgbackrest_t self:fifo_file rw_fifo_file_perms;
+allow pgbackrest_t self:unix_stream_socket create_stream_socket_perms;
+allow pgbackrest_t self:unix_dgram_socket create_socket_perms;
+allow pgbackrest_t self:tcp_socket create_stream_socket_perms;
+allow pgbackrest_t self:udp_socket create_socket_perms;
+
+corecmd_exec_bin(pgbackrest_t)
+corecmd_exec_shell(pgbackrest_t)
+can_exec(pgbackrest_t, pgbackrest_exec_t)
+
+files_read_etc_files(pgbackrest_t)
+files_read_usr_files(pgbackrest_t)
+files_search_var_lib(pgbackrest_t)
+files_search_spool(pgbackrest_t)
+kernel_read_system_state(pgbackrest_t)
+dev_read_urand(pgbackrest_t)
+fs_getattr_all_fs(pgbackrest_t)
+auth_use_nsswitch(pgbackrest_t)
+miscfiles_read_localization(pgbackrest_t)
+miscfiles_read_generic_certs(pgbackrest_t)
+sysnet_read_config(pgbackrest_t)
+logging_send_syslog_msg(pgbackrest_t)
+
+manage_dirs_pattern(pgbackrest_t, pgbackrest_log_t, pgbackrest_log_t)
+manage_files_pattern(pgbackrest_t, pgbackrest_log_t, pgbackrest_log_t)
+logging_log_filetrans(pgbackrest_t, pgbackrest_log_t, { dir file })
+
+manage_dirs_pattern(pgbackrest_t, pgbackrest_var_lib_t, pgbackrest_var_lib_t)
+manage_files_pattern(pgbackrest_t, pgbackrest_var_lib_t, pgbackrest_var_lib_t)
+manage_lnk_files_pattern(pgbackrest_t, pgbackrest_var_lib_t, pgbackrest_var_lib_t)
+
+manage_dirs_pattern(pgbackrest_t, pgbackrest_spool_t, pgbackrest_spool_t)
+manage_files_pattern(pgbackrest_t, pgbackrest_spool_t, pgbackrest_spool_t)
+
+manage_dirs_pattern(pgbackrest_t, pgbackrest_tmp_t, pgbackrest_tmp_t)
+manage_files_pattern(pgbackrest_t, pgbackrest_tmp_t, pgbackrest_tmp_t)
+files_tmp_filetrans(pgbackrest_t, pgbackrest_tmp_t, { dir file })
+
+########################################
+#
+# PostgreSQL: backups read the data directory and talk to the server over
+# its socket; restores and archive-get write into the data directory
+#
+
+manage_dirs_pattern(pgbackrest_t, postgresql_db_t, postgresql_db_t)
+manage_files_pattern(pgbackrest_t, postgresql_db_t, postgresql_db_t)
+manage_lnk_files_pattern(pgbackrest_t, postgresql_db_t, postgresql_db_t)
+files_search_pids(pgbackrest_t)
+stream_connect_pattern(pgbackrest_t, postgresql_var_run_t, postgresql_var_run_t, postgresql_t)
+corenet_tcp_connect_postgresql_port(pgbackrest_t)
+
+########################################
+#
+# Network: object storage (S3, GCS, Azure) over HTTPS and a dedicated
+# repository host over SSH (repo1-host; not exercised by the CI test)
+#
+
+corenet_tcp_connect_http_port(pgbackrest_t)
+corenet_tcp_connect_ssh_port(pgbackrest_t)
+ssh_exec(pgbackrest_t)
+ssh_read_user_home_files(pgbackrest_t)

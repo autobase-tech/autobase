@@ -176,9 +176,13 @@ patroni_etcd_hosts: [] # list of servers of an existing etcd cluster
 # if dcs_type: "consul"
 consul_version: "latest" # or a specific version (e.q., '1.22.1')
 consul_install_from_repo: true # install from hashicorp repository, or 'false' to install from binary
+consul_bin_path: "/usr/local/bin"
+consul_binary: "{{ consul_bin_path }}/consul"
 consul_config_path: "/etc/consul"
 consul_configd_path: "{{ consul_config_path }}/conf.d"
 consul_data_path: "/var/lib/consul"
+consul_log_path: "{{ lookup('env', 'CONSUL_LOG_PATH') | default('/var/log/consul', true) }}"
+consul_run_path: "/run/consul"
 consul_domain: "consul" # Consul domain name
 consul_datacenter: "{{ server_location | default('dc1') }}" # Datacenter label (can be specified for each host in the inventory)
 consul_disable_update_check: true # Disables automatic checking for security bulletins and new version releases
@@ -198,6 +202,17 @@ consul_tls_ca_crt: "ca.crt"
 consul_tls_ca_key: "ca.key"
 consul_tls_server_crt: "server.crt"
 consul_tls_server_key: "server.key"
+# Shared with the SELinux role, which runs before the Consul role.
+consul_ports:
+  dns: "{{ consul_ports_dns | default('8600', true) }}"
+  http: "{{ consul_ports_http | default('8500' if not consul_tls_enable | default(false) | bool else '-1') }}"
+  https: "{{ consul_ports_https | default('8500' if consul_tls_enable | default(false) | bool else '-1') }}"
+  rpc: "{{ consul_ports_rpc | default('8400', true) }}"
+  serf_lan: "{{ consul_ports_serf_lan | default('8301', true) }}"
+  serf_wan: "{{ consul_ports_serf_wan | default('8302', true) }}"
+  server: "{{ consul_ports_server | default('8300', true) }}"
+  grpc: "{{ consul_ports_grpc | default('-1', true) }}"
+  grpc_tls: "{{ consul_ports_grpc_tls | default('-1', true) }}"
 # DNS
 consul_recursors: [] # List of upstream DNS servers
 consul_dnsmasq_enable: true # Enable DNS forwarding with Dnsmasq
@@ -1164,6 +1179,15 @@ locale: "en_US.UTF-8"
 swap_file_create: true
 swap_file_path: /swapfile
 swap_file_size_mb: "4096" # change this value for your system
+
+# SELinux (applies only to hosts where SELinux is enabled)
+selinux_state: "" # "enforcing", "permissive" or "" to leave the current mode unchanged
+selinux_policy: "targeted"
+# Run the cluster services in their own SELinux domains instead of unconfined_service_t
+# (Patroni in patroni_t, PostgreSQL in postgresql_t). Builds and loads the autobase_* policy modules
+# for the services on each host; running processes change domain when they restart.
+selinux_confine_services: false
+selinux_policy_module_dir: "/usr/share/selinux/autobase"
 
 # Kernel parameters
 sysctl_set: true

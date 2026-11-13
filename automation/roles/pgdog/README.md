@@ -136,6 +136,11 @@ With `allow_change`, each wrong password is checked against PostgreSQL. PgDog re
 
 The configuration is in `pgdog.toml` and `users.toml`, in `pgdog_conf_dir`. It is validated with `pgdog configcheck` before it is replaced. The logs are in the journal of the `pgdog` service.
 
+On RHEL 10 compatible hosts with SELinux enabled, `selinux_confine_services: true` runs PgDog in `pgdog_t`.
+Autobase labels its binary, configuration and TLS files, assigns the configured listener ports, and allows
+backend connections to PostgreSQL and Consul TCP health checks. Existing processes enter the domain on their
+next restart; enable the policy with `config_pgcluster.yml`, then restart PgDog one node at a time.
+
 Changes are applied with a reload, without closing client connections. `pgdog_listen_addr`, `pgdog_listen_port` and `pgdog_workers` require a restart of the service.
 
 After a failover, some replicas can be left out of the load balancer until PgDog has checked them and their bans have expired. Bans normally expire after `pgdog_ban_timeout` (30 seconds); an unhealthy or lagging replica can remain excluded longer. Reads go to the other eligible nodes in the meantime. If all targets are unavailable, PgDog can clear bans earlier to retry them.
