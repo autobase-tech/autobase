@@ -64,6 +64,9 @@ because its release binaries require glibc 2.39 or newer.
 - Policy modules are compiled on the host (`selinux-policy-devel`) and rebuilt only when their source changes.
 - Service roles call `tasks_from: relabel` with the paths they install or create, so files that existed before
   the modules were loaded get their labels before the service starts.
+- PgBouncer relabels both binary locations and its configuration/log directories during deployment and
+  `config_pgcluster.yml`, including runs tagged `pgbouncer_conf`. On an existing cluster, restart PgBouncer
+  one node at a time after enabling confinement; a reload does not change the running process's domain.
 - Not covered: pg_probackup, netdata, a dedicated pgBackRest repository host, and the Consul DNS forwarding
   (dnsmasq/systemd-resolved).
 - The `SELinux (KVM)` workflow deploys clusters on virtual machines with SELinux enabled (etcd with HAProxy,

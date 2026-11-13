@@ -26,7 +26,7 @@ POOLER=PgBouncer
 POOLER_PORT=6432
 if [ "$VARIANT" != pgdog ]; then
   PROCESSES="$PROCESSES pgbouncer:pgbouncer_t"
-  PATHS="$PATHS /etc/pgbouncer:pgbouncer_etc_t /var/log/pgbouncer:pgbouncer_log_t"
+  PATHS="$PATHS /usr/bin/pgbouncer:pgbouncer_exec_t /etc/pgbouncer:pgbouncer_etc_t /var/log/pgbouncer:pgbouncer_log_t"
 fi
 case "$VARIANT" in
   default)

@@ -8,6 +8,9 @@
     mode: "0750"
   tags: pgbouncer, pgbouncer_conf
 
+- name: Apply SELinux file contexts to PgBouncer
+  ansible.builtin.import_tasks: selinux.yml
+
 - name: Update pgbouncer.ini
   ansible.builtin.template:
     src: templates/pgbouncer.ini.j2
