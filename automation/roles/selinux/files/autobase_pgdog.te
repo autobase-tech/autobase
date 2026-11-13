@@ -1,0 +1,64 @@
+policy_module(autobase_pgdog, 1.0.0)
+
+########################################
+#
+# PgDog runs as pgdog_t, reads its configuration and TLS certificates, and
+# routes client connections to PostgreSQL over TCP. It writes its logs to
+# the systemd journal and does not need access to PostgreSQL data files.
+#
+
+type pgdog_t;
+type pgdog_exec_t;
+init_daemon_domain(pgdog_t, pgdog_exec_t)
+
+type pgdog_etc_t;
+files_config_file(pgdog_etc_t)
+
+# Client connections and the optional HTTP healthcheck and OpenMetrics listeners
+type pgdog_port_t;
+corenet_port(pgdog_port_t)
+
+########################################
+#
+# Local policy
+#
+
+# Tokio worker threads and jemalloc's background thread
+allow pgdog_t self:process { fork signal_perms getsched setsched setrlimit };
+allow pgdog_t self:fifo_file rw_fifo_file_perms;
+allow pgdog_t self:unix_stream_socket { create_stream_socket_perms connectto };
+allow pgdog_t self:unix_dgram_socket create_socket_perms;
+allow pgdog_t self:tcp_socket { create_stream_socket_perms accept listen };
+allow pgdog_t self:udp_socket create_socket_perms;
+allow pgdog_t self:netlink_route_socket r_netlink_socket_perms;
+
+read_files_pattern(pgdog_t, pgdog_etc_t, pgdog_etc_t)
+list_dirs_pattern(pgdog_t, pgdog_etc_t, pgdog_etc_t)
+
+files_read_etc_files(pgdog_t)
+files_read_usr_files(pgdog_t)
+kernel_read_system_state(pgdog_t)
+kernel_read_kernel_sysctls(pgdog_t)
+dev_read_sysfs(pgdog_t)
+dev_read_urand(pgdog_t)
+fs_search_cgroup_dirs(pgdog_t)
+fs_read_cgroup_files(pgdog_t)
+auth_use_nsswitch(pgdog_t)
+miscfiles_read_localization(pgdog_t)
+miscfiles_read_generic_certs(pgdog_t)
+sysnet_read_config(pgdog_t)
+logging_send_syslog_msg(pgdog_t)
+
+# The TLS directory can be shared with PostgreSQL; both must be able to
+# read certificates after it is labelled cert_t, including custom paths.
+optional_policy(`
+	gen_require(`
+		type postgresql_t;
+	')
+	miscfiles_read_generic_certs(postgresql_t)
+')
+
+# PgDog follows role changes by querying each PostgreSQL server directly.
+corenet_tcp_bind_generic_node(pgdog_t)
+allow pgdog_t pgdog_port_t:tcp_socket name_bind;
+corenet_tcp_connect_postgresql_port(pgdog_t)

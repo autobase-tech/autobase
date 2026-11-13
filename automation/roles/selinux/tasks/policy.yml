@@ -12,6 +12,8 @@
                 and pgbackrest_install | default(false) | bool else [])
              + (['autobase_pgbouncer'] if inventory_hostname in groups['postgres_cluster'] | default([])
                 and pgbouncer_install | default(false) | bool else [])
+             + (['autobase_pgdog'] if inventory_hostname in groups['postgres_cluster'] | default([])
+                and pgdog_install | default(false) | bool else [])
              + (['autobase_haproxy'] if inventory_hostname in groups['balancers'] | default([])
                 and with_haproxy_load_balancing | default(false) | bool else [])
              + (['autobase_confd'] if inventory_hostname in groups['balancers'] | default([])
@@ -145,6 +147,43 @@
         - { proto: tcp, ports: "8300-8302,8400,8500,8502-8503,8600" }
         - { proto: udp, ports: "8301-8302,8600" }
       when: "'autobase_consul' in selinux_policy_modules"
+
+    - name: SELinux | assign the PgDog listener ports
+      community.general.seport:
+        ports: "{{ item }}"
+        proto: tcp
+        setype: pgdog_port_t
+        state: present
+      loop: >-
+        {{ ([pgdog_listen_port | default(6432), pgdog_healthcheck_port | default(''), pgdog_openmetrics_port | default('')]
+            | map('string') | reject('equalto', '') | unique | list) }}
+      when: "'autobase_pgdog' in selinux_policy_modules"
+
+    - name: SELinux | assign the PostgreSQL port for PgDog backends
+      community.general.seport:
+        ports: "{{ postgresql_port }}"
+        proto: tcp
+        setype: postgresql_port_t
+        state: present
+      when: "'autobase_pgdog' in selinux_policy_modules"
+
+    - name: SELinux | add file context rules for a custom PgDog configuration directory
+      community.general.sefcontext:
+        target: "{{ pgdog_conf_dir | regex_escape }}(/.*)?"
+        setype: pgdog_etc_t
+        state: present
+      when:
+        - "'autobase_pgdog' in selinux_policy_modules"
+        - pgdog_conf_dir != '/etc/pgdog'
+
+    - name: SELinux | add file context rules for the PgDog TLS directory
+      community.general.sefcontext:
+        target: "{{ pgdog_tls_dir | regex_escape }}(/.*)?"
+        setype: cert_t
+        state: present
+      when:
+        - "'autobase_pgdog' in selinux_policy_modules"
+        - tls_cert_generate | default(false) | bool
 
     - name: SELinux | add file context rules for a custom etcd data directory
       community.general.sefcontext:

@@ -1,4 +1,4 @@
-policy_module(autobase_consul, 1.0.0)
+policy_module(autobase_consul, 1.0.1)
 
 ########################################
 #
@@ -76,10 +76,17 @@ logging_send_syslog_msg(consul_t)
 #
 # Health checks of the registered services: an HTTP check against the Patroni
 # REST API (8008/tcp is http_port_t) and "systemctl status pgbouncer", which
-# the agent runs itself (Autobase's consul_services)
+# the agent runs itself (Autobase's consul_services), or a TCP check against
+# PgDog when it replaces PgBouncer.
 #
 
 corenet_tcp_connect_http_port(consul_t)
+optional_policy(`
+	gen_require(`
+		type pgdog_port_t;
+	')
+	allow consul_t pgdog_port_t:tcp_socket name_connect;
+')
 corecmd_exec_bin(consul_t)
 corecmd_exec_shell(consul_t)
 systemd_exec_systemctl(consul_t)

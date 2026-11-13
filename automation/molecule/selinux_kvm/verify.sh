@@ -3,7 +3,7 @@
 # runs in its own domain, the service files are labelled, the services work, and no denial
 # was logged for their domains since boot.
 #
-# Usage: verify.sh <inventory file> <expected mode: Enforcing|Permissive> <variant: default|consul>
+# Usage: verify.sh <inventory file> <expected mode: Enforcing|Permissive> <variant: default|consul|pgdog>
 set -uo pipefail
 
 INVENTORY="$1"
@@ -20,9 +20,14 @@ fail() {
 }
 
 # process:domain and path:type expected on every node
-PROCESSES="patroni:patroni_t postgres:postgresql_t pgbouncer:pgbouncer_t"
-PATHS="/pgdata/18/main:postgresql_db_t /pgwal/18/pg_wal:postgresql_db_t
-  /etc/pgbouncer:pgbouncer_etc_t /var/log/pgbouncer:pgbouncer_log_t"
+PROCESSES="patroni:patroni_t postgres:postgresql_t"
+PATHS="/pgdata/18/main:postgresql_db_t /pgwal/18/pg_wal:postgresql_db_t"
+POOLER=PgBouncer
+POOLER_PORT=6432
+if [ "$VARIANT" != pgdog ]; then
+  PROCESSES="$PROCESSES pgbouncer:pgbouncer_t"
+  PATHS="$PATHS /etc/pgbouncer:pgbouncer_etc_t /var/log/pgbouncer:pgbouncer_log_t"
+fi
 case "$VARIANT" in
   default)
     PROCESSES="$PROCESSES etcd:etcd_t haproxy:haproxy_t confd:confd_t keepalived:keepalived_t"
@@ -39,6 +44,20 @@ case "$VARIANT" in
       /usr/local/bin/wal-g:walg_exec_t /usr/bin/vip-manager:vip_manager_exec_t"
     PERMISSIVE_DOMAINS=""
     BACKUP_DOMAIN="walg_t"
+    ;;
+  pgdog)
+    PROCESSES="$PROCESSES pgdog:pgdog_t etcd:etcd_t vip-manager:vip_manager_t"
+    PATHS="$PATHS /usr/local/bin/pgdog:pgdog_exec_t /etc/pgdog-selinux:pgdog_etc_t
+      /etc/pgdog-selinux/pgdog.toml:pgdog_etc_t /etc/pgdog-selinux/users.toml:pgdog_etc_t
+      /etc/autobase-tls:cert_t /etc/autobase-tls/server.key:cert_t
+      /etc/autobase-tls/server.crt:cert_t /etc/autobase-tls/ca.crt:cert_t
+      /usr/local/bin/etcd:etcd_exec_t /var/lib/etcd:etcd_var_lib_t /usr/bin/vip-manager:vip_manager_exec_t
+      /var/log/pgbackrest:pgbackrest_log_t /var/lib/pgbackrest:pgbackrest_var_lib_t
+      /var/spool/pgbackrest:pgbackrest_spool_t /usr/bin/pgbackrest:pgbackrest_exec_t"
+    PERMISSIVE_DOMAINS="pgdog_t"
+    BACKUP_DOMAIN="pgbackrest_t"
+    POOLER=PgDog
+    POOLER_PORT=16432
     ;;
   *) echo "unknown variant $VARIANT"; exit 2 ;;
 esac
@@ -67,6 +86,11 @@ for ip in $ips; do
     "${SSH[@]}" "root@$ip" "semanage permissive -l | grep -qx $domain" && fail "$ip: $domain is a permissive domain"
   done
 
+  if [ "$VARIANT" = pgdog ]; then
+    "${SSH[@]}" "root@$ip" bash -s < "$(dirname "$0")/pgdog.sh" \
+      || fail "$ip: PgDog checks failed after switchover"
+  fi
+
   # "0 denials" only counts if the audit log is actually being read.
   "${SSH[@]}" "root@$ip" 'ausearch --input-logs -m DAEMON_START -ts boot >/dev/null 2>&1' \
     || fail "$ip: no audit records since boot, is auditd running?"
@@ -77,23 +101,23 @@ for ip in $ips; do
     | grep -E '^type=(AVC|USER_AVC|SELINUX_ERR)' | grep -v 'avc:  granted' | grep -c -E 'scontext=[^ ]*:($DOMAINS):'")
   [ "${denials:-0}" -eq 0 ] || fail "$ip: $denials SELinux denials for $DOMAINS since boot"
 
-  # A query through PgBouncer (pgbouncer_t -> PostgreSQL socket)
-  "${SSH[@]}" "root@$ip" "PGPASSWORD=db1_user-test-pass psql -h 127.0.0.1 -p 6432 -U db1_user -d db1 -Atc 'select 1'" \
-    | grep -qx 1 || fail "$ip: no query through PgBouncer"
+  # A query through the pooler (PgDog requires TLS in its test variant).
+  "${SSH[@]}" "root@$ip" "PGPASSWORD=db1_user-test-pass psql -h 127.0.0.1 -p $POOLER_PORT -U db1_user -d db1 -Atc 'select 1'" \
+    | grep -qx 1 || fail "$ip: no query through $POOLER"
 done
 
 leader=$(bash "$(dirname "$0")/leader.sh" "$INVENTORY")
 
-# The VIP is held by keepalived (default) or vip-manager (consul) on exactly one node
+# The VIP is held by keepalived (default) or vip-manager (consul/pgdog) on exactly one node
 holders=$(for ip in $ips; do "${SSH[@]}" "root@$ip" "ip -o addr show | grep -q ' $VIP/' && echo $ip"; done)
 [ "$(echo "$holders" | grep -c .)" -eq 1 ] || fail "VIP $VIP is held by '${holders//$'\n'/ }', expected exactly one node"
-if [ "$VARIANT" = consul ] && [ "$holders" != "$leader" ]; then
+if [ "$VARIANT" != default ] && [ "$holders" != "$leader" ]; then
   fail "VIP $VIP is on $holders, expected the leader $leader (vip-manager)"
 fi
 
 # WAL archiving (archive_command in postgresql_t) and a full backup started by systemd
 case "$VARIANT" in
-  default)
+  default|pgdog)
     info=$("${SSH[@]}" "root@$leader" "sudo -u postgres pgbackrest --stanza=$STANZA --output=json info")
     echo "$info" | python3 -c "
 import json, sys

@@ -26,6 +26,7 @@ on:
       - "automation/roles/pgbackrest/**"
       - "automation/roles/wal_g/**"
       - "automation/roles/pgbouncer/**"
+      - "automation/roles/pgdog/**"
       - "automation/roles/etcd/**"
       - "automation/roles/consul/**"
       - "automation/roles/haproxy/**"
@@ -43,6 +44,7 @@ on:
       - "automation/roles/pgbackrest/**"
       - "automation/roles/wal_g/**"
       - "automation/roles/pgbouncer/**"
+      - "automation/roles/pgdog/**"
       - "automation/roles/etcd/**"
       - "automation/roles/consul/**"
       - "automation/roles/haproxy/**"
@@ -67,10 +69,14 @@ jobs:
           - distro: rockylinux10
             variant: default
             image: "https://dl.rockylinux.org/pub/rocky/10/images/x86_64/Rocky-10-GenericCloud-Base.latest.x86_64.qcow2"
-          # Consul is not supported on RHEL 10 yet (see the Molecule converge)
+          # The Consul RPM repository does not support RHEL 10 yet.
           - distro: rockylinux9
             variant: consul
             image: "https://dl.rockylinux.org/pub/rocky/9/images/x86_64/Rocky-9-GenericCloud-Base.latest.x86_64.qcow2"
+          # PgDog needs glibc >= 2.39; test with the default etcd DCS on RHEL 10.
+          - distro: rockylinux10
+            variant: pgdog
+            image: "https://dl.rockylinux.org/pub/rocky/10/images/x86_64/Rocky-10-GenericCloud-Base.latest.x86_64.qcow2"
     env:
       IMAGE: ${{ matrix.config.image }}
       VARIANT: ${{ matrix.config.variant }}
@@ -156,6 +162,17 @@ jobs:
         if: always()
         run: bash automation/molecule/selinux_kvm/collect.sh "$INVENTORY" "$OUT" deploy
 
+      - name: Check PgDog before switchover
+        id: pgdog
+        if: steps.deploy.outcome == 'success' && matrix.config.variant == 'pgdog'
+        continue-on-error: true
+        run: |
+          ips=$(awk '/^\[master\]|^\[replica\]/{f=1;next} /^\[/{f=0} f && NF {print $1}' "$INVENTORY")
+          for ip in $ips; do
+            ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR "root@$ip" \
+              bash -s < automation/molecule/selinux_kvm/pgdog.sh
+          done
+
       # With synchronous_mode, Patroni switches over only to the synchronous standby.
       - name: Switchover
         id: switchover
@@ -205,4 +222,5 @@ jobs:
         if: >-
           steps.deploy.outcome != 'success' || steps.switchover.outcome != 'success'
           || steps.backup.outcome != 'success' || steps.verify.outcome != 'success'
+          || steps.pgdog.outcome == 'failure'
         run: exit 1
