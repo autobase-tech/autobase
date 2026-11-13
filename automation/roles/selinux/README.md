@@ -83,6 +83,9 @@ because its release binaries require glibc 2.39 or newer.
   The PgDog variant checks reads and writes before and after switchover, reload/restart, TLS requirements,
   and the HTTP healthcheck and metrics endpoints, using custom paths and ports.
   It also uses a non-default Patroni REST API port; the Consul/WAL-G variant uses a non-default PostgreSQL port.
+  Automatic PR and main-branch runs select one of the four supported scenarios at random. A manual run can
+  select `all` (the default), `random`, or a specific scenario to reproduce a failure. The selected scenario
+  is recorded in the workflow summary; a single automatic run does not cover all configurations.
 
 ## Tags
 

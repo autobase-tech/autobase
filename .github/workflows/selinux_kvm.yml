@@ -17,6 +17,17 @@ on:
         type: choice
         options: [enforcing, permissive]
         default: enforcing
+      scenario:
+        description: "Test scenario (automatic runs select one at random)"
+        type: choice
+        options:
+          - all
+          - random
+          - rockylinux9-default
+          - rockylinux10-default
+          - rockylinux9-consul
+          - rockylinux10-pgdog
+        default: all
   push:
     branches:
       - main
@@ -55,28 +66,56 @@ on:
       - ".github/workflows/selinux_kvm.yml"
 
 jobs:
+  select:
+    name: Select SELinux scenario
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - name: Select test matrix
+        id: matrix
+        env:
+          SCENARIO: ${{ inputs.scenario || 'random' }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import random
+
+          # Consul requires Rocky 9; PgDog requires glibc >= 2.39 (Rocky 10).
+          configs = [
+              {
+                  "distro": f"rockylinux{major}",
+                  "variant": variant,
+                  "image": f"https://dl.rockylinux.org/pub/rocky/{major}/images/x86_64/"
+                           f"Rocky-{major}-GenericCloud-Base.latest.x86_64.qcow2",
+              }
+              for major, variant in [(9, "default"), (10, "default"), (9, "consul"), (10, "pgdog")]
+          ]
+          scenario = os.environ["SCENARIO"]
+          if scenario == "random":
+              configs = [random.choice(configs)]
+          elif scenario != "all":
+              configs = [c for c in configs if f"{c['distro']}-{c['variant']}" == scenario]
+          if not configs:
+              raise SystemExit(f"Unknown scenario: {scenario}")
+          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+              output.write("matrix=" + json.dumps({"config": configs}, separators=(",", ":")) + "\n")
+          selected = ", ".join(f"{c['distro']} ({c['variant']})" for c in configs)
+          print(f"Selected: {selected}")
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as summary:
+              summary.write(f"Selected SELinux scenarios: {selected}\n")
+          PY
+
   test:
     name: ${{ matrix.config.distro }} (${{ matrix.config.variant }})
+    needs: select
     runs-on: ubuntu-latest
     timeout-minutes: 90
     strategy:
       fail-fast: false
-      matrix:
-        config:
-          - distro: rockylinux9
-            variant: default
-            image: "https://dl.rockylinux.org/pub/rocky/9/images/x86_64/Rocky-9-GenericCloud-Base.latest.x86_64.qcow2"
-          - distro: rockylinux10
-            variant: default
-            image: "https://dl.rockylinux.org/pub/rocky/10/images/x86_64/Rocky-10-GenericCloud-Base.latest.x86_64.qcow2"
-          # The Consul RPM repository does not support RHEL 10 yet.
-          - distro: rockylinux9
-            variant: consul
-            image: "https://dl.rockylinux.org/pub/rocky/9/images/x86_64/Rocky-9-GenericCloud-Base.latest.x86_64.qcow2"
-          # PgDog needs glibc >= 2.39; test with the default etcd DCS on RHEL 10.
-          - distro: rockylinux10
-            variant: pgdog
-            image: "https://dl.rockylinux.org/pub/rocky/10/images/x86_64/Rocky-10-GenericCloud-Base.latest.x86_64.qcow2"
+      matrix: ${{ fromJSON(needs.select.outputs.matrix) }}
     env:
       IMAGE: ${{ matrix.config.image }}
       VARIANT: ${{ matrix.config.variant }}
