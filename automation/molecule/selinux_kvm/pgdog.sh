@@ -32,4 +32,3 @@ done
 curl -fsS --max-time 10 --retry 12 --retry-delay 5 --retry-all-errors http://127.0.0.1:18081/ | grep -x up
 # Consume the entire metrics response so curl cannot fail with a broken pipe.
 curl -fsS --max-time 10 http://127.0.0.1:19090/metrics | grep '^#' >/dev/null
-

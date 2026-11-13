@@ -43,17 +43,14 @@ consul_install_remotely: false
 # consul_install_from_repo: false
 
 ### Paths
-consul_bin_path: "/usr/local/bin"
+# Core paths and consul_ports are defined in roles/common/defaults/main.yml.
 # consul_config_path: "/etc/consul"
 consul_config_type: "hcl" # or json
 consul_config_template_path: "templates/config.{{ consul_config_type }}.j2"
 # consul_configd_path: "/etc/consul.d"
 consul_bootstrap_state: "{{ consul_config_path }}/.consul_bootstrapped"
 # consul_data_path: "/opt/consul"
-consul_log_path: "{{ lookup('env', 'CONSUL_LOG_PATH') | default('/var/log/consul', true) }}"
 consul_log_file: "{{ lookup('env', 'CONSUL_LOG_FILE') | default('consul.log', true) }}"
-consul_run_path: "/run/consul"
-consul_binary: "{{ consul_bin_path }}/consul"
 
 ### System user and group
 consul_manage_user: true
@@ -137,18 +134,6 @@ consul_addresses:
   rpc: "{{ consul_addresses_rpc | default(consul_client_address, true) }}"
   grpc: "{{ consul_addresses_grpc | default(consul_client_address, true) }}"
   grpc_tls: "{{ consul_addresses_grpc_tls | default(consul_client_address, true) }}"
-
-### Ports
-consul_ports:
-  dns: "{{ consul_ports_dns | default('8600', true) }}"
-  http: "{{ consul_ports_http | default('8500' if not consul_tls_enable | default(false) | bool else '-1') }}"
-  https: "{{ consul_ports_https | default('8500' if consul_tls_enable | default(false) | bool else '-1') }}"
-  rpc: "{{ consul_ports_rpc | default('8400', true) }}"
-  serf_lan: "{{ consul_ports_serf_lan | default('8301', true) }}"
-  serf_wan: "{{ consul_ports_serf_wan | default('8302', true) }}"
-  server: "{{ consul_ports_server | default('8300', true) }}"
-  grpc: "{{ consul_ports_grpc | default('-1', true) }}"
-  grpc_tls: "{{ consul_ports_grpc_tls | default('-1', true) }}"
 
 ### Servers
 consul_group_name: "{{ lookup('env', 'CONSUL_GROUP_NAME') | default('consul_instances', true) }}"

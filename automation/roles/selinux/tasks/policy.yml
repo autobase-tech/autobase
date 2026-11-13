@@ -57,7 +57,6 @@
         dest: "{{ selinux_policy_module_dir }}/{{ item.0 }}.{{ item.1 }}"
         mode: "0644"
       loop: "{{ selinux_policy_modules | product(['te', 'fc']) | list }}"
-      register: selinux_module_source
 
     - name: SELinux | list the loaded policy modules
       ansible.builtin.command: semodule -l
@@ -65,20 +64,27 @@
       changed_when: false
       when: selinux_policy_modules | length > 0
 
-    - name: SELinux | find policy modules that are changed or not loaded
-      ansible.builtin.set_fact:
-        selinux_modules_to_build: >-
-          {{ (selinux_module_source.results | selectattr('changed') | map(attribute='item') | map('first') | list)
-             + (selinux_policy_modules
-                | difference(selinux_loaded_modules.stdout_lines | default([]) | map('split') | map('first') | list)) }}
-
+    # Record source checksums only after a successful installation. A failed build or
+    # load must be retried even when the sources were already copied on an earlier run.
     - name: SELinux | build and load the policy modules
       ansible.builtin.shell: |
-        make -f /usr/share/selinux/devel/Makefile {{ item }}.pp
+        set -e
+        sources=$(sha256sum {{ item }}.te {{ item }}.fc)
+        stamp={{ item }}.installed.sha256
+        if {{ selinux_module_loaded | ternary('true', 'false') }} && [ -r "$stamp" ] && [ "$sources" = "$(cat "$stamp")" ]; then
+          exit 0
+        fi
+        make -B -f /usr/share/selinux/devel/Makefile {{ item }}.pp
         semodule -i {{ item }}.pp
+        printf '%s\n' "$sources" > "$stamp"
+        echo 'SELinux policy installed'
       args:
         chdir: "{{ selinux_policy_module_dir }}"
-      loop: "{{ selinux_modules_to_build | unique }}"
+      loop: "{{ selinux_policy_modules }}"
+      vars:
+        selinux_module_loaded: "{{ item in (selinux_loaded_modules.stdout_lines | default([]) | map('split') | map('first') | list) }}"
+      register: selinux_build_result
+      changed_when: "'SELinux policy installed' in selinux_build_result.stdout_lines"
 
     - name: SELinux | assign the PostgreSQL listen port
       community.general.seport:
@@ -160,8 +166,29 @@
         setype: consul_port_t
         state: present
       loop:
-        - { proto: tcp, ports: "8300-8302,8400,8500,8502-8503,8600" }
-        - { proto: udp, ports: "8301-8302,8600" }
+        - proto: tcp
+          ports: "{{ consul_ports.values() | map('int') | select('gt', 0) | unique | join(',') }}"
+        - proto: udp
+          ports: "{{ [consul_ports.dns, consul_ports.serf_lan, consul_ports.serf_wan] | map('int') | select('gt', 0) | unique | join(',') }}"
+      when:
+        - "'autobase_consul' in selinux_policy_modules"
+        - item.ports | length > 0
+
+    - name: SELinux | add file context rules for the configured Consul paths
+      community.general.sefcontext:
+        target: "{{ item.path | regex_escape }}{{ '(/.*)?' if item.ftype == 'a' else '' }}"
+        ftype: "{{ item.ftype }}"
+        setype: "{{ item.setype }}"
+        state: present
+      loop:
+        - { path: "{{ consul_binary }}", ftype: f, setype: consul_exec_t }
+        - { path: "{{ consul_config_path }}", ftype: a, setype: consul_etc_t }
+        - { path: "{{ consul_configd_path }}", ftype: a, setype: consul_etc_t }
+        - { path: "{{ consul_data_path }}", ftype: a, setype: consul_var_lib_t }
+        - { path: "{{ consul_log_path }}", ftype: a, setype: consul_log_t }
+        - { path: "{{ consul_run_path }}", ftype: a, setype: consul_var_run_t }
+      loop_control:
+        label: "{{ item.path }}"
       when: "'autobase_consul' in selinux_policy_modules"
 
     - name: SELinux | assign the PgDog listener ports

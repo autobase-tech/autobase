@@ -8,15 +8,20 @@
 #       tasks_from: relabel
 #     vars:
 #       selinux_relabel_paths: ["/usr/local/bin/etcd", "/var/lib/etcd"]
-- name: SELinux | apply file contexts to {{ selinux_relabel_paths | join(', ') }}
-  ansible.builtin.shell: |
-    set -o pipefail
-    paths=$(ls -d {{ selinux_relabel_paths | map('quote') | join(' ') }} 2>/dev/null || true)
-    [ -z "$paths" ] || restorecon -R -v $paths
-  args:
-    executable: /bin/bash
-  register: selinux_relabel_result
-  changed_when: selinux_relabel_result.stdout | length > 0
+- block:
+    - name: SELinux | label service parent directories
+      ansible.builtin.import_tasks: parents.yml
+
+    - name: SELinux | apply file contexts to {{ selinux_relabel_paths | join(', ') }}
+      ansible.builtin.shell: |
+        set -e
+        for path in {{ selinux_relabel_paths | map('quote') | join(' ') }}; do
+          if [ -e "$path" ] || [ -L "$path" ]; then
+            restorecon -R -v -- "$path"
+          fi
+        done
+      register: selinux_relabel_result
+      changed_when: selinux_relabel_result.stdout | length > 0
   when:
     - ansible_os_family == "RedHat"
     - ansible_selinux.status is defined

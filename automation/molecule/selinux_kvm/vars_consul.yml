@@ -2,6 +2,9 @@
 # Consul, vip-manager holding the VIP (no HAProxy), WAL-G with local file storage
 dcs_type: "consul"
 consul_node_role: server
+consul_config_path: "/opt/consul-selinux/config"
+consul_data_path: "/opt/consul-selinux/data"
+consul_ports_dns: 18600
 with_haproxy_load_balancing: false
 vip_manager_dcs_type: "consul"
 # vip-manager's configuration has no TLS settings and talks plain HTTP to Consul and the

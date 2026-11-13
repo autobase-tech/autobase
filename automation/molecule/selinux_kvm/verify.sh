@@ -40,17 +40,17 @@ case "$VARIANT" in
     ;;
   consul)
     PROCESSES="$PROCESSES consul:consul_t vip-manager:vip_manager_t"
-    PATHS="$PATHS /etc/consul:consul_etc_t /var/lib/consul:consul_var_lib_t
+    PATHS="$PATHS /opt/consul-selinux/config:consul_etc_t /opt/consul-selinux/data:consul_var_lib_t
       /usr/local/bin/wal-g:walg_exec_t /usr/bin/vip-manager:vip_manager_exec_t"
     PERMISSIVE_DOMAINS=""
     BACKUP_DOMAIN="walg_t"
     ;;
   pgdog)
     PROCESSES="$PROCESSES pgdog:pgdog_t etcd:etcd_t vip-manager:vip_manager_t"
-    PATHS="$PATHS /usr/local/bin/pgdog:pgdog_exec_t /etc/pgdog-selinux:pgdog_etc_t
-      /etc/pgdog-selinux/pgdog.toml:pgdog_etc_t /etc/pgdog-selinux/users.toml:pgdog_etc_t
-      /etc/autobase-tls:cert_t /etc/autobase-tls/server.key:cert_t
-      /etc/autobase-tls/server.crt:cert_t /etc/autobase-tls/ca.crt:cert_t
+    PATHS="$PATHS /usr/local/bin/pgdog:pgdog_exec_t /pool:etc_t /pool/pgdog:pgdog_etc_t
+      /pool/pgdog/pgdog.toml:pgdog_etc_t /pool/pgdog/users.toml:pgdog_etc_t
+      /pool/tls:cert_t /pool/tls/server.key:cert_t
+      /pool/tls/server.crt:cert_t /pool/tls/ca.crt:cert_t
       /usr/local/bin/etcd:etcd_exec_t /var/lib/etcd:etcd_var_lib_t /usr/bin/vip-manager:vip_manager_exec_t
       /var/log/pgbackrest:pgbackrest_log_t /var/lib/pgbackrest:pgbackrest_var_lib_t
       /var/spool/pgbackrest:pgbackrest_spool_t /usr/bin/pgbackrest:pgbackrest_exec_t"

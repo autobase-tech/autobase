@@ -42,7 +42,9 @@ Configures SELinux on RHEL-based hosts (RHEL, Rocky Linux, AlmaLinux, Oracle Lin
 
 pgBackRest and WAL-G change into their domain when PostgreSQL runs them as `archive_command`/`restore_command`,
 when Patroni runs them to create a replica, and when systemd or cron start them. The role also assigns port types
-for etcd (2379-2380), PgBouncer (`pgbouncer_listen_port`) and Consul (8300-8302, 8400, 8500, 8502-8503, 8600).
+for etcd (2379-2380), PgBouncer (`pgbouncer_listen_port`) and the enabled `consul_ports` (TCP, plus DNS and
+Serf LAN/WAN over UDP). Disabled Consul ports are ignored. Consul's binary, configuration, data, log and runtime
+paths are labelled using their configured values, including custom locations.
 On every PostgreSQL host with confinement enabled, it labels `postgresql_port` as `postgresql_port_t` and
 `patroni_restapi_port` as `http_port_t`, including non-default ports, independently of the selected pooler.
 For PgDog it labels `pgdog_listen_port`, and the optional `pgdog_healthcheck_port` and `pgdog_openmetrics_port`,
@@ -61,9 +63,14 @@ because its release binaries require glibc 2.39 or newer.
 
 - Running processes keep their domain until they restart. The role restarts nothing; on an existing cluster,
   restart the services one node at a time (replicas first for Patroni).
-- Policy modules are compiled on the host (`selinux-policy-devel`) and rebuilt only when their source changes.
+- Policy modules are compiled on the host (`selinux-policy-devel`). Checksums of successfully installed sources
+  are stored beside the modules; failed builds or loads are retried on the next run. Existing installations
+  without a checksum record are rebuilt once. Unchanged, loaded modules are skipped.
 - Service roles call `tasks_from: relabel` with the paths they install or create, so files that existed before
   the modules were loaded get their labels before the service starts.
+- Service parent directories whose expected type is `default_t` receive an exact directory rule with `etc_t`,
+  so the services can traverse custom roots such as `/pool`. Other existing rules are preserved. Relabelling
+  a shared parent does not recurse through neighbouring directories.
 - PgBouncer relabels both binary locations and its configuration/log directories during deployment and
   `config_pgcluster.yml`, including runs tagged `pgbouncer_conf`. On an existing cluster, restart PgBouncer
   one node at a time after enabling confinement; a reload does not change the running process's domain.
