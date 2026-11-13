@@ -43,8 +43,10 @@ Configures SELinux on RHEL-based hosts (RHEL, Rocky Linux, AlmaLinux, Oracle Lin
 pgBackRest and WAL-G change into their domain when PostgreSQL runs them as `archive_command`/`restore_command`,
 when Patroni runs them to create a replica, and when systemd or cron start them. The role also assigns port types
 for etcd (2379-2380), PgBouncer (`pgbouncer_listen_port`) and Consul (8300-8302, 8400, 8500, 8502-8503, 8600).
+On every PostgreSQL host with confinement enabled, it labels `postgresql_port` as `postgresql_port_t` and
+`patroni_restapi_port` as `http_port_t`, including non-default ports, independently of the selected pooler.
 For PgDog it labels `pgdog_listen_port`, and the optional `pgdog_healthcheck_port` and `pgdog_openmetrics_port`,
-as `pgdog_port_t`, and labels `postgresql_port` as `postgresql_port_t` for backend connections.
+as `pgdog_port_t`.
 The Consul policy allows TCP health checks against PgDog when its module is installed.
 
 PgDog's executable is labelled `pgdog_exec_t`, its configuration directory (including a custom `pgdog_conf_dir`)
@@ -70,6 +72,7 @@ because its release binaries require glibc 2.39 or newer.
   if a file is mislabelled, if a service does not work, or if any denial was logged for the service domains.
   The PgDog variant checks reads and writes before and after switchover, reload/restart, TLS requirements,
   and the HTTP healthcheck and metrics endpoints, using custom paths and ports.
+  It also uses a non-default Patroni REST API port; the Consul/WAL-G variant uses a non-default PostgreSQL port.
 
 ## Tags
 

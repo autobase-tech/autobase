@@ -80,6 +80,22 @@
         chdir: "{{ selinux_policy_module_dir }}"
       loop: "{{ selinux_modules_to_build | unique }}"
 
+    - name: SELinux | assign the PostgreSQL listen port
+      community.general.seport:
+        ports: "{{ postgresql_port }}"
+        proto: tcp
+        setype: postgresql_port_t
+        state: present
+      when: "'autobase_patroni' in selinux_policy_modules"
+
+    - name: SELinux | assign the Patroni REST API port
+      community.general.seport:
+        ports: "{{ patroni_restapi_port }}"
+        proto: tcp
+        setype: http_port_t
+        state: present
+      when: "'autobase_patroni' in selinux_policy_modules"
+
     # PGDG installs the server under /usr/pgsql-<version>/bin, which the base policy does not
     # label as postgresql_exec_t, so Patroni would start PostgreSQL in its own domain.
     - name: SELinux | add file context rules for the PostgreSQL server executables
@@ -157,14 +173,6 @@
       loop: >-
         {{ ([pgdog_listen_port | default(6432), pgdog_healthcheck_port | default(''), pgdog_openmetrics_port | default('')]
             | map('string') | reject('equalto', '') | unique | list) }}
-      when: "'autobase_pgdog' in selinux_policy_modules"
-
-    - name: SELinux | assign the PostgreSQL port for PgDog backends
-      community.general.seport:
-        ports: "{{ postgresql_port }}"
-        proto: tcp
-        setype: postgresql_port_t
-        state: present
       when: "'autobase_pgdog' in selinux_policy_modules"
 
     - name: SELinux | add file context rules for a custom PgDog configuration directory

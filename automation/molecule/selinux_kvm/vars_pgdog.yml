@@ -5,6 +5,7 @@ with_haproxy_load_balancing: false
 pgdog_install: true
 pgbouncer_install: false
 pgbackrest_install: true
+patroni_restapi_port: 18008
 # Exercise non-default paths and listener ports, including the optional HTTP endpoints.
 pgdog_conf_dir: "/etc/pgdog-selinux"
 pgdog_listen_port: 16432

@@ -80,7 +80,7 @@ files_tmp_filetrans(patroni_t, patroni_tmp_t, { dir file })
 
 ########################################
 #
-# Network: REST API (8008/tcp is http_port_t) and the DCS
+# Network: REST API (patroni_restapi_port is labelled http_port_t) and the DCS
 # (etcd and Consul ports carry no dedicated type in the base policy)
 #
 

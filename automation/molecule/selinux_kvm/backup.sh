@@ -21,7 +21,10 @@ case "$1" in
   consul)
     # WAL-G file storage expects its root directory to exist
     sudo -u postgres mkdir -p /var/lib/pgsql/wal-g-storage
-    sudo -u postgres psql -Atc "create table if not exists selinux_test (); select pg_switch_wal()"
+    port=$(python3 -c "
+import yaml
+print(yaml.safe_load(open('/etc/patroni/patroni.yml'))['postgresql']['listen'].rsplit(':', 1)[1])")
+    sudo -u postgres psql -p "$port" -Atc "create table if not exists selinux_test (); select pg_switch_wal()"
     systemd-run --wait --pipe --quiet -p User=postgres \
       /usr/local/bin/wal-g --config /var/lib/pgsql/.walg.json backup-push /pgdata/18/main
     sleep 10

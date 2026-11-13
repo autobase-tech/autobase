@@ -8,7 +8,10 @@ creds=$(python3 -c "
 import yaml
 auth = yaml.safe_load(open('/etc/patroni/patroni.yml'))['restapi'].get('authentication', {})
 print(auth.get('username', '') + ':' + auth.get('password', ''))")
-api() { curl -fsSk "https://$ip:8008$1" "${@:2}" 2>/dev/null || curl -fsS "http://$ip:8008$1" "${@:2}"; }
+port=$(python3 -c "
+import yaml
+print(yaml.safe_load(open('/etc/patroni/patroni.yml'))['restapi']['listen'].rsplit(':', 1)[1])")
+api() { curl -fsSk "https://$ip:$port$1" "${@:2}" 2>/dev/null || curl -fsS "http://$ip:$port$1" "${@:2}"; }
 
 candidate=$(api /cluster | python3 -c "
 import json, sys

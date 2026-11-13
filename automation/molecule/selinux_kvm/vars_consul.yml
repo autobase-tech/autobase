@@ -11,6 +11,8 @@ consul_tls_enable: false
 pgbouncer_install: true
 pgbackrest_install: false
 wal_g_install: true
+# Exercise PostgreSQL's port label without depending on the PgDog policy module.
+postgresql_port: 15432
 wal_g_json:
   - { option: "WALG_FILE_PREFIX", value: "{{ postgresql_home_dir }}/wal-g-storage" }
   - { option: "WALG_COMPRESSION_METHOD", value: "brotli" }

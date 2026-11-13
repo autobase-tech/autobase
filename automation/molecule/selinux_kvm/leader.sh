@@ -6,6 +6,13 @@
 set -euo pipefail
 
 first=$(awk '/^\[master\]/{getline; print $1}' "$1")
-ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR "root@$first" \
-  "curl -fsSk https://$first:8008/cluster || curl -fsS http://$first:8008/cluster" \
+cluster=$(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR "root@$first" bash -s -- "$first" <<'REMOTE'
+set -euo pipefail
+port=$(python3 -c "
+import yaml
+print(yaml.safe_load(open('/etc/patroni/patroni.yml'))['restapi']['listen'].rsplit(':', 1)[1])")
+curl -fsSk "https://$1:$port/cluster" || curl -fsS "http://$1:$port/cluster"
+REMOTE
+)
+echo "$cluster" \
   | python3 -c "import json, sys; print(next(m['host'] for m in json.load(sys.stdin)['members'] if m['role'] == 'leader'))"

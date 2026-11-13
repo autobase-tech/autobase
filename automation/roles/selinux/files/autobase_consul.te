@@ -75,7 +75,7 @@ logging_send_syslog_msg(consul_t)
 ########################################
 #
 # Health checks of the registered services: an HTTP check against the Patroni
-# REST API (8008/tcp is http_port_t) and "systemctl status pgbouncer", which
+# REST API (labelled http_port_t) and "systemctl status pgbouncer", which
 # the agent runs itself (Autobase's consul_services), or a TCP check against
 # PgDog when it replaces PgBouncer.
 #
