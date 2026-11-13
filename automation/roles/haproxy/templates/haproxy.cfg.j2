@@ -32,6 +32,14 @@ listen stats
     stats enable
     stats uri /
 
+{% if haproxy_prometheus_port | default('') | string | length > 0 %}
+frontend prometheus
+    mode http
+    bind {{ haproxy_bind_address | default(bind_address, true) }}:{{ haproxy_prometheus_port }}
+    http-request use-service prometheus-exporter if { path /metrics }
+    no log
+
+{% endif %}
 listen master
 {% if cluster_vip is defined and cluster_vip | length > 0 %}
     bind {{ cluster_vip }}:{{ haproxy_listen_port.master }}

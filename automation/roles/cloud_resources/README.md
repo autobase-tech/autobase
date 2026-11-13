@@ -60,6 +60,7 @@ The zone placement variables apply to AWS, GCP and Azure; see [Availability zone
 | netdata_public_allowed_ips | string | "" | Comma-separated CIDRs for Netdata |
 | database_public_access | bool | false | Allow public DB access |
 | database_public_allowed_ips | string | "" | Comma-separated CIDRs for DB |
+| prometheus_allowed_ips | string | "" | Comma-separated CIDRs of Prometheus servers outside of the cluster network, allowed to scrape the metrics endpoints (exporters and Patroni). The cluster network is always allowed |
 | cloud_load_balancer | bool | true | Create cloud Load Balancers (master switch) |
 | cloud_load_balancer_replica | bool | true | Create a Load Balancer for all replicas; ignored with PgDog |
 | cloud_load_balancer_replica_sync | bool | false | Create a Load Balancer for synchronous replicas (requires synchronous_mode); ignored with PgDog |

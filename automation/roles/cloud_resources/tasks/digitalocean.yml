@@ -306,6 +306,11 @@
                 }
               }
             ] if netdata_install | bool else []) +
+            (cloud_metrics_ports | map('string') | map('community.general.dict_kv', 'ports')
+              | map('combine', {'protocol': 'tcp', 'sources': {'addresses': [sources_addresses]}}) | list) +
+            (((cloud_metrics_ports + [patroni_restapi_port | default('8008')]) | map('string') | map('community.general.dict_kv', 'ports')
+              | map('combine', {'protocol': 'tcp', 'sources': {'addresses': prometheus_allowed_ips | split(',')}}) | list)
+              if prometheus_allowed_ips | length > 0 else []) +
             ([
               {
                 'protocol': 'tcp',

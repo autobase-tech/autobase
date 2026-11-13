@@ -50,6 +50,16 @@ netdata_public_access: false # Allow access to the Netdata monitoring from the p
 netdata_public_allowed_ips: "" # (comma-separated list of IP addresses in CIDR format) If empty, then public access is allowed for any IP address.
 database_public_access: false # Allow access to the database from the public network.
 database_public_allowed_ips: "" # (comma-separated list of IP addresses in CIDR format) If empty, then public access is allowed for any IP address.
+# The metrics endpoints (see 'prometheus_exporters_install') are open to the private network of the cluster.
+# (comma-separated list of IP addresses in CIDR format) Also allow your Prometheus servers outside of that network.
+prometheus_allowed_ips: ""
+# The metrics ports of the cluster nodes (derived, do not override). Patroni metrics use the REST API port.
+cloud_metrics_ports: >-
+  {{
+    prometheus_exporters_ports
+    + ([etcd_metrics_port] if dcs_type == 'etcd' and etcd_metrics_port | string | length > 0 else [])
+    + ([haproxy_prometheus_port] if with_haproxy_load_balancing | bool and haproxy_prometheus_port | string | length > 0 else [])
+  }}
 
 # Load balancer
 cloud_load_balancer: true # Create a primary Load Balancer, or one shared endpoint for PgDog.

@@ -210,6 +210,16 @@
               'ports': [netdata_port | default('19999')],
               'cidr_ip': vpc_cidr_blocks }] if netdata_install | bool else []) +
             ([{
+              'rule_desc': 'Metrics internal access',
+              'proto': 'tcp',
+              'ports': cloud_metrics_ports,
+              'cidr_ip': vpc_cidr_blocks }] if cloud_metrics_ports | length > 0 else []) +
+            ([{
+              'rule_desc': 'Metrics access for Prometheus',
+              'proto': 'tcp',
+              'ports': cloud_metrics_ports + [patroni_restapi_port | default('8008')],
+              'cidr_ip': prometheus_allowed_ips | split(',') }] if prometheus_allowed_ips | length > 0 else []) +
+            ([{
               'rule_desc': connection_pooler_name ~ ' internal access',
               'proto': 'tcp',
               'ports': [connection_pooler_port | default('6432')],

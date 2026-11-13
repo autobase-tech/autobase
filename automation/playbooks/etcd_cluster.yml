@@ -49,7 +49,7 @@
 
     - name: Build a firewall_ports_dynamic_var
       ansible.builtin.set_fact:
-        firewall_ports_dynamic_var: "{{ firewall_ports_dynamic_var | default([]) + (firewall_allowed_tcp_ports_for[item] | default([])) }}"
+        firewall_ports_dynamic_var: "{{ firewall_ports_dynamic_var | default([]) + (firewall_allowed_tcp_ports_for[item] | default([]) | flatten) }}"
       loop: "{{ hostvars[inventory_hostname].group_names }}"
       when: firewall_enabled_at_boot | default(false) | bool
       tags: firewall

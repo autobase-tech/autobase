@@ -1,0 +1,159 @@
+---
+# One systemd service per exporter, and one pgbouncer_exporter per PgBouncer process.
+- name: Define the Prometheus exporters of this node
+  ansible.builtin.set_fact:
+    prometheus_exporters_services: "{{ _services }}"
+    prometheus_exporters_packages: "{{ _packages }}"
+    prometheus_exporters_updated_binaries: [] # filled by install.yml, for the restart of the updated exporters
+  vars:
+    _services: >-
+      {%- set services = [] -%}
+      {%- if node_exporter_install | bool -%}
+        {%- set _ = services.append({
+          'name': 'node_exporter',
+          'binary': 'node_exporter',
+          'description': 'Prometheus exporter for machine metrics',
+          'documentation': 'https://github.com/prometheus/node_exporter',
+          'user': prometheus_exporters_user,
+          'port': node_exporter_port,
+          'env_template': '',
+          'args': (['--collector.disable-defaults'] + (node_exporter_collectors | map('regex_replace', '^', '--collector.') | list)
+                   if node_exporter_collectors | default([]) | length > 0 else [])
+                  + node_exporter_extra_args | default([])
+        }) -%}
+      {%- endif -%}
+      {%- if postgres_exporter_install | bool -%}
+        {%- set collector_args = [] -%}
+        {%- for collector, enabled in (postgres_exporter_collectors | default({}, true)).items() -%}
+          {%- set _ = collector_args.append(('--collector.' if enabled | bool else '--no-collector.') ~ collector) -%}
+        {%- endfor -%}
+        {%- set _ = services.append({
+          'name': 'postgres_exporter',
+          'binary': 'postgres_exporter',
+          'description': 'Prometheus exporter for PostgreSQL server metrics',
+          'documentation': 'https://github.com/prometheus-community/postgres_exporter',
+          'user': prometheus_exporters_user,
+          'port': postgres_exporter_port,
+          'env_template': 'postgres_exporter.env.j2',
+          'args': collector_args + postgres_exporter_extra_args | default([])
+        }) -%}
+      {%- endif -%}
+      {%- if pgbouncer_exporter_install | bool -%}
+        {%- for idx in range(pgbouncer_processes | default(1) | int) -%}
+          {%- set _ = services.append({
+            'name': 'pgbouncer_exporter' ~ ('-%d' % (idx + 1) if idx > 0 else ''),
+            'binary': 'pgbouncer_exporter',
+            'description': 'Prometheus exporter for PgBouncer' ~ (' (pgbouncer-%d)' % (idx + 1) if idx > 0 else ''),
+            'documentation': 'https://github.com/prometheus-community/pgbouncer_exporter',
+            'user': prometheus_exporters_user,
+            'port': pgbouncer_exporter_port | int + idx,
+            'env_template': 'pgbouncer_exporter.env.j2',
+            'pgbouncer_socket_dir': '/var/run/pgbouncer' ~ ('-%d' % (idx + 1) if idx > 0 else ''),
+            'args': pgbouncer_exporter_extra_args | default([])
+          }) -%}
+        {%- endfor -%}
+      {%- endif -%}
+      {%- if pgbackrest_exporter_install | bool -%}
+        {%- set _ = services.append({
+          'name': 'pgbackrest_exporter',
+          'binary': 'pgbackrest_exporter',
+          'description': 'Prometheus exporter for pgBackRest',
+          'documentation': 'https://github.com/woblerr/pgbackrest_exporter',
+          'user': 'postgres',
+          'port': pgbackrest_exporter_port,
+          'env_template': '',
+          'args': [
+            '--backrest.config=' ~ pgbackrest_conf_file,
+            '--backrest.stanza-include=' ~ pgbackrest_stanza,
+            '--collect.interval=' ~ pgbackrest_exporter_collect_interval
+          ] + pgbackrest_exporter_extra_args | default([])
+        }) -%}
+      {%- endif -%}
+      {%- if consul_exporter_install | bool -%}
+        {#- A client certificate is only required by Consul with 'verify_incoming'. Its key is readable by the consul user. -#}
+        {%- set consul_client_cert = consul_tls_enable | bool
+              and (consul_tls_verify_incoming | default(false) | bool or consul_tls_verify_incoming_https | default(false) | bool) -%}
+        {%- set _ = services.append({
+          'name': 'consul_exporter',
+          'binary': 'consul_exporter',
+          'description': 'Prometheus exporter for Consul',
+          'documentation': 'https://github.com/prometheus/consul_exporter',
+          'user': consul_user | default('consul') if consul_client_cert else prometheus_exporters_user,
+          'port': consul_exporter_port,
+          'env_template': 'consul_exporter.env.j2' if consul_exporter_acl_token | default('', true) | length > 0 else '',
+          'args': ['--consul.server=' ~ ('https' if consul_tls_enable | bool else 'http') ~ '://' ~ consul_exporter_server]
+                  + (['--consul.ca-file=' ~ prometheus_exporters_conf_dir ~ '/consul-ca.crt'] if consul_tls_enable | bool else [])
+                  + (['--consul.cert-file=' ~ consul_tls_dir ~ '/' ~ consul_tls_server_crt,
+                      '--consul.key-file=' ~ consul_tls_dir ~ '/' ~ consul_tls_server_key] if consul_client_cert else [])
+                  + (['--consul.agent-only'] if consul_exporter_agent_only | bool else [])
+                  + consul_exporter_extra_args | default([])
+        }) -%}
+      {%- endif -%}
+      {{ services }}
+    _packages: >-
+      {%- set packages = [] -%}
+      {%- for name in ['node_exporter', 'postgres_exporter', 'pgbouncer_exporter', 'pgbackrest_exporter', 'consul_exporter'] -%}
+        {%- if lookup('vars', name ~ '_install') | bool -%}
+          {%- set _ = packages.append({
+            'binary': name,
+            'version': lookup('vars', name ~ '_version'),
+            'url': lookup('vars', name ~ '_package_repo'),
+            'checksum': lookup('vars', name ~ '_package_checksum', default='')
+          }) -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {{ packages }}
+  tags: prometheus_exporters, prometheus_exporters_install, prometheus_exporters_conf
+
+- name: Install and configure the Prometheus exporters
+  when: prometheus_exporters_services | length > 0
+  block:
+    - name: Add the system user for the Prometheus exporters
+      when: prometheus_exporters_services | selectattr('user', 'equalto', prometheus_exporters_user) | list | length > 0
+      tags: prometheus_exporters, prometheus_exporters_conf
+      block:
+        - name: Add the {{ prometheus_exporters_user }} group
+          ansible.builtin.group:
+            name: "{{ prometheus_exporters_user }}"
+            system: true
+
+        - name: Add the {{ prometheus_exporters_user }} user
+          ansible.builtin.user:
+            name: "{{ prometheus_exporters_user }}"
+            group: "{{ prometheus_exporters_user }}"
+            system: true
+            shell: /usr/sbin/nologin
+            create_home: false
+
+    - name: Create the configuration directory {{ prometheus_exporters_conf_dir }}
+      ansible.builtin.file:
+        path: "{{ prometheus_exporters_conf_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+      tags: prometheus_exporters, prometheus_exporters_conf
+
+    - name: Install the Prometheus exporters
+      ansible.builtin.include_tasks:
+        file: install.yml
+        apply:
+          tags: prometheus_exporters, prometheus_exporters_install
+      loop: "{{ prometheus_exporters_packages }}"
+      loop_control:
+        loop_var: exporter_package
+        label: "{{ exporter_package.binary }} {{ exporter_package.version }}"
+      when: not ansible_check_mode
+      tags: prometheus_exporters, prometheus_exporters_install
+
+    - name: Create the database user for the Prometheus exporters
+      ansible.builtin.import_tasks: db_user.yml
+      tags: prometheus_exporters, prometheus_exporters_db_user
+
+    - name: Configure the Prometheus exporters
+      ansible.builtin.import_tasks: config.yml
+      tags: prometheus_exporters, prometheus_exporters_conf
+
+- name: Remove the disabled Prometheus exporters
+  ansible.builtin.import_tasks: remove.yml
+  tags: prometheus_exporters, prometheus_exporters_conf

@@ -136,7 +136,7 @@
 
     - name: Build a firewall_ports_dynamic_var
       ansible.builtin.set_fact:
-        firewall_ports_dynamic_var: "{{ firewall_ports_dynamic_var | default([]) + (firewall_allowed_tcp_ports_for[item] | default([])) }}"
+        firewall_ports_dynamic_var: "{{ firewall_ports_dynamic_var | default([]) + (firewall_allowed_tcp_ports_for[item] | default([]) | flatten) }}"
       loop: "{{ hostvars[inventory_hostname].group_names }}"
       when:
         - new_node | default(false) | bool
@@ -347,6 +347,8 @@
     - role: vitabaks.autobase.postgresql_index_maintenance
 
     - role: vitabaks.autobase.netdata
+
+    - role: vitabaks.autobase.prometheus_exporters
 
 - name: vitabaks.autobase.add_node | Finalizing
   hosts: postgres_cluster

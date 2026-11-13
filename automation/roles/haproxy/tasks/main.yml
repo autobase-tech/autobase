@@ -139,6 +139,8 @@
       loop:
         - regexp: "^.*bind.*:{{ haproxy_listen_port.stats }}$"
           line: "    bind {{ haproxy_bind_address | default(bind_address, true) }}:{{ haproxy_listen_port.stats }}"
+        - regexp: "^.*bind.*:{{ haproxy_prometheus_port | default('', true) or 'prometheus-port-disabled' }}$"
+          line: "    bind {{ haproxy_bind_address | default(bind_address, true) }}:{{ haproxy_prometheus_port }}"
         - regexp: "^.*bind.*:{{ haproxy_listen_port.master }}$"
           line: "    bind {{ haproxy_bind_address | default(bind_address, true) }}:{{ haproxy_listen_port.master }}"
         - regexp: "^.*bind.*:{{ haproxy_listen_port.replicas }}$"
@@ -162,6 +164,8 @@
       loop:
         - regexp: "^.*bind.*:{{ haproxy_listen_port.stats }}$"
           line: "    bind {{ haproxy_bind_address | default(bind_address, true) }}:{{ haproxy_listen_port.stats }}"
+        - regexp: "^.*bind.*:{{ haproxy_prometheus_port | default('', true) or 'prometheus-port-disabled' }}$"
+          line: "    bind {{ haproxy_bind_address | default(bind_address, true) }}:{{ haproxy_prometheus_port }}"
         - regexp: "^.*bind.*:{{ haproxy_listen_port.master }}$"
           line: "    bind {{ cluster_vip }}:{{ haproxy_listen_port.master }}"
         - regexp: "^.*bind.*:{{ haproxy_listen_port.replicas }}$"
