@@ -40,14 +40,6 @@ The user is not created on a standby cluster (`patroni_standby_cluster`), which 
 
 pgbackrest_exporter runs as `postgres`, to read the pgBackRest configuration and use the same repository access as the backups. It runs on every node, and all nodes report the same backups: aggregate them in the alerts, for example with `max by (stanza)`.
 
-## Consul
-
-The HTTP API of the Consul agents listens on `127.0.0.1` only, so its built-in metrics cannot be scraped remotely. consul_exporter runs on every node and queries the local agent (`consul_exporter_server`, like Patroni), over HTTPS when `consul_tls_enable` is `true`, with a copy of the CA certificate of Consul in `/etc/prometheus-exporters/consul-ca.crt` (the Consul configuration directory is only readable by the `consul` user). With `consul_tls_verify_incoming`, it also uses the client certificate of Consul and runs as the `consul` user, which can read its key.
-
-All nodes report the cluster-wide metrics: the Raft leader and peers, the members, and the health of all the services in the catalog. Aggregate them in the alerts. With a Consul cluster shared by many Postgres clusters (`dcs_exists`), the catalog can be large: `consul_exporter_agent_only: true` reports only the services of the local agent, but it also disables the Raft and members metrics.
-
-If the ACLs deny access by default, set `consul_exporter_acl_token` to a token with read access to the nodes, services, agent and operator. It is passed in an environment file, not on the command line.
-
 ## Network access
 
 The exporters listen on `prometheus_exporters_listen_addr` (all interfaces by default). Their ports are added to the firewall (`firewall_enabled_at_boot`) and, with `cloud_provider`, to the security groups of the cluster network. To allow Prometheus servers outside of that network, set `prometheus_allowed_ips` (comma-separated CIDRs).
@@ -59,6 +51,14 @@ prometheus_exporters_web_config:
   basic_auth_users:
     prometheus: "$2y$10$..." # bcrypt hash, e.g. htpasswd -nBC 10 "" | tr -d ':\n'
 ```
+
+## Consul
+
+The HTTP API of the Consul agents listens on `127.0.0.1` only, so its built-in metrics cannot be scraped remotely. consul_exporter runs on every node and queries the local agent (`consul_exporter_server`, like Patroni), over HTTPS when `consul_tls_enable` is `true`, with a copy of the CA certificate of Consul in `/etc/prometheus-exporters/consul-ca.crt` (the Consul configuration directory is only readable by the `consul` user). With `consul_tls_verify_incoming`, it also uses the client certificate of Consul and runs as the `consul` user, which can read its key.
+
+All nodes report the cluster-wide metrics: the Raft leader and peers, the members, and the health of all the services in the catalog. Aggregate them in the alerts. With a Consul cluster shared by many Postgres clusters (`dcs_exists`), the catalog can be large: `consul_exporter_agent_only: true` reports only the services of the local agent, but it also disables the Raft and members metrics.
+
+If the ACLs deny access by default, set `consul_exporter_acl_token` to a token with read access to the nodes, services, agent and operator. It is passed in an environment file, not on the command line.
 
 ## Alerts
 
@@ -77,9 +77,9 @@ The alerts use the `instance` label of the targets and the labels of the exporte
 | node | NodeClockNotSynchronised | warning | The clock is not synchronised |
 | patroni | PatroniPostgresNotRunning | critical | PostgreSQL is not running on a node |
 | patroni | PatroniClusterUnlocked | critical | The cluster has no leader |
-| patroni | PatroniLeaderChanged | warning | Failover or switchover (new timeline) |
+| patroni | PatroniLeaderChanged | critical | Failover or switchover (new timeline) |
 | patroni | PatroniFrequentLeaderChanges | critical | More than 2 leader changes in an hour |
-| patroni | PatroniDcsUnreachable | warning | Patroni has not reached the DCS for 5 minutes |
+| patroni | PatroniDcsUnreachable | critical | Patroni has not reached the DCS for 5 minutes |
 | patroni | PatroniReplicaNotStreaming | warning | A replica does not stream from the primary |
 | patroni | PatroniPaused | warning | Maintenance mode for more than an hour (no automatic failover) |
 | patroni | PatroniPendingRestart | info | A restart is needed to apply the configuration |
@@ -87,25 +87,28 @@ The alerts use the `instance` label of the targets and the labels of the exporte
 | postgres | PostgresDown | critical | postgres_exporter cannot connect to PostgreSQL |
 | postgres | PostgresExporterCollectorFailing | warning | A collector fails, leaving gaps in the metrics |
 | postgres | PostgresRestarted | warning | The postmaster restarted (e.g. after a crash), without failover |
-| postgres | PostgresTxidWraparound | warning, critical | Transaction ID age above 500 million and 1 billion |
+| postgres | PostgresTxidWraparound | warning, critical | Transaction ID age above 300 million for an hour, and above 1 billion |
 | postgres | PostgresMultixactWraparound | warning | Multixact ID age above 1 billion |
-| postgres | PostgresReplicationLag | warning | A replica is more than 5 minutes behind |
+| postgres | PostgresReplicationLag | critical | A replica is more than an hour behind, for 5 minutes |
 | postgres | PostgresInactiveReplicationSlot | warning | An inactive slot on the primary retains WAL |
 | postgres | PostgresReplicationSlotRetainsWal | warning | A slot retains more than 10 GiB of WAL |
 | postgres | PostgresWalArchivingFailing | critical | `archive_command` fails |
 | postgres | PostgresLongRunningTransaction | warning | A transaction runs for more than an hour |
-| postgres | PostgresIdleInTransaction | warning | A session is idle in transaction for more than 5 minutes |
+| postgres | PostgresIdleInTransaction | warning | A session is idle in transaction for more than an hour |
 | postgres | PostgresDeadlocks | warning | More than 5 deadlocks in an hour |
-| postgres | PostgresTooManyConnections | warning, critical | More than 80% and 90% of `max_connections` |
+| postgres | PostgresTooManyConnections | warning, critical | More than 70% and 90% of `max_connections` |
 | postgres | PostgresTooManyLocks | warning | More than 20% of the lock table |
+| postgres | PostgresLowCacheHitRate | warning | Less than 90% of the blocks read from the shared buffers, for 15 minutes |
+| postgres | PostgresHighRollbackRate | warning | More than 10% of the transactions rolled back |
+| postgres | PostgresTooManyCheckpointsRequested | warning | More than half of the checkpoints requested instead of timed (increase `max_wal_size`) |
 | pgbouncer | PgBouncerDown | critical | pgbouncer_exporter cannot connect to PgBouncer |
 | pgbouncer | PgBouncerClientsWaiting | warning | Clients wait more than 10 seconds for a server connection |
 | pgbouncer | PgBouncerClientConnectionsNearLimit | critical | More than 90% of `max_client_conn` |
 | pgbackrest | PgBackRestInfoFailing | warning | `pgbackrest info` fails |
-| pgbackrest | PgBackRestStanzaError | critical | The stanza has an error status |
+| pgbackrest | PgBackRestStanzaError | info | The stanza has an error status for 10 minutes |
 | pgbackrest | PgBackRestBackupError | critical | The last backup contains page checksum errors |
 | pgbackrest | PgBackRestNoRecentBackup | warning, critical | No backup of any type for 1 and 2 days |
-| pgbackrest | PgBackRestNoRecentFullBackup | warning | No full backup for 8 days |
+| pgbackrest | PgBackRestNoRecentFullBackup | warning | No full backup for 7 days and 1 hour |
 | etcd | EtcdNoLeader | critical | A member has no leader |
 | etcd | EtcdFrequentLeaderChanges | warning | More than 3 leader changes in an hour |
 | etcd | EtcdDatabaseQuotaAlmostFull | critical | More than 80% of the quota (at 100%, Patroni cannot keep the leader lock) |
@@ -129,7 +132,7 @@ The exporters expose much more than the alerts use. If the Prometheus server is 
 This removes the metrics at the source and reduces the load of the exporters.
 
 - `node_exporter_collectors` limits node_exporter to the listed collectors (with `--collector.disable-defaults`).
-- `postgres_exporter_collectors` enables or disables [collectors](https://github.com/prometheus-community/postgres_exporter#flags) on top of the exporter defaults. By default, `database_wraparound`, `long_running_transactions` and `postmaster` are added (they are used by the alerts), and none is disabled. The collectors with the most series are `stat_user_tables` and `statio_user_tables` (per table of the `postgres_exporter_dbname` database), `settings` (per setting) and `stat_activity` (per database, user, application and state).
+- `postgres_exporter_collectors` enables or disables [collectors](https://github.com/prometheus-community/postgres_exporter#flags) on top of the exporter defaults. By default, `database_wraparound`, `long_running_transactions`, `postmaster` and, with PostgreSQL 17+, `stat_checkpointer` are added (they are used by the alerts), and none is disabled. The collectors with the most series are `stat_user_tables` and `statio_user_tables` (per table of the `postgres_exporter_dbname` database), `settings` (per setting) and `stat_activity` (per database, user, application and state).
 - pgbackrest_exporter exports a series per backup kept in the repository for the `pgbackrest_backup_*` metrics (`backup_name` label); the alerts only need the `*last*` and `since_last_completion` metrics. `pgbackrest_exporter_extra_args`, for example `["--backrest.backup-type=full"]`, limits the backup types.
 - PgBouncer, Patroni, etcd, Consul, PgDog and HAProxy cannot select their metrics: use the second level.
 
@@ -151,10 +154,10 @@ postgres_exporter_collectors:
   database_wraparound: true # PostgresTxidWraparound, PostgresMultixactWraparound
   long_running_transactions: true # PostgresLongRunningTransaction
   postmaster: true # PostgresRestarted
+  stat_checkpointer: "{{ postgresql_version | int >= 17 }}" # PostgresTooManyCheckpointsRequested (PostgreSQL 17+)
   # kept enabled (exporter defaults) for the alerts: locks, replication, replication_slots, settings,
-  # stat_activity, stat_archiver, stat_database
+  # stat_activity, stat_archiver, stat_bgwriter (checkpoints before PostgreSQL 17), stat_database
   database: false
-  stat_bgwriter: false
   stat_progress_vacuum: false
   stat_replication: false
   stat_user_tables: false
@@ -188,7 +191,7 @@ postgres_exporter_extra_args: ["--collector.stat_statements.limit=20"]
 | Job | Metrics used by the alerts |
 |-----|----------------------------|
 | node_exporter | `node_filesystem_avail_bytes`, `node_filesystem_size_bytes`, `node_filesystem_files`, `node_filesystem_files_free`, `node_filesystem_readonly`, `node_memory_MemAvailable_bytes`, `node_memory_MemTotal_bytes`, `node_vmstat_oom_kill`, `node_timex_sync_status`, `node_timex_maxerror_seconds` |
-| postgres_exporter | `pg_up`, `pg_scrape_collector_success`, `pg_postmaster_start_time_seconds`, `pg_database_wraparound_age_datfrozenxid_seconds`, `pg_database_wraparound_age_datminmxid_seconds`, `pg_replication_is_replica`, `pg_replication_lag_seconds`, `pg_replication_slots_active`, `pg_replication_slots_pg_wal_lsn_diff`, `pg_stat_archiver_failed_count`, `pg_long_running_transactions_oldest_timestamp_seconds`, `pg_stat_activity_count`, `pg_stat_activity_max_tx_duration`, `pg_stat_database_deadlocks`, `pg_locks_count`, `pg_settings_max_connections`, `pg_settings_max_locks_per_transaction` |
+| postgres_exporter | `pg_up`, `pg_scrape_collector_success`, `pg_postmaster_start_time_seconds`, `pg_database_wraparound_age_datfrozenxid_seconds`, `pg_database_wraparound_age_datminmxid_seconds`, `pg_replication_is_replica`, `pg_replication_lag_seconds`, `pg_replication_slots_active`, `pg_replication_slots_pg_wal_lsn_diff`, `pg_stat_archiver_failed_count`, `pg_long_running_transactions_oldest_timestamp_seconds`, `pg_stat_activity_count`, `pg_stat_activity_max_tx_duration`, `pg_stat_database_deadlocks`, `pg_stat_database_blks_hit`, `pg_stat_database_blks_read`, `pg_stat_database_xact_commit`, `pg_stat_database_xact_rollback`, `pg_stat_checkpointer_num_timed_total`, `pg_stat_checkpointer_num_requested_total`, `pg_stat_bgwriter_checkpoints_timed_total`, `pg_stat_bgwriter_checkpoints_req_total`, `pg_locks_count`, `pg_settings_max_connections`, `pg_settings_max_locks_per_transaction` |
 | pgbouncer_exporter | `pgbouncer_up`, `pgbouncer_pools_client_maxwait_seconds`, `pgbouncer_pools_client_active_connections`, `pgbouncer_pools_client_waiting_connections`, `pgbouncer_config_max_client_connections` |
 | pgbackrest_exporter | `pgbackrest_exporter_status`, `pgbackrest_stanza_status`, `pgbackrest_backup_last_error_status`, `pgbackrest_backup_since_last_completion_seconds` |
 | Patroni | `patroni_postgres_running`, `patroni_cluster_unlocked`, `patroni_postgres_timeline`, `patroni_dcs_last_seen`, `patroni_replica`, `patroni_postgres_streaming`, `patroni_is_paused`, `patroni_pending_restart` (and `patroni_sync_standby` for the commented alert) |
@@ -214,7 +217,7 @@ scrape_configs:
     metric_relabel_configs:
       - source_labels: [__name__]
         regex: >-
-          pg_up|pg_scrape_collector_success|pg_postmaster_start_time_seconds|pg_database_wraparound_age_dat(frozenxid|minmxid)_seconds|pg_replication_(is_replica|lag_seconds)|pg_replication_slots_(active|pg_wal_lsn_diff)|pg_stat_archiver_failed_count|pg_long_running_transactions_oldest_timestamp_seconds|pg_stat_activity_(count|max_tx_duration)|pg_stat_database_deadlocks|pg_locks_count|pg_settings_(max_connections|max_locks_per_transaction)
+          pg_up|pg_scrape_collector_success|pg_postmaster_start_time_seconds|pg_database_wraparound_age_dat(frozenxid|minmxid)_seconds|pg_replication_(is_replica|lag_seconds)|pg_replication_slots_(active|pg_wal_lsn_diff)|pg_stat_archiver_failed_count|pg_long_running_transactions_oldest_timestamp_seconds|pg_stat_activity_(count|max_tx_duration)|pg_stat_database_(deadlocks|blks_hit|blks_read|xact_commit|xact_rollback)|pg_stat_checkpointer_num_(timed|requested)_total|pg_stat_bgwriter_checkpoints_(timed|req)_total|pg_locks_count|pg_settings_(max_connections|max_locks_per_transaction)
         action: keep
 
   - job_name: pgbouncer_exporter # one target per PgBouncer process: 9127, 9128...

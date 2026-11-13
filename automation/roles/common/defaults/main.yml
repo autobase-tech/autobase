@@ -1175,6 +1175,7 @@ postgres_exporter_collectors:
   database_wraparound: true # age of the oldest transaction ID and multixact ID, per database
   long_running_transactions: true
   postmaster: true
+  stat_checkpointer: "{{ postgresql_version | int >= 17 }}" # checkpoints (PostgreSQL 17+; 'stat_bgwriter' before)
 #  stat_statements: true # requires the 'pg_stat_statements' extension in the 'postgres_exporter_dbname' database
 #  To reduce the cardinality, disable the collectors with a series per table or per setting:
 #  stat_user_tables: false

@@ -95,7 +95,7 @@ groups:
       - alert: PatroniLeaderChanged
         expr: changes(max by (scope) (patroni_postgres_timeline)[15m:1m]) > 0
         labels:
-          severity: warning
+          severity: critical
         annotations:
           summary: "Failover or switchover in the Patroni cluster {{ $labels.scope }} (new timeline)"
 
@@ -110,7 +110,7 @@ groups:
         expr: time() - patroni_dcs_last_seen > 300
         for: 1m
         labels:
-          severity: warning
+          severity: critical
         annotations:
           summary: "Patroni on {{ $labels.name }} has not reached the DCS for {{ $value | humanizeDuration }}"
 
@@ -180,8 +180,8 @@ groups:
       # The age stays below 'autovacuum_freeze_max_age' (200 million by default) while autovacuum keeps up.
       # Requires the 'database_wraparound' collector (enabled by Autobase). The value is a number of transactions.
       - alert: PostgresTxidWraparound
-        expr: max by (instance, datname) (pg_database_wraparound_age_datfrozenxid_seconds) > 500000000
-        for: 5m
+        expr: max by (instance, datname) (pg_database_wraparound_age_datfrozenxid_seconds) > 300000000
+        for: 1h
         labels:
           severity: warning
         annotations:
@@ -204,10 +204,10 @@ groups:
           summary: "The oldest multixact ID of {{ $labels.datname }} is {{ $value | humanize }} old on {{ $labels.instance }}"
 
       - alert: PostgresReplicationLag
-        expr: pg_replication_lag_seconds > 300 and pg_replication_is_replica == 1
+        expr: pg_replication_lag_seconds > 3600 and pg_replication_is_replica == 1
         for: 5m
         labels:
-          severity: warning
+          severity: critical
         annotations:
           summary: "Replica {{ $labels.instance }} is {{ $value | humanizeDuration }} behind the primary"
 
@@ -244,8 +244,7 @@ groups:
 
       # An idle transaction keeps its locks and prevents vacuum from removing the dead rows.
       - alert: PostgresIdleInTransaction
-        expr: max by (instance, datname) (pg_stat_activity_max_tx_duration{state=~"idle in transaction.*"}) > 300
-        for: 1m
+        expr: max by (instance, datname) (pg_stat_activity_max_tx_duration{state=~"idle in transaction.*"}) > 3600
         labels:
           severity: warning
         annotations:
@@ -259,12 +258,54 @@ groups:
         annotations:
           summary: "{{ $value | humanize }} deadlocks in an hour in the database {{ $labels.datname }} on {{ $labels.instance }}"
 
+      # Less than 90% of the blocks read from the shared buffers for 15 minutes: the working set does not fit in memory.
+      # Analytical workloads with large scans can stay below; adapt the threshold to them.
+      - alert: PostgresLowCacheHitRate
+        expr: >-
+          sum by (instance, datname) (rate(pg_stat_database_blks_hit{datname!~"|template.*"}[5m]))
+          / (sum by (instance, datname) (rate(pg_stat_database_blks_hit{datname!~"|template.*"}[5m]))
+             + sum by (instance, datname) (rate(pg_stat_database_blks_read{datname!~"|template.*"}[5m]))) < 0.90
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Cache hit rate of {{ $labels.datname }} is {{ $value | humanizePercentage }} on {{ $labels.instance }}"
+
+      # More than 10% of the transactions are rolled back. Note that some drivers roll back read-only transactions.
+      - alert: PostgresHighRollbackRate
+        expr: >-
+          sum by (instance, datname) (rate(pg_stat_database_xact_rollback{datname!~"|template.*"}[5m]))
+          / (sum by (instance, datname) (rate(pg_stat_database_xact_rollback{datname!~"|template.*"}[5m]))
+             + sum by (instance, datname) (rate(pg_stat_database_xact_commit{datname!~"|template.*"}[5m]))) > 0.10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $value | humanizePercentage }} of the transactions of {{ $labels.datname }} are rolled back on {{ $labels.instance }}"
+
+      # More than half of the checkpoints are requested (WAL reached max_wal_size) instead of timed (checkpoint_timeout):
+      # increase max_wal_size. PostgreSQL 17+: 'stat_checkpointer' collector; older versions: 'stat_bgwriter'.
+      - alert: PostgresTooManyCheckpointsRequested
+        expr: >-
+          (
+            rate(pg_stat_checkpointer_num_requested_total[1h])
+            / (rate(pg_stat_checkpointer_num_timed_total[1h]) + rate(pg_stat_checkpointer_num_requested_total[1h]))
+          or
+            rate(pg_stat_bgwriter_checkpoints_req_total[1h])
+            / (rate(pg_stat_bgwriter_checkpoints_timed_total[1h]) + rate(pg_stat_bgwriter_checkpoints_req_total[1h]))
+          ) > 0.5
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $value | humanizePercentage }} of the checkpoints are requested on {{ $labels.instance }}: increase max_wal_size"
+
       # The alerts using 'pg_settings_*' require the 'settings' collector (enabled by default). If it is too verbose,
       # keep only the settings used here with 'metric_relabel_configs' in your Prometheus.
       - alert: PostgresTooManyConnections
         expr: >-
           sum by (instance) (pg_stat_activity_count)
-          / on (instance) pg_settings_max_connections * 100 > 80
+          / on (instance) pg_settings_max_connections * 100 > 70
         for: 5m
         labels:
           severity: warning
@@ -334,9 +375,9 @@ groups:
 
       - alert: PgBackRestStanzaError
         expr: min by (stanza) (pgbackrest_stanza_status) > 0
-        for: 30m
+        for: 10m
         labels:
-          severity: critical
+          severity: info
         annotations:
           summary: "pgBackRest stanza {{ $labels.stanza }} has an error status ({{ $value }})"
 
@@ -364,7 +405,7 @@ groups:
           summary: "No backup of the stanza {{ $labels.stanza }} for {{ $value | humanizeDuration }}"
 
       - alert: PgBackRestNoRecentFullBackup
-        expr: min by (stanza) (pgbackrest_backup_since_last_completion_seconds{backup_type="full"}) > 8 * 86400
+        expr: min by (stanza) (pgbackrest_backup_since_last_completion_seconds{backup_type="full"}) > 7 * 86400 + 3600
         labels:
           severity: warning
         annotations:
