@@ -14,16 +14,8 @@
     contains: "^# Managed by Autobase \\(prometheus_exporters role\\)$"
   register: prometheus_exporters_units_found
 
-- name: Stop and remove the disabled exporters
-  when: prometheus_exporters_units_disabled | length > 0
-  vars:
-    prometheus_exporters_units_disabled: >-
-      {{
-        prometheus_exporters_units_found.files | default([])
-        | map(attribute='path') | map('basename') | map('regex_replace', '[.]service$', '')
-        | difference(prometheus_exporters_services | default([]) | map(attribute='name'))
-      }}
-  block:
+# Stop and remove the disabled exporters
+- block:
     - name: Stop and disable the disabled exporters
       ansible.builtin.systemd:
         name: "{{ item }}"
@@ -46,3 +38,11 @@
     - name: Reload systemd
       ansible.builtin.systemd:
         daemon_reload: true
+  vars:
+    prometheus_exporters_units_disabled: >-
+      {{
+        prometheus_exporters_units_found.files | default([])
+        | map(attribute='path') | map('basename') | map('regex_replace', '[.]service$', '')
+        | difference(prometheus_exporters_services | default([]) | map(attribute='name'))
+      }}
+  when: prometheus_exporters_units_disabled | length > 0

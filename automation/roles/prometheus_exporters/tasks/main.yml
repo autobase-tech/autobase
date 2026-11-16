@@ -105,13 +105,10 @@
       {{ packages }}
   tags: prometheus_exporters, prometheus_exporters_install, prometheus_exporters_conf, prometheus_exporters_db_user
 
-- name: Install and configure the Prometheus exporters
-  when: prometheus_exporters_services | default([]) | length > 0
-  block:
-    - name: Add the system user for the Prometheus exporters
-      when: prometheus_exporters_services | selectattr('user', 'equalto', prometheus_exporters_user) | list | length > 0
-      tags: prometheus_exporters, prometheus_exporters_conf
-      block:
+# Install and configure the Prometheus exporters
+- block:
+    # The system user for the Prometheus exporters
+    - block:
         - name: Add the {{ prometheus_exporters_user }} group
           ansible.builtin.group:
             name: "{{ prometheus_exporters_user }}"
@@ -124,6 +121,8 @@
             system: true
             shell: /usr/sbin/nologin
             create_home: false
+      when: prometheus_exporters_services | selectattr('user', 'equalto', prometheus_exporters_user) | list | length > 0
+      tags: prometheus_exporters, prometheus_exporters_conf
 
     - name: Create the configuration directory {{ prometheus_exporters_conf_dir }}
       ansible.builtin.file:
@@ -153,6 +152,7 @@
     - name: Configure the Prometheus exporters
       ansible.builtin.import_tasks: config.yml
       tags: prometheus_exporters, prometheus_exporters_conf
+  when: prometheus_exporters_services | default([]) | length > 0
 
 - name: Remove the disabled Prometheus exporters
   ansible.builtin.import_tasks: remove.yml
