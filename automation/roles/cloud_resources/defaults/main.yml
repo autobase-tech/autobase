@@ -46,10 +46,11 @@ ssh_key_content: "" # (optional) Public key content to add to the cloud (directl
 cloud_firewall: true # Specify 'false' if you don't want to configure Firewall rules, or want to manage them yourself.
 ssh_public_access: true # Allow public ssh access (required for deployment from the public network). Applicable if server_public_ip is set to true.
 ssh_public_allowed_ips: "" # (comma-separated list of IP addresses in CIDR format) If empty, then public access is allowed for any IP address.
-netdata_public_access: false # Allow access to the Netdata monitoring from the public network (if 'netdata_install' is 'true').
-netdata_public_allowed_ips: "" # (comma-separated list of IP addresses in CIDR format) If empty, then public access is allowed for any IP address.
 database_public_access: false # Allow access to the database from the public network.
 database_public_allowed_ips: "" # (comma-separated list of IP addresses in CIDR format) If empty, then public access is allowed for any IP address.
+# Netdata monitoring is installed by default on all servers (see 'netdata_install'). The Netdata dashboard is open to the private network of the cluster.
+netdata_public_access: false # Allow access to the Netdata monitoring from the public network (if 'netdata_install' is 'true').
+netdata_public_allowed_ips: "" # (comma-separated list of IP addresses in CIDR format) If empty, then public access is allowed for any IP address.
 # The metrics endpoints (see 'prometheus_exporters_install') are open to the private network of the cluster.
 # (comma-separated list of IP addresses in CIDR format) Also allow your Prometheus servers outside of that network.
 prometheus_allowed_ips: ""
