@@ -20,7 +20,7 @@ This enables all the endpoints available for the components of the cluster:
 | pgBackRest | `http://NODE:9854/metrics` ([pgbackrest_exporter](https://github.com/woblerr/pgbackrest_exporter)) | `pgbackrest_exporter_install`, if `pgbackrest_install` |
 | Consul | `http://NODE:9107/metrics` ([consul_exporter](https://github.com/prometheus/consul_exporter)) | `consul_exporter_install`, if `dcs_type: consul` |
 | Patroni | `http(s)://NODE:8008/metrics` (REST API) | always available |
-| PgDog | `http://NODE:9090/metrics` (built-in) | `pgdog_openmetrics_port`, if `pgdog_install` |
+| PgDog | `http://NODE:9090/metrics` (built-in, metrics prefixed with `pgdog_`) | `pgdog_openmetrics_port`, if `pgdog_install` |
 | etcd | `http://NODE:2381/metrics` (built-in, plain HTTP, no client certificate) | `etcd_metrics_port`, if `dcs_type: etcd` and the etcd cluster is deployed by Autobase (`dcs_exists: false`) |
 | HAProxy | `http://NODE:PORT/metrics` (built-in) | `haproxy_prometheus_port` (opt-in) |
 
@@ -314,6 +314,7 @@ The variables are defined in [`roles/common/defaults/main.yml`](../common/defaul
 | `*_package_repo` | GitHub release | URL of the release archive |
 | `*_package_checksum` | `sha256:<checksum file URL>` | Checksum of the archive, or `""` to skip the verification |
 | `pgdog_openmetrics_port` | `9090` with `prometheus_exporters_install` | Port of the PgDog OpenMetrics endpoint, or `""` |
+| `pgdog_openmetrics_namespace` | `"pgdog_"` | Prefix of the PgDog metric names, or `""` |
 | `etcd_metrics_port` | `2381` with `prometheus_exporters_install`, `dcs_type: etcd` and `dcs_exists: false` | Port of the etcd metrics endpoint, or `""` |
 | `haproxy_prometheus_port` | `""` | Port of the HAProxy Prometheus endpoint, or `""` |
 | `prometheus_allowed_ips` | `""` | CIDRs of Prometheus servers outside of the cluster network (cloud security groups) |
@@ -323,6 +324,10 @@ The variables are defined in [`roles/common/defaults/main.yml`](../common/defaul
 New versions are installed by changing `*_version` and running `config_pgcluster.yml` with the tag `prometheus_exporters`. Only the exporters whose binary or configuration has changed are restarted. The exporters on a node added by `add_node.yml` are configured like on the other nodes.
 
 The etcd metrics endpoint is configured when etcd is deployed (`ETCD_LISTEN_METRICS_URLS` in `/etc/etcd/etcd.conf`). On an existing cluster, add this setting and restart etcd one member at a time.
+
+PgDog reads `pgdog_openmetrics_port` only at startup: on an existing cluster, enabling the exporters updates `pgdog.toml` with a reload, and the endpoint is available after the next restart of PgDog (one node at a time).
+
+With `confd_install`, the HAProxy endpoint (`haproxy_prometheus_port`) is part of the confd template, like the rest of the HAProxy configuration.
 
 ## Tags
 

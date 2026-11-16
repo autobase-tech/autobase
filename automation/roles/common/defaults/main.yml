@@ -680,6 +680,7 @@ pgdog_tls_ca_file: "{{ tls_ca_cert }}"
 pgdog_tls_verify: "{{ 'verify_ca' if tls_cert_generate | bool else 'prefer' }}" # disabled, prefer, verify_ca, verify_full
 pgdog_healthcheck_port: "" # enable the HTTP health check for external load balancers on this port
 pgdog_openmetrics_port: "{{ '9090' if prometheus_exporters_install | bool else '' }}" # enable the OpenMetrics (Prometheus) endpoint on this port
+pgdog_openmetrics_namespace: "pgdog_" # prefix of the metric names (PgDog has none by default), or "" for none
 pgdog_general_parameters: {} # any other option of the [general] section, for example: { query_timeout: 60000 }
 
 # PgDog has no wildcard for databases, like the "*" of PgBouncer: it serves only the databases it is configured with.

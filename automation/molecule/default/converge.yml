@@ -38,7 +38,7 @@
         postgresql_builtin_locale: "{{ ['C', 'C.UTF-8', 'PG_UNICODE_FAST'] | random }}"
         pgbouncer_processes: 2 # Test multiple pgbouncer processes (so_reuseport)
         prometheus_exporters_install: true # Test the Prometheus exporters and the built-in metrics endpoints
-        node_exporter_collectors: [cpu, diskstats, filesystem, loadavg, meminfo, netdev] # Test limiting the collectors
+        node_exporter_collectors: [cpu, filesystem, meminfo, vmstat, timex] # Test limiting the collectors (those of the alerts)
         patroni_tags: "datacenter=dc1,key1=value1"
         balancer_tags: "datacenter=dc1"
         enable_ssh_key_based_authentication: true

@@ -63,7 +63,7 @@
         url: "http://127.0.0.1:{{ pgdog_openmetrics_port }}/metrics"
         return_content: true
       register: pgdog_metrics
-      failed_when: pgdog_metrics.content | length == 0
+      failed_when: pgdog_metrics.content is not search('^' ~ pgdog_openmetrics_namespace ~ '[a-z]', multiline=True)
       when: pgdog_install | bool
 
     - name: Check that the exporters connect with the dedicated user

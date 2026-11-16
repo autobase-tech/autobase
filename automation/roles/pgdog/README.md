@@ -97,6 +97,7 @@ The variables are defined in [`roles/common/defaults/main.yml`](../common/defaul
 | `pgdog_prepared_statements_limit` | `5000` | Maximum prepared statements per server connection |
 | `pgdog_healthcheck_port` | `""` | Port for the HTTP health check, for external load balancers |
 | `pgdog_openmetrics_port` | `9090` with `prometheus_exporters_install`, otherwise `""` | Port for the OpenMetrics (Prometheus) endpoint, or `""` to disable it |
+| `pgdog_openmetrics_namespace` | `"pgdog_"` | Prefix of the metric names of the OpenMetrics endpoint (PgDog has none by default), or `""`. Ignored if `openmetrics_namespace` is set in `pgdog_general_parameters` |
 
 ### Databases and users
 
@@ -136,7 +137,7 @@ With `allow_change`, each wrong password is checked against PostgreSQL. PgDog re
 
 The configuration is in `pgdog.toml` and `users.toml`, in `pgdog_conf_dir`. It is validated with `pgdog configcheck` before it is replaced. The logs are in the journal of the `pgdog` service.
 
-Changes are applied with a reload, without closing client connections. `pgdog_listen_addr`, `pgdog_listen_port` and `pgdog_workers` require a restart of the service.
+Changes are applied with a reload, without closing client connections. `pgdog_listen_addr`, `pgdog_listen_port`, `pgdog_workers`, `pgdog_openmetrics_port` and `pgdog_openmetrics_namespace` require a restart of the service.
 
 After a failover, some replicas can be left out of the load balancer until PgDog has checked them and their bans have expired. Bans normally expire after `pgdog_ban_timeout` (30 seconds); an unhealthy or lagging replica can remain excluded longer. Reads go to the other eligible nodes in the meantime. If all targets are unavailable, PgDog can clear bans earlier to retry them.
 

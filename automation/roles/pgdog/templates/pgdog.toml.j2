@@ -43,6 +43,9 @@ healthcheck_port = {{ pgdog_healthcheck_port | int }}
 {% endif %}
 {% if pgdog_openmetrics_port | string | length > 0 %}
 openmetrics_port = {{ pgdog_openmetrics_port | int }}
+{%   if 'openmetrics_namespace' not in pgdog_general_parameters | default({}) and pgdog_openmetrics_namespace | default('') | length > 0 %}
+openmetrics_namespace = {{ pgdog_openmetrics_namespace | to_json }}
+{%   endif %}
 {% endif %}
 {% for key, value in pgdog_general_parameters | default({}) | dictsort %}
 {{ key }} = {{ value | to_json }}

@@ -103,10 +103,10 @@
         {%- endif -%}
       {%- endfor -%}
       {{ packages }}
-  tags: prometheus_exporters, prometheus_exporters_install, prometheus_exporters_conf
+  tags: prometheus_exporters, prometheus_exporters_install, prometheus_exporters_conf, prometheus_exporters_db_user
 
 - name: Install and configure the Prometheus exporters
-  when: prometheus_exporters_services | length > 0
+  when: prometheus_exporters_services | default([]) | length > 0
   block:
     - name: Add the system user for the Prometheus exporters
       when: prometheus_exporters_services | selectattr('user', 'equalto', prometheus_exporters_user) | list | length > 0
