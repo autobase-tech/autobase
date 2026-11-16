@@ -160,7 +160,8 @@ etcd_tls_server_key: "server.key"
 etcd_client_cert_auth: "{{ 'true' if not etcd_on_dedicated_nodes | bool else 'false' }}"
 # Expose the etcd metrics over plain HTTP on this port (http://NODE:PORT/metrics), or "" to disable.
 # Unlike the client port, it does not require a client certificate. A change requires a restart of etcd.
-etcd_metrics_port: "{{ '2381' if prometheus_exporters_install | bool else '' }}"
+# Only for the etcd cluster deployed by Autobase: with 'dcs_exists: true', the existing etcd is not configured.
+etcd_metrics_port: "{{ '2381' if prometheus_exporters_install | bool and dcs_type == 'etcd' and not dcs_exists | bool else '' }}"
 # We disable client certificate authentication when etcd runs on dedicated nodes.
 # This allows Patroni to connect without requiring a client certificate, ensuring secure encrypted communication
 # using only the CA certificate while avoiding the need to regenerate etcd certificates when adding new Patroni clusters.

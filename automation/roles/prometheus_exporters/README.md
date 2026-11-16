@@ -21,7 +21,7 @@ This enables all the endpoints available for the components of the cluster:
 | Consul | `http://NODE:9107/metrics` ([consul_exporter](https://github.com/prometheus/consul_exporter)) | `consul_exporter_install`, if `dcs_type: consul` |
 | Patroni | `http(s)://NODE:8008/metrics` (REST API) | always available |
 | PgDog | `http://NODE:9090/metrics` (built-in) | `pgdog_openmetrics_port`, if `pgdog_install` |
-| etcd | `http://NODE:2381/metrics` (built-in, plain HTTP, no client certificate) | `etcd_metrics_port`, if `dcs_type: etcd` |
+| etcd | `http://NODE:2381/metrics` (built-in, plain HTTP, no client certificate) | `etcd_metrics_port`, if `dcs_type: etcd` and the etcd cluster is deployed by Autobase (`dcs_exists: false`) |
 | HAProxy | `http://NODE:PORT/metrics` (built-in) | `haproxy_prometheus_port` (opt-in) |
 
 Each exporter can also be enabled or disabled individually, for example `node_exporter_install: false`. Disabled exporters are stopped and removed on the next run. The HAProxy endpoint is opt-in because it requires HAProxy built with the Prometheus exporter (`haproxy -vv` shows "Prometheus exporter").
@@ -314,7 +314,7 @@ The variables are defined in [`roles/common/defaults/main.yml`](../common/defaul
 | `*_package_repo` | GitHub release | URL of the release archive |
 | `*_package_checksum` | `sha256:<checksum file URL>` | Checksum of the archive, or `""` to skip the verification |
 | `pgdog_openmetrics_port` | `9090` with `prometheus_exporters_install` | Port of the PgDog OpenMetrics endpoint, or `""` |
-| `etcd_metrics_port` | `2381` with `prometheus_exporters_install` | Port of the etcd metrics endpoint, or `""` |
+| `etcd_metrics_port` | `2381` with `prometheus_exporters_install`, `dcs_type: etcd` and `dcs_exists: false` | Port of the etcd metrics endpoint, or `""` |
 | `haproxy_prometheus_port` | `""` | Port of the HAProxy Prometheus endpoint, or `""` |
 | `prometheus_allowed_ips` | `""` | CIDRs of Prometheus servers outside of the cluster network (cloud security groups) |
 

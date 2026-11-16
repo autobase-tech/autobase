@@ -58,7 +58,7 @@ prometheus_allowed_ips: ""
 cloud_metrics_ports: >-
   {{
     prometheus_exporters_ports
-    + ([etcd_metrics_port] if dcs_type == 'etcd' and etcd_metrics_port | string | length > 0 else [])
+    + ([etcd_metrics_port] if dcs_type == 'etcd' and not dcs_exists | bool and etcd_metrics_port | string | length > 0 else [])
     + ([haproxy_prometheus_port] if with_haproxy_load_balancing | bool and haproxy_prometheus_port | string | length > 0 else [])
   }}
 
