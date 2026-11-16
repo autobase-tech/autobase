@@ -1,0 +1,38 @@
+---
+# The upstream releases are tar archives with a single binary, used on all distributions.
+- name: Download {{ exporter_package.binary }} {{ exporter_package.version }}
+  ansible.builtin.get_url:
+    url: "{{ exporter_package.url }}"
+    dest: "/tmp/{{ exporter_package.url | basename }}"
+    checksum: "{{ exporter_package.checksum | default(omit, true) }}"
+    mode: "0644"
+    timeout: 60
+  register: get_url_result
+  until: get_url_result is success
+  delay: 5
+  retries: 3
+  environment: "{{ proxy_env | default({}) }}"
+
+- name: Extract {{ exporter_package.binary }} {{ exporter_package.version }} into /tmp
+  ansible.builtin.unarchive:
+    src: "/tmp/{{ exporter_package.url | basename }}"
+    dest: /tmp/
+    extra_opts:
+      - --no-same-owner
+    remote_src: true
+
+- name: Copy the {{ exporter_package.binary }} {{ exporter_package.version }} binary file to /usr/local/bin/
+  ansible.builtin.copy:
+    src: "/tmp/{{ exporter_package.url | basename | regex_replace('\\.tar\\.gz$', '') }}/{{ exporter_package.binary }}"
+    dest: "/usr/local/bin/{{ exporter_package.binary }}"
+    owner: root
+    group: root
+    mode: "0755"
+    remote_src: true
+  register: exporter_binary_result
+
+# The services of the updated binaries are restarted in config.yml.
+- name: Remember that {{ exporter_package.binary }} has been updated
+  ansible.builtin.set_fact:
+    prometheus_exporters_updated_binaries: "{{ prometheus_exporters_updated_binaries | default([]) + [exporter_package.binary] }}"
+  when: exporter_binary_result is changed

@@ -28,8 +28,15 @@ auth_query = SELECT usename, passwd FROM user_search($1)
 auth_file = {{ pgbouncer_conf_dir }}/userlist.txt
 {% endif %}
 admin_users = {{ pgbouncer_admin_users }}
+{% set monitoring_stats_users = [] %}
 {% if netdata_install | default(false) | bool and netdata_pgbouncer_collector | default(true) | bool %}
-stats_users = {{ ((pgbouncer_stats_users.split(',') | map('trim') | reject('equalto', '') | list) + [netdata_pgbouncer_stats_user | default(patroni_superuser_username)]) | unique(case_sensitive=true) | join(',') }}
+{%   set _ = monitoring_stats_users.append(netdata_pgbouncer_stats_user | default(patroni_superuser_username)) %}
+{% endif %}
+{% if pgbouncer_exporter_install | default(false) | bool %}
+{%   set _ = monitoring_stats_users.append(prometheus_exporters_db_user | default('postgres_exporter')) %}
+{% endif %}
+{% if monitoring_stats_users | length > 0 %}
+stats_users = {{ ((pgbouncer_stats_users.split(',') | map('trim') | reject('equalto', '') | list) + monitoring_stats_users) | unique(case_sensitive=true) | join(',') }}
 {% else %}
 stats_users = {{ pgbouncer_stats_users }}
 {% endif %}

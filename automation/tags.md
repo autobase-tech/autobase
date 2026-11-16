@@ -114,6 +114,10 @@
 - cron
 - netdata
 - - netdata_pgbouncer
+- prometheus_exporters
+- - prometheus_exporters_install
+- - prometheus_exporters_conf
+- - prometheus_exporters_db_user
 - ssh_public_keys
 - mount, zpool
 - resizefs

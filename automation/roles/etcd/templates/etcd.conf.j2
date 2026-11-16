@@ -11,6 +11,9 @@ ETCD_ELECTION_TIMEOUT="5000"
 ETCD_HEARTBEAT_INTERVAL="1000"
 ETCD_INITIAL_ELECTION_TICK_ADVANCE="false"
 ETCD_AUTO_COMPACTION_RETENTION="1"
+{% if etcd_metrics_port | default('') | string | length > 0 %}
+ETCD_LISTEN_METRICS_URLS="http://{{ etcd_bind_address }}:{{ etcd_metrics_port }},http://127.0.0.1:{{ etcd_metrics_port }}"
+{% endif %}
 {% if etcd_tls_enable | default(false) | bool %}
 ETCD_CERT_FILE="{{ etcd_tls_dir | default('/etc/etcd/tls') }}/{{ etcd_tls_server_crt | default('server.crt') }}"
 ETCD_KEY_FILE="{{ etcd_tls_dir | default('/etc/etcd/tls') }}/{{ etcd_tls_server_key | default('server.key') }}"

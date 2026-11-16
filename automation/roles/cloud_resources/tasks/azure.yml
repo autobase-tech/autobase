@@ -239,6 +239,16 @@
               'priority': 1300,
               'direction': 'Inbound'
             }] if database_public_access | bool else []) +
+            ([{
+              'name': 'prometheus-rule',
+              'description': 'Metrics access for Prometheus',
+              'protocol': 'Tcp',
+              'destination_port_range': cloud_metrics_ports + [patroni_restapi_port | default('8008')],
+              'source_address_prefix': prometheus_allowed_ips | split(','),
+              'access': 'Allow',
+              'priority': 1100,
+              'direction': 'Inbound'
+            }] if prometheus_allowed_ips | length > 0 else []) +
             [{
               'name': 'private-postgres-cluster-rule',
               'description': 'Postgres cluster ports',
@@ -268,7 +278,8 @@
                   consul_ports_serf_wan | default('8302'),
                   consul_ports_server | default('8300')
                 ] if dcs_type == 'consul' else []) +
-                ([netdata_port | default('19999')] if netdata_install | bool else []),
+                ([netdata_port | default('19999')] if netdata_install | bool else []) +
+                cloud_metrics_ports,
               'source_address_prefix': network_info.virtualnetworks[0].address_prefixes,
               'access': 'Allow',
               'priority': 1000,

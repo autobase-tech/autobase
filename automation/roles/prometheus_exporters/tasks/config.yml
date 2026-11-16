@@ -1,0 +1,97 @@
+---
+# The password is kept on the nodes, so that the next runs (e.g. config_pgcluster.yml or add_node.yml) reuse it.
+- name: Save the password of the PostgreSQL user for the Prometheus exporters
+  ansible.builtin.copy:
+    content: "{{ prometheus_exporters_db_password }}"
+    dest: "{{ prometheus_exporters_conf_dir }}/postgres.pass"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  when:
+    - postgres_exporter_install | bool or pgbouncer_exporter_install | bool
+    - prometheus_exporters_db_user != patroni_superuser_username
+
+- name: Configure TLS and basic authentication of the exporters
+  ansible.builtin.copy:
+    content: "{{ prometheus_exporters_web_config | to_nice_yaml(indent=2) }}"
+    dest: "{{ prometheus_exporters_conf_dir }}/web.yml"
+    owner: root
+    group: root
+    mode: "0644"
+  register: prometheus_exporters_web_config_result
+  when: prometheus_exporters_web_config | default({}, true) | length > 0
+
+- name: Remove the configuration of TLS and basic authentication of the exporters
+  ansible.builtin.file:
+    path: "{{ prometheus_exporters_conf_dir }}/web.yml"
+    state: absent
+  register: prometheus_exporters_web_config_removed_result
+  when: prometheus_exporters_web_config | default({}, true) | length == 0
+
+# The Consul configuration directory is only readable by the consul user. The CA certificate is public.
+- name: Copy the CA certificate of Consul for consul_exporter
+  ansible.builtin.copy:
+    src: "{{ consul_tls_dir }}/{{ consul_tls_ca_crt }}"
+    dest: "{{ prometheus_exporters_conf_dir }}/consul-ca.crt"
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0644"
+  register: prometheus_exporters_consul_ca_result
+  when:
+    - consul_exporter_install | bool
+    - consul_tls_enable | bool
+
+# The connection strings contain the password, so they are not passed on the command line.
+- name: Configure the database connections of the exporters
+  ansible.builtin.template:
+    src: "{{ item.env_template }}"
+    dest: "{{ prometheus_exporters_conf_dir }}/{{ item.name }}.env"
+    owner: root
+    group: "{{ item.user }}"
+    mode: "0640"
+  register: prometheus_exporters_env_result
+  no_log: true
+  loop: "{{ prometheus_exporters_services | selectattr('env_template', 'truthy') | list }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Configure the systemd services of the exporters
+  ansible.builtin.template:
+    src: exporter.service.j2
+    dest: "/etc/systemd/system/{{ item.name }}.service"
+    owner: root
+    group: root
+    mode: "0644"
+  register: prometheus_exporters_unit_result
+  loop: "{{ prometheus_exporters_services }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Restart the exporters with a new binary or configuration
+  ansible.builtin.systemd:
+    daemon_reload: true
+    name: "{{ item.name }}"
+    enabled: true
+    state: restarted
+  loop: "{{ prometheus_exporters_services }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: >-
+    item.binary in prometheus_exporters_updated_binaries | default([])
+    or item.name in (prometheus_exporters_env_result.results | default([]) | selectattr('changed') | map(attribute='item.name') | list)
+    or item.name in (prometheus_exporters_unit_result.results | default([]) | selectattr('changed') | map(attribute='item.name') | list)
+    or prometheus_exporters_web_config_result is changed
+    or prometheus_exporters_web_config_removed_result is changed
+    or (item.name == 'consul_exporter' and prometheus_exporters_consul_ca_result is changed)
+
+- name: Ensure the exporters are enabled and running
+  ansible.builtin.systemd:
+    daemon_reload: true
+    name: "{{ item.name }}"
+    enabled: true
+    state: started
+  loop: "{{ prometheus_exporters_services }}"
+  loop_control:
+    label: "{{ item.name }}"

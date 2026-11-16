@@ -297,6 +297,13 @@
                 'source_ips': [server_network_ip_range]
               }
             ] if netdata_install | bool else []) +
+            (cloud_metrics_ports | map('string') | map('community.general.dict_kv', 'port')
+              | map('combine', {'description': 'Metrics', 'direction': 'in', 'protocol': 'tcp', 'source_ips': [server_network_ip_range]})
+              | list) +
+            (((cloud_metrics_ports + [patroni_restapi_port | default('8008')]) | map('string') | map('community.general.dict_kv', 'port')
+              | map('combine', {'description': 'Metrics for Prometheus', 'direction': 'in', 'protocol': 'tcp',
+                                'source_ips': prometheus_allowed_ips | split(',')})
+              | list) if prometheus_allowed_ips | length > 0 else []) +
             ([
               {
                 'description': 'HAProxy - master',

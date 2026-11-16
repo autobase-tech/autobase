@@ -54,5 +54,6 @@
         - ../tests/roles/haproxy/main.yml
         - ../tests/roles/patroni/main.yml
         - ../tests/roles/pre_checks/main.yml
+        - ../tests/roles/prometheus_exporters/main.yml
         - ../tests/roles/swap/main.yml
         - ../tests/roles/pgdog/main.yml # ends with a switchover, keep it last
