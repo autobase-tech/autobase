@@ -78,13 +78,18 @@
   loop: "{{ prometheus_exporters_services }}"
   loop_control:
     label: "{{ item.name }}"
-  when: >-
-    item.binary in prometheus_exporters_updated_binaries | default([])
-    or item.name in (prometheus_exporters_env_result.results | default([]) | selectattr('changed') | map(attribute='item.name') | list)
-    or item.name in (prometheus_exporters_unit_result.results | default([]) | selectattr('changed') | map(attribute='item.name') | list)
-    or prometheus_exporters_web_config_result is changed
-    or prometheus_exporters_web_config_removed_result is changed
-    or (item.name == 'consul_exporter' and prometheus_exporters_consul_ca_result is changed)
+  when:
+    # In check mode, the unit files are not written, so systemd cannot find a new service.
+    - not (ansible_check_mode and item.name in prometheus_exporters_changed_units)
+    - >-
+      item.binary in prometheus_exporters_updated_binaries | default([])
+      or item.name in (prometheus_exporters_env_result.results | default([]) | selectattr('changed') | map(attribute='item.name') | list)
+      or item.name in prometheus_exporters_changed_units
+      or prometheus_exporters_web_config_result is changed
+      or prometheus_exporters_web_config_removed_result is changed
+      or (item.name == 'consul_exporter' and prometheus_exporters_consul_ca_result is changed)
+  vars:
+    prometheus_exporters_changed_units: "{{ prometheus_exporters_unit_result.results | default([]) | selectattr('changed') | map(attribute='item.name') | list }}"
 
 - name: Ensure the exporters are enabled and running
   ansible.builtin.systemd:
@@ -95,3 +100,6 @@
   loop: "{{ prometheus_exporters_services }}"
   loop_control:
     label: "{{ item.name }}"
+  when: not (ansible_check_mode and item.name in prometheus_exporters_changed_units)
+  vars:
+    prometheus_exporters_changed_units: "{{ prometheus_exporters_unit_result.results | default([]) | selectattr('changed') | map(attribute='item.name') | list }}"
