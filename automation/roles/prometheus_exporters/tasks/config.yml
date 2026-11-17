@@ -89,7 +89,8 @@
       or prometheus_exporters_web_config_removed_result is changed
       or (item.name == 'consul_exporter' and prometheus_exporters_consul_ca_result is changed)
   vars:
-    prometheus_exporters_changed_units: "{{ prometheus_exporters_unit_result.results | default([]) | selectattr('changed') | map(attribute='item.name') | list }}"
+    prometheus_exporters_changed_units: >-
+      {{ prometheus_exporters_unit_result.results | default([]) | selectattr('changed') | map(attribute='item.name') | list }}
 
 - name: Ensure the exporters are enabled and running
   ansible.builtin.systemd:
@@ -102,4 +103,5 @@
     label: "{{ item.name }}"
   when: not (ansible_check_mode and item.name in prometheus_exporters_changed_units)
   vars:
-    prometheus_exporters_changed_units: "{{ prometheus_exporters_unit_result.results | default([]) | selectattr('changed') | map(attribute='item.name') | list }}"
+    prometheus_exporters_changed_units: >-
+      {{ prometheus_exporters_unit_result.results | default([]) | selectattr('changed') | map(attribute='item.name') | list }}
