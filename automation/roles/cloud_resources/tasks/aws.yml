@@ -334,6 +334,7 @@
             instance_type: "{{ server_type }}"
             image_id: "{{ server_image }}"
             key_name: "{{ ssh_key_name }}"
+            iam_instance_profile: "{{ aws_ec2_instance_profile | default(omit, true) }}"
             region: "{{ server_location }}"
             vpc_subnet_id: "{{ aws_zone_subnets[server_zone_placement[idx].zone] }}"
             network_interfaces:
@@ -395,6 +396,11 @@
               instance_type: "{{ server_type }}"
               image_id: "{{ server_image }}"
               key_name: "{{ ssh_key_name }}"
+              iam_instance_profile: >-
+                {{
+                  ({'arn': aws_ec2_instance_profile} if aws_ec2_instance_profile is match('arn:') else {'name': aws_ec2_instance_profile})
+                  if aws_ec2_instance_profile | default('', true) | length > 0 else omit
+                }}
               network_interfaces:
                 - subnet_id: "{{ aws_zone_subnets[server_zone_placement[idx].zone] }}"
                   groups: "{{ aws_ec2_security_group_ids }}"
