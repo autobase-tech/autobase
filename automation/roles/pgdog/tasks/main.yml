@@ -15,10 +15,11 @@
 - name: Configure pgdog
   ansible.builtin.import_tasks: config.yml
 
+# Import the tasks, not the role: import_role would load the PgBouncer handlers into the play again,
+# with this condition. The last loaded handlers win, so the "reload/restart pgbouncer" notifications
+# of the pgbouncer role would be skipped when PgDog is not installed or PgBouncer is not disabled.
 - name: Disable PgBouncer before starting PgDog
-  ansible.builtin.import_role:
-    name: vitabaks.autobase.pgbouncer
-    tasks_from: disable
+  ansible.builtin.import_tasks: "{{ role_path }}/../pgbouncer/tasks/disable.yml"
   when: pgbouncer_disable | default(false) | bool
   tags: pgdog
 
