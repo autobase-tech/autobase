@@ -64,6 +64,9 @@
   when: "'pgbackrest' not in ansible_facts.packages"
   tags: pgbackrest, pgbackrest_install
 
+- ansible.builtin.import_tasks: sync_versions.yml
+  tags: pgbackrest, pgbackrest_conf
+
 - block:
     - name: Ensure log directory exists
       ansible.builtin.file:

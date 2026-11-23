@@ -1,4 +1,8 @@
 ---
+# Update pgBackRest to the latest available package when managed hosts run different versions.
+# Set to false to keep version checks and skip automatic package updates.
+pgbackrest_auto_upgrade: true
+
 # Fallback names for auto_conf.yml when cloud_resources defaults are not loaded.
 # Keep these expressions in sync with cloud_resources.
 pgbackrest_cloud_backup_storage_suffix: >-

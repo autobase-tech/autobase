@@ -1,0 +1,79 @@
+---
+- name: Synchronize pgBackRest versions on managed hosts
+  vars:
+    pgbackrest_version_hosts: >-
+      {{ (groups.get('postgres_cluster', []) +
+          (groups.get('pgbackrest', []) if pgbackrest_repo_host | default('') | length > 0
+           and not (pgbackrest_repo_external | default(false) | bool) else [])) | unique | list }}
+    pgbackrest_version_active_hosts: "{{ pgbackrest_version_hosts | intersect(ansible_play_hosts) | sort }}"
+  when: inventory_hostname in pgbackrest_version_hosts
+  any_errors_fatal: false # Keep reporting version status after an ignored connection error.
+  ignore_unreachable: true
+  block:
+    - name: Read installed pgBackRest version
+      ansible.builtin.command: pgbackrest version
+      register: pgbackrest_version_before
+      changed_when: false
+      failed_when: false
+      check_mode: false
+
+    - name: Update pgBackRest packages when versions differ
+      vars:
+        pgbackrest_version_readable: >-
+          {{ pgbackrest_version_active_hosts | map('extract', hostvars, 'pgbackrest_version_before')
+             | selectattr('rc', 'defined') | selectattr('rc', 'equalto', 0)
+             | map(attribute='stdout') | list }}
+      when:
+        - pgbackrest_auto_upgrade | bool
+        - not ansible_check_mode
+        - pgbackrest_version_readable | length == pgbackrest_version_hosts | length
+        - pgbackrest_version_readable | unique | length > 1
+      block:
+        - name: Install latest available pgBackRest package
+          ansible.builtin.package:
+            name: pgbackrest
+            state: latest
+            update_cache: true
+          environment: "{{ proxy_env | default({}) }}"
+          register: pgbackrest_version_upgrade
+          ignore_errors: true # Report the package error after rechecking versions.
+
+        - name: Read pgBackRest version after package update
+          ansible.builtin.command: pgbackrest version
+          register: pgbackrest_version_after
+          changed_when: false
+          failed_when: false
+
+    - name: Record final pgBackRest version
+      ansible.builtin.set_fact:
+        pgbackrest_version_final: >-
+          {{ pgbackrest_version_after if pgbackrest_version_after is not skipped else pgbackrest_version_before }}
+
+    - name: Warn if pgBackRest version synchronization could not be verified
+      ansible.builtin.debug:
+        msg: |
+          WARNING: pgBackRest version synchronization could not be verified across all managed hosts.
+          {% for host in pgbackrest_version_hosts | sort %}
+          {% set probe = hostvars[host].pgbackrest_version_final | default({}) if host in pgbackrest_version_active_hosts else {} %}
+          {% set upgrade = hostvars[host].pgbackrest_version_upgrade | default({}) if host in pgbackrest_version_active_hosts else {} %}
+          {% set unavailable = probe.stderr | default('', true) or probe.msg | default('version unavailable', true) %}
+          {{ host }}: {{ probe.stdout | trim if probe.rc | default(1) == 0 else unavailable }}
+          {% if upgrade is failed or upgrade is unreachable %}
+          {{ host }} package update failed: {{ upgrade.msg | default('unknown error') }}
+          {% endif %}
+          {% endfor %}
+      vars:
+        pgbackrest_version_readable: >-
+          {{ pgbackrest_version_active_hosts | map('extract', hostvars, 'pgbackrest_version_final')
+             | selectattr('rc', 'defined') | selectattr('rc', 'equalto', 0)
+             | map(attribute='stdout') | list }}
+        pgbackrest_version_upgrade_results: >-
+          {{ pgbackrest_version_active_hosts | map('extract', hostvars, 'pgbackrest_version_upgrade')
+             | select('defined') | list }}
+      when:
+        - inventory_hostname == pgbackrest_version_active_hosts | first
+        - >-
+          pgbackrest_version_readable | length != pgbackrest_version_hosts | length or
+          pgbackrest_version_readable | unique | length > 1 or
+          pgbackrest_version_upgrade_results | select('failed') | list | length > 0 or
+          pgbackrest_version_upgrade_results | select('unreachable') | list | length > 0
