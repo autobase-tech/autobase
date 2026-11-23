@@ -8,6 +8,7 @@ Installs and configures [pgBackRest](https://github.com/pgbackrest/pgbackrest) f
 |---|---|---|
 | `pgbackrest_install` | `false` | Enable installation and configuration of pgBackRest. |
 | `pgbackrest_install_from_pgdg_repo` | `true` | Install packages from PGDG repositories. |
+| `pgbackrest_auto_upgrade` | `true` | Update pgBackRest to the latest available package on managed hosts when their installed versions differ. Set to `false` to check versions without updating packages. |
 | `pgbackrest_stanza` | `"{{ patroni_cluster_name }}"` | Stanza name used by pgBackRest. |
 | `pgbackrest_repo_type` | `"posix"` | Repository type: posix, s3, gcs, azure. |
 | `pgbackrest_repo_shared` | `false` | Set to `true` if a posix repo is on a shared network filesystem: stanza-create runs only on the master. |
@@ -34,6 +35,8 @@ Installs and configures [pgBackRest](https://github.com/pgbackrest/pgbackrest) f
 | `pgbackrest_cron_jobs` | [...] | Cron jobs for backups (full/diff). Created on DB host by default, or on repo_host if defined. |
 
 Note: To bootstrap via backup set `patroni_cluster_bootstrap_method: "pgbackrest"`.
+
+When configuring pgBackRest, the role compares the installed versions on the database nodes and any managed repository host. Automatic updates require a readable version from every managed host. If versions still differ or a host could not be checked, the role reports the host versions and continues. Manage pgBackRest versions on external repository hosts separately.
 
 During preliminary delta-restore recovery, PostgreSQL runs with `hot_standby=off` to allow replay with lower local settings, such as `max_connections`, than in the backup. Only the master and replicas restored in standby mode are started at this stage. Replicas with a PITR target are started later by Patroni, which configures them to follow the leader and accounts for the minimum settings recorded in `pg_controldata`.
 
