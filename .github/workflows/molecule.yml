@@ -25,16 +25,16 @@ jobs:
           # TODO: temporary, to check the PGDG repository URL fix; remove before merge
           - distro: centosstream9
             tag: latest
-            namespace: geerlingguy
+            namespace: glillico
           - distro: centosstream10
             tag: latest
-            namespace: geerlingguy
+            namespace: glillico
           - distro: oraclelinux9
             tag: latest
-            namespace: geerlingguy
+            namespace: glillico
           - distro: oraclelinux10
             tag: latest
-            namespace: geerlingguy
+            namespace: glillico
 
     steps:
       - name: Set TERM environment variable
