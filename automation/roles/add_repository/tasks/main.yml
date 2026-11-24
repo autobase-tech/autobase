@@ -138,6 +138,27 @@
         - "'pgdg-redhat-repo' not in ansible_facts.packages"
       tags: install_postgresql_repo
 
+    # The pgdg-redhat-repo package builds the repository URLs as "rhel-$releasever_major.$releasever_minor".
+    # CentOS Stream and Oracle Linux have no minor release, so the URL becomes "rhel-9.-x86_64" (404).
+    # On these distributions, use the major version path instead (e.g. "rhel-9-x86_64").
+    - name: Get dnf release version variables
+      ansible.builtin.command: dnf config-manager --dump-variables
+      register: dnf_variables
+      changed_when: false
+      check_mode: false
+      when: install_postgresql_repo | bool
+      tags: install_postgresql_repo
+
+    - name: Use the major version in the PostgreSQL repository URLs
+      ansible.builtin.replace:
+        path: /etc/yum.repos.d/pgdg-redhat-all.repo
+        regexp: '\$releasever_major\.\$releasever_minor'
+        replace: "$releasever_major"
+      when:
+        - install_postgresql_repo | bool
+        - dnf_variables.stdout is not regex('(?m)^releasever_minor = \S')
+      tags: install_postgresql_repo
+
     # Enable PostgreSQL extras repository
     - name: Enable PostgreSQL extras repository
       ansible.builtin.command: dnf config-manager --enable pgdg-rhel{{ ansible_distribution_major_version }}-extras
