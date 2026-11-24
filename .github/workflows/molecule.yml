@@ -22,6 +22,19 @@ jobs:
           - distro: rockylinux10
             tag: latest
             namespace: geerlingguy
+          # TODO: temporary, to check the PGDG repository URL fix; remove before merge
+          - distro: centosstream9
+            tag: latest
+            namespace: geerlingguy
+          - distro: centosstream10
+            tag: latest
+            namespace: geerlingguy
+          - distro: oraclelinux9
+            tag: latest
+            namespace: geerlingguy
+          - distro: oraclelinux10
+            tag: latest
+            namespace: geerlingguy
 
     steps:
       - name: Set TERM environment variable
