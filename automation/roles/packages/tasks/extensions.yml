@@ -121,6 +121,27 @@
   when: enable_pgaudit | default(false) | bool
   tags: pgaudit
 
+# pg_tde (if 'enable_pg_tde' is 'true'): Percona Transparent Data Encryption (requires postgresql_distribution: "percona")
+- name: Install pg_tde package
+  ansible.builtin.package:
+    name: "{{ pg_tde_package }}"
+    state: present
+  vars:
+    pg_tde_package: >-
+      {% if ansible_os_family == 'Debian' %}
+      percona-pg-tde{{ pg_version | default(postgresql_version) }}
+      {% else %}
+      percona-pg_tde{{ pg_version | default(postgresql_version) }}
+      {% endif %}
+  register: package_status
+  until: package_status is success
+  delay: 5
+  retries: 3
+  when:
+    - enable_pg_tde | default(false) | bool
+    - postgresql_distribution == "percona"
+  tags: pg_tde
+
 # postgis (if 'enable_postgis' is 'true')
 - name: Install postgis package
   ansible.builtin.package:

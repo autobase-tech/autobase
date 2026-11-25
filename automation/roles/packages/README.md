@@ -33,6 +33,7 @@ This role can install popular PostgreSQL extensions automatically when correspon
 | enable_pg_wait_sampling | false | Install pg_wait_sampling package. |
 | enable_pg_partman | false | Install pg_partman package. |
 | enable_pgvector | false | Install pgvector package. |
+| enable_pg_tde | false | Install Percona pg_tde (Transparent Data Encryption) package and add `pg_tde` to `shared_preload_libraries`. Requires `postgresql_distribution: percona` and PostgreSQL 17+. After deployment, run `CREATE EXTENSION pg_tde` (e.g. via `postgresql_extensions`) and configure a key provider and principal key in each database. |
 | enable_pgvectorscale | false | Install pgvectorscale from GitHub releases. |
 | enable_pg_search / enable_paradedb | false | Install ParadeDB’s pg_search from GitHub releases. |
 | enable_pg_analytics / enable_paradedb | false | Install pg_analytics from GitHub releases. |

@@ -51,6 +51,24 @@
       (ansible_os_family == "RedHat" and ansible_distribution_major_version in ['8', '9'])
       )
 
+- name: pg_tde | Checking PostgreSQL distribution
+  ansible.builtin.fail:
+    msg:
+      - "pg_tde (Percona Transparent Data Encryption) requires Percona Distribution for PostgreSQL."
+      - "Set 'postgresql_distribution: percona' to use 'enable_pg_tde: true'."
+  when:
+    - enable_pg_tde | default(false) | bool
+    - postgresql_distribution != "percona"
+
+- name: pg_tde | Checking PostgreSQL version
+  ansible.builtin.fail:
+    msg:
+      - "The current PostgreSQL version ({{ postgresql_version }}) is not supported by pg_tde."
+      - "PostgreSQL version must be {{ pg_tde_minimal_pg_version | default(17) }} or higher."
+  when:
+    - enable_pg_tde | default(false) | bool
+    - postgresql_version | string is version(pg_tde_minimal_pg_version | default(17) | string, '<')
+
 # shared_preload_libraries
 - name: Create a list of extensions
   ansible.builtin.set_fact:
@@ -59,6 +77,7 @@
         (extensions | default([]))
         + (['timescaledb'] if ((enable_timescale | default(false) | bool) or (enable_timescaledb | default(false) | bool)) else [])
         + (['citus'] if (enable_citus | default(false) | bool and postgresql_version | int >= 11 and ansible_architecture in ["x86_64", "amd64"]) else [])
+        + (['pg_tde'] if (enable_pg_tde | default(false) | bool) else [])
         + (['pg_cron'] if (enable_pg_cron | default(false) | bool) else [])
         + (['pgaudit'] if (enable_pgaudit | default(false) | bool) else [])
         + (['pg_stat_statements'] if (enable_pg_stat_kcache | default(false) | bool) else [])
