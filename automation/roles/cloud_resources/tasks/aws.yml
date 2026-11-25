@@ -10,6 +10,31 @@
     - state == 'present'
     - cloud_load_balancer | bool
 
+# The AWS modules of this file use the credentials from the environment (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN),
+# or, if 'aws_assume_role_arn' is specified, the temporary credentials of this IAM role (for example, in another AWS account).
+- block:
+    - name: "AWS: Assume IAM role '{{ aws_assume_role_arn }}'"
+      amazon.aws.sts_assume_role:
+        role_arn: "{{ aws_assume_role_arn }}"
+        role_session_name: "{{ ('autobase-' ~ patroni_cluster_name)[:64] }}"
+        region: "{{ server_location }}"
+      register: aws_assume_role_result
+      failed_when: false
+      no_log: true # the result contains the credentials
+
+    - name: "AWS: Check the assumed IAM role"
+      ansible.builtin.assert:
+        that:
+          - aws_assume_role_result.sts_creds is defined
+        fail_msg: "Failed to assume IAM role '{{ aws_assume_role_arn }}': {{ aws_assume_role_result.msg | default('') }}"
+        quiet: true
+
+    - name: "Set variable: aws_credentials"
+      ansible.builtin.set_fact:
+        aws_credentials: "{{ aws_assume_role_result.sts_creds }}"
+      no_log: true
+  when: aws_assume_role_arn | default('') | length > 0
+
 # Create (if state is present)
 - block:
     # Subnets (one per Availability Zone): zones_available and aws_zone_subnets ({ zone: subnet_id })
@@ -17,6 +42,9 @@
     - block:
         - name: "AWS: Gather information about subnets"
           amazon.aws.ec2_vpc_subnet_info:
+            access_key: "{{ aws_credentials.access_key | default(omit) }}"
+            secret_key: "{{ aws_credentials.secret_key | default(omit) }}"
+            session_token: "{{ aws_credentials.session_token | default(omit) }}"
             region: "{{ server_location }}"
             filters:
               subnet-id: "{{ subnet_ids }}" # unlike 'subnet_ids', the filter returns the found subnets instead of an empty result
@@ -51,6 +79,9 @@
     - block:
         - name: "AWS: Gather information about default VPC"
           amazon.aws.ec2_vpc_net_info:
+            access_key: "{{ aws_credentials.access_key | default(omit) }}"
+            secret_key: "{{ aws_credentials.secret_key | default(omit) }}"
+            session_token: "{{ aws_credentials.session_token | default(omit) }}"
             region: "{{ server_location }}"
             filters:
               "is-default": true
@@ -58,6 +89,9 @@
 
         - name: "AWS: Gather information about default subnets of default VPC"
           amazon.aws.ec2_vpc_subnet_info:
+            access_key: "{{ aws_credentials.access_key | default(omit) }}"
+            secret_key: "{{ aws_credentials.secret_key | default(omit) }}"
+            session_token: "{{ aws_credentials.session_token | default(omit) }}"
             region: "{{ server_location }}"
             filters:
               vpc-id: "{{ default_vpc_info.vpcs[0].id }}"
@@ -84,6 +118,9 @@
 
     - name: "AWS: Gather information about VPC '{{ vpc_id | default('') }}'"
       amazon.aws.ec2_vpc_net_info:
+        access_key: "{{ aws_credentials.access_key | default(omit) }}"
+        secret_key: "{{ aws_credentials.secret_key | default(omit) }}"
+        session_token: "{{ aws_credentials.session_token | default(omit) }}"
         region: "{{ server_location }}"
         filters:
           vpc-id: "{{ vpc_id }}"
@@ -92,8 +129,9 @@
     # Existing servers
     - name: "AWS: Gather information about EC2 instances"
       amazon.aws.ec2_instance_info:
-        access_key: "{{ lookup('ansible.builtin.env', 'AWS_ACCESS_KEY_ID') }}"
-        secret_key: "{{ lookup('ansible.builtin.env', 'AWS_SECRET_ACCESS_KEY') }}"
+        access_key: "{{ aws_credentials.access_key | default(omit) }}"
+        secret_key: "{{ aws_credentials.secret_key | default(omit) }}"
+        session_token: "{{ aws_credentials.session_token | default(omit) }}"
         region: "{{ server_location }}"
         filters:
           instance-state-name: ["pending", "running", "shutting-down", "stopping", "stopped"]
@@ -107,8 +145,9 @@
 
     - name: "AWS: Gather information about EC2 Spot instances"
       amazon.aws.ec2_instance_info:
-        access_key: "{{ lookup('ansible.builtin.env', 'AWS_ACCESS_KEY_ID') }}"
-        secret_key: "{{ lookup('ansible.builtin.env', 'AWS_SECRET_ACCESS_KEY') }}"
+        access_key: "{{ aws_credentials.access_key | default(omit) }}"
+        secret_key: "{{ aws_credentials.secret_key | default(omit) }}"
+        session_token: "{{ aws_credentials.session_token | default(omit) }}"
         region: "{{ server_location }}"
         filters:
           instance-lifecycle: "spot"
@@ -151,6 +190,9 @@
     # Security Group (Firewall)
     - name: "AWS: Create or modify Security Group"
       amazon.aws.ec2_security_group:
+        access_key: "{{ aws_credentials.access_key | default(omit) }}"
+        secret_key: "{{ aws_credentials.secret_key | default(omit) }}"
+        session_token: "{{ aws_credentials.session_token | default(omit) }}"
         name: "{{ patroni_cluster_name }}-security-group"
         state: present
         description: "Security Group for Postgres cluster"
@@ -297,8 +339,9 @@
     # Delete the temporary ssh key from the cloud (if exists)
     - name: "AWS: Remove temporary SSH key '{{ ssh_key_name | default('') }}' from cloud (if any)"
       amazon.aws.ec2_key:
-        access_key: "{{ lookup('ansible.builtin.env', 'AWS_ACCESS_KEY_ID') }}"
-        secret_key: "{{ lookup('ansible.builtin.env', 'AWS_SECRET_ACCESS_KEY') }}"
+        access_key: "{{ aws_credentials.access_key | default(omit) }}"
+        secret_key: "{{ aws_credentials.secret_key | default(omit) }}"
+        session_token: "{{ aws_credentials.session_token | default(omit) }}"
         name: "{{ ssh_key_name }}"
         region: "{{ server_location }}"
         state: absent
@@ -310,8 +353,9 @@
     # if ssh_key_name and ssh_key_content is specified, add this ssh key to the cloud
     - name: "AWS: Add SSH key '{{ ssh_key_name | default('') }}' to cloud"
       amazon.aws.ec2_key:
-        access_key: "{{ lookup('ansible.builtin.env', 'AWS_ACCESS_KEY_ID') }}"
-        secret_key: "{{ lookup('ansible.builtin.env', 'AWS_SECRET_ACCESS_KEY') }}"
+        access_key: "{{ aws_credentials.access_key | default(omit) }}"
+        secret_key: "{{ aws_credentials.secret_key | default(omit) }}"
+        session_token: "{{ aws_credentials.session_token | default(omit) }}"
         name: "{{ ssh_key_name }}"
         key_material: "{{ ssh_key_content }}"
         region: "{{ server_location }}"
@@ -327,8 +371,9 @@
     - block:
         - name: "AWS: Create EC2 instance"
           amazon.aws.ec2_instance:
-            access_key: "{{ lookup('ansible.builtin.env', 'AWS_ACCESS_KEY_ID') }}"
-            secret_key: "{{ lookup('ansible.builtin.env', 'AWS_SECRET_ACCESS_KEY') }}"
+            access_key: "{{ aws_credentials.access_key | default(omit) }}"
+            secret_key: "{{ aws_credentials.secret_key | default(omit) }}"
+            session_token: "{{ aws_credentials.session_token | default(omit) }}"
             name: "{{ server_name | lower }}{{ '%02d' % (idx + 1) }}"
             state: running
             instance_type: "{{ server_type }}"
@@ -388,8 +433,9 @@
         # if spot instances are still created, create them
         - name: "AWS: Create a request for EC2 Spot instance"
           amazon.aws.ec2_spot_instance:
-            access_key: "{{ lookup('ansible.builtin.env', 'AWS_ACCESS_KEY_ID') }}"
-            secret_key: "{{ lookup('ansible.builtin.env', 'AWS_SECRET_ACCESS_KEY') }}"
+            access_key: "{{ aws_credentials.access_key | default(omit) }}"
+            secret_key: "{{ aws_credentials.secret_key | default(omit) }}"
+            session_token: "{{ aws_credentials.session_token | default(omit) }}"
             region: "{{ server_location }}"
             state: present
             launch_specification:
@@ -439,8 +485,9 @@
 
         - name: "AWS: Wait for EC2 Spot instance to be created"
           amazon.aws.ec2_instance:
-            access_key: "{{ lookup('ansible.builtin.env', 'AWS_ACCESS_KEY_ID') }}"
-            secret_key: "{{ lookup('ansible.builtin.env', 'AWS_SECRET_ACCESS_KEY') }}"
+            access_key: "{{ aws_credentials.access_key | default(omit) }}"
+            secret_key: "{{ aws_credentials.secret_key | default(omit) }}"
+            session_token: "{{ aws_credentials.session_token | default(omit) }}"
             region: "{{ server_location }}"
             filters:
               spot-instance-request-id: "{{ item.spot_request.spot_instance_request_id }}"
@@ -458,8 +505,9 @@
 
         - name: "AWS: Rename the EC2 Spot instance"
           amazon.aws.ec2_instance:
-            access_key: "{{ lookup('ansible.builtin.env', 'AWS_ACCESS_KEY_ID') }}"
-            secret_key: "{{ lookup('ansible.builtin.env', 'AWS_SECRET_ACCESS_KEY') }}"
+            access_key: "{{ aws_credentials.access_key | default(omit) }}"
+            secret_key: "{{ aws_credentials.secret_key | default(omit) }}"
+            session_token: "{{ aws_credentials.session_token | default(omit) }}"
             region: "{{ server_location }}"
             name: "{{ server_name | lower }}{{ '%02d' % (idx + 1) }}"
             filters:
@@ -497,8 +545,9 @@
     # Required to allow data volume parameters to be changed after deployment.
     - name: "AWS: Ensure EBS data volume parameters"
       amazon.aws.ec2_vol:
-        access_key: "{{ lookup('ansible.builtin.env', 'AWS_ACCESS_KEY_ID') }}"
-        secret_key: "{{ lookup('ansible.builtin.env', 'AWS_SECRET_ACCESS_KEY') }}"
+        access_key: "{{ aws_credentials.access_key | default(omit) }}"
+        secret_key: "{{ aws_credentials.secret_key | default(omit) }}"
+        session_token: "{{ aws_credentials.session_token | default(omit) }}"
         region: "{{ server_location }}"
         id: "{{ data_volume.ebs.volume_id | default('') }}"
         instance: "{{ item.instances[0].instance_id }}"
@@ -558,8 +607,9 @@
 
     - name: "AWS: Create or modify NLB Target Group"
       community.aws.elb_target_group:
-        access_key: "{{ lookup('ansible.builtin.env', 'AWS_ACCESS_KEY_ID') }}"
-        secret_key: "{{ lookup('ansible.builtin.env', 'AWS_SECRET_ACCESS_KEY') }}"
+        access_key: "{{ aws_credentials.access_key | default(omit) }}"
+        secret_key: "{{ aws_credentials.secret_key | default(omit) }}"
+        session_token: "{{ aws_credentials.session_token | default(omit) }}"
         name: "{{ patroni_cluster_name }}-tg{{ '-' ~ item if item != 'pgdog' else '' }}"
         region: "{{ server_location }}"
         vpc_id: "{{ vpc_id }}"
@@ -590,8 +640,9 @@
 
     - name: "AWS: Create Network Load Balancer (NLB)"
       community.aws.elb_network_lb:
-        access_key: "{{ lookup('ansible.builtin.env', 'AWS_ACCESS_KEY_ID') }}"
-        secret_key: "{{ lookup('ansible.builtin.env', 'AWS_SECRET_ACCESS_KEY') }}"
+        access_key: "{{ aws_credentials.access_key | default(omit) }}"
+        secret_key: "{{ aws_credentials.secret_key | default(omit) }}"
+        session_token: "{{ aws_credentials.session_token | default(omit) }}"
         name: "{{ cloud_load_balancer_names[item] }}"
         region: "{{ server_location }}"
         subnets: "{{ aws_nlb_subnets_result.results[idx].subnets }}"
@@ -697,8 +748,9 @@
 # Delete the temporary ssh key from the cloud after creating the EC2 instance
 - name: "AWS: Remove temporary SSH key '{{ ssh_key_name | default('') }}' from cloud"
   amazon.aws.ec2_key:
-    access_key: "{{ lookup('ansible.builtin.env', 'AWS_ACCESS_KEY_ID') }}"
-    secret_key: "{{ lookup('ansible.builtin.env', 'AWS_SECRET_ACCESS_KEY') }}"
+    access_key: "{{ aws_credentials.access_key | default(omit) }}"
+    secret_key: "{{ aws_credentials.secret_key | default(omit) }}"
+    session_token: "{{ aws_credentials.session_token | default(omit) }}"
     name: "{{ ssh_key_name }}"
     region: "{{ server_location }}"
     state: absent
@@ -712,8 +764,9 @@
 - block:
     - name: "AWS: Delete EC2 instance"
       amazon.aws.ec2_instance:
-        access_key: "{{ lookup('ansible.builtin.env', 'AWS_ACCESS_KEY_ID') }}"
-        secret_key: "{{ lookup('ansible.builtin.env', 'AWS_SECRET_ACCESS_KEY') }}"
+        access_key: "{{ aws_credentials.access_key | default(omit) }}"
+        secret_key: "{{ aws_credentials.secret_key | default(omit) }}"
+        session_token: "{{ aws_credentials.session_token | default(omit) }}"
         region: "{{ server_location }}"
         filters:
           instance-state-name: ["pending", "running", "shutting-down", "stopping", "stopped"]
@@ -728,8 +781,9 @@
 
     - name: "AWS: Delete Network Load Balancer (NLB)"
       community.aws.elb_network_lb:
-        access_key: "{{ lookup('ansible.builtin.env', 'AWS_ACCESS_KEY_ID') }}"
-        secret_key: "{{ lookup('ansible.builtin.env', 'AWS_SECRET_ACCESS_KEY') }}"
+        access_key: "{{ aws_credentials.access_key | default(omit) }}"
+        secret_key: "{{ aws_credentials.secret_key | default(omit) }}"
+        session_token: "{{ aws_credentials.session_token | default(omit) }}"
         name: "{{ cloud_load_balancer_names[item] }}"
         region: "{{ server_location }}"
         wait: true
@@ -744,8 +798,9 @@
 
     - name: "AWS: Delete NLB Target Group"
       community.aws.elb_target_group:
-        access_key: "{{ lookup('ansible.builtin.env', 'AWS_ACCESS_KEY_ID') }}"
-        secret_key: "{{ lookup('ansible.builtin.env', 'AWS_SECRET_ACCESS_KEY') }}"
+        access_key: "{{ aws_credentials.access_key | default(omit) }}"
+        secret_key: "{{ aws_credentials.secret_key | default(omit) }}"
+        session_token: "{{ aws_credentials.session_token | default(omit) }}"
         name: "{{ patroni_cluster_name }}-tg{{ '-' ~ item if item != 'pgdog' else '' }}"
         region: "{{ server_location }}"
         state: absent
@@ -759,6 +814,9 @@
 
     - name: "AWS: Delete Security Group"
       amazon.aws.ec2_security_group:
+        access_key: "{{ aws_credentials.access_key | default(omit) }}"
+        secret_key: "{{ aws_credentials.secret_key | default(omit) }}"
+        session_token: "{{ aws_credentials.session_token | default(omit) }}"
         name: "{{ patroni_cluster_name }}-security-group"
         region: "{{ server_location }}"
         state: absent
