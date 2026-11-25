@@ -1,4 +1,12 @@
 ---
+- name: Configure pg_tde (key provider and principal key)
+  ansible.builtin.import_tasks: pg_tde.yml
+  when:
+    - enable_pg_tde | default(false) | bool
+    - postgresql_distribution == "percona"
+    - patroni_standby_cluster.host | default('') | length < 1 # do not perform on the standby cluster
+  tags: postgresql_extensions, pg_tde
+
 - name: Add extensions to the databases
   become: true
   become_user: postgres

@@ -371,6 +371,14 @@ postgresql_privs: []
 
 # List of database extensions to be created
 postgresql_extensions: []
+
+# Percona pg_tde (Transparent Data Encryption), used if 'enable_pg_tde: true' (requires postgresql_distribution: "percona", PostgreSQL 17+).
+# Key provider type: local file. WARNING: the keys are stored UNENCRYPTED in this file (recommended only for development and testing).
+# Protect the file (mode 0600, postgres user) and keep it out of the data directory backups. Production: use Vault/OpenBao or KMIP instead.
+pg_tde_databases: ["postgres"] # databases where the extension is created and the principal key is configured
+pg_tde_key_provider_name: "local-file-provider"
+pg_tde_key_file: "{{ postgresql_home_dir }}/pg_tde/pg_tde_keys.per" # must be the same path on all cluster nodes (copied from the master)
+pg_tde_principal_key_name: "{{ patroni_cluster_name }}-principal-key"
 #  - { ext: "pg_stat_statements", db: "postgres" }
 #  - { ext: "pg_stat_statements", db: "mydatabase", schema: "myschema", version: "1.10" }
 #  - { ext: "pg_stat_statements", db: "test", state: "absent" }

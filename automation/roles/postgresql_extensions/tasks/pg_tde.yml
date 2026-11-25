@@ -1,0 +1,123 @@
+---
+# Percona pg_tde: key provider type "file" (local file), database-level provider and principal key.
+# The key file is created on the master and copied to the other nodes of the cluster (same path).
+
+- name: pg_tde | Ensure the key directory exists on all cluster nodes
+  become: true
+  ansible.builtin.file:
+    path: "{{ pg_tde_key_file | dirname }}"
+    state: directory
+    owner: postgres
+    group: postgres
+    mode: "0700"
+  delegate_to: "{{ item }}"
+  loop: "{{ groups['postgres_cluster'] }}"
+  tags: pg_tde
+
+- name: pg_tde | Create the extension
+  become: true
+  become_user: postgres
+  community.postgresql.postgresql_ext:
+    name: pg_tde
+    schema: public
+    login_db: "{{ item }}"
+    login_host: "127.0.0.1"
+    login_port: "{{ postgresql_port }}"
+    login_user: "{{ patroni_superuser_username }}"
+    login_password: "{{ patroni_superuser_password }}"
+    state: present
+  loop: "{{ pg_tde_databases }}"
+  tags: pg_tde
+
+- name: pg_tde | Get the database key providers
+  become: true
+  become_user: postgres
+  community.postgresql.postgresql_query:
+    query: "SELECT * FROM pg_tde_list_all_database_key_providers()"
+    login_db: "{{ item }}"
+    login_host: "127.0.0.1"
+    login_port: "{{ postgresql_port }}"
+    login_user: "{{ patroni_superuser_username }}"
+    login_password: "{{ patroni_superuser_password }}"
+  register: pg_tde_providers
+  changed_when: false
+  loop: "{{ pg_tde_databases }}"
+  tags: pg_tde
+
+- name: pg_tde | Add the file key provider
+  become: true
+  become_user: postgres
+  community.postgresql.postgresql_query:
+    query: "SELECT pg_tde_add_database_key_provider_file(%(provider)s, %(file)s)"
+    named_args:
+      provider: "{{ pg_tde_key_provider_name }}"
+      file: "{{ pg_tde_key_file }}"
+    login_db: "{{ item.item }}"
+    login_host: "127.0.0.1"
+    login_port: "{{ postgresql_port }}"
+    login_user: "{{ patroni_superuser_username }}"
+    login_password: "{{ patroni_superuser_password }}"
+  loop: "{{ pg_tde_providers.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when: pg_tde_key_provider_name not in (item.query_result | to_json)
+  tags: pg_tde
+
+- name: pg_tde | Get the current principal key
+  become: true
+  become_user: postgres
+  community.postgresql.postgresql_query:
+    query: "SELECT * FROM pg_tde_key_info()"
+    login_db: "{{ item }}"
+    login_host: "127.0.0.1"
+    login_port: "{{ postgresql_port }}"
+    login_user: "{{ patroni_superuser_username }}"
+    login_password: "{{ patroni_superuser_password }}"
+  register: pg_tde_keys
+  changed_when: false
+  failed_when: false
+  loop: "{{ pg_tde_databases }}"
+  tags: pg_tde
+
+- name: pg_tde | Create and set the principal key
+  become: true
+  become_user: postgres
+  community.postgresql.postgresql_query:
+    query: >-
+      SELECT pg_tde_create_key_using_database_key_provider(%(key)s, %(provider)s);
+      SELECT pg_tde_set_key_using_database_key_provider(%(key)s, %(provider)s)
+    named_args:
+      key: "{{ pg_tde_principal_key_name }}"
+      provider: "{{ pg_tde_key_provider_name }}"
+    login_db: "{{ item.item }}"
+    login_host: "127.0.0.1"
+    login_port: "{{ postgresql_port }}"
+    login_user: "{{ patroni_superuser_username }}"
+    login_password: "{{ patroni_superuser_password }}"
+  loop: "{{ pg_tde_keys.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when: pg_tde_principal_key_name not in ((item.query_result | default([])) | to_json)
+  tags: pg_tde
+
+# Distribute the key file: the replicas need the same file at the same path (the file provider is not designed for shared use).
+- name: pg_tde | Read the key file from the master
+  become: true
+  ansible.builtin.slurp:
+    src: "{{ pg_tde_key_file }}"
+  register: pg_tde_key_file_content
+  no_log: true # do not output the key material to the ansible log
+  tags: pg_tde
+
+- name: pg_tde | Copy the key file to the other cluster nodes
+  become: true
+  ansible.builtin.copy:
+    content: "{{ pg_tde_key_file_content.content | b64decode }}"
+    dest: "{{ pg_tde_key_file }}"
+    owner: postgres
+    group: postgres
+    mode: "0600"
+  delegate_to: "{{ item }}"
+  loop: "{{ groups['postgres_cluster'] | difference([inventory_hostname]) }}"
+  no_log: true
+  tags: pg_tde

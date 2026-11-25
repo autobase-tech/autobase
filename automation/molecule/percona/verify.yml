@@ -80,3 +80,28 @@
           - "'status: ok' in pgbackrest_info.stdout"
         fail_msg: "{{ pgbackrest_info.stdout }}"
       when: inventory_hostname in groups['master']
+
+    - name: Test pg_tde (encrypted table and key file on every node)
+      when: enable_pg_tde | default(test_postgresql_version | int >= 17) | bool
+      block:
+        - name: Check that the key file exists on every node
+          ansible.builtin.stat:
+            path: "{{ pg_tde_key_file }}"
+          register: pg_tde_key_stat
+          failed_when: not pg_tde_key_stat.stat.exists or pg_tde_key_stat.stat.mode != '0600'
+
+        - name: Create an encrypted table and check it (master)
+          become: true
+          become_user: postgres
+          ansible.builtin.shell: |
+            set -o pipefail
+            {{ postgresql_bin_dir }}/psql -h {{ postgresql_unix_socket_dir }} -p {{ postgresql_port }} -d postgres -Atq \
+              -c "CREATE TABLE IF NOT EXISTS tde_test (id int) USING tde_heap" \
+              -c "INSERT INTO tde_test VALUES (1)" \
+              -c "SELECT pg_tde_is_encrypted('tde_test')"
+          args:
+            executable: /bin/bash
+          register: pg_tde_check
+          changed_when: false
+          failed_when: pg_tde_check.stdout_lines | last != 't'
+          when: inventory_hostname in groups['master']

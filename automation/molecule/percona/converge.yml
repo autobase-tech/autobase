@@ -21,6 +21,7 @@
         pgbouncer_install: false # percona-pgbouncer is not covered by this scenario
         dcs_type: "etcd"
         synchronous_mode: true
+        enable_pg_tde: "{{ postgresql_version | int >= 17 }}" # file key provider (pg_tde requires PostgreSQL 17+)
         pgbackrest_install: true # install pgBackRest from the Percona repository (percona-pgbackrest), local posix repository
         local_postgresql_parameters:
           - { option: "shared_buffers", value: "128MB" }
