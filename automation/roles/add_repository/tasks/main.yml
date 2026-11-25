@@ -120,6 +120,7 @@
         timeout: 30
         validate_certs: false
       when:
+        - postgresql_distribution == "community"
         - install_postgresql_repo | bool
         - "'pgdg-redhat-repo' not in ansible_facts.packages"
       tags: install_postgresql_repo
@@ -134,6 +135,7 @@
       delay: 5
       retries: 3
       when:
+        - postgresql_distribution == "community"
         - install_postgresql_repo | bool
         - "'pgdg-redhat-repo' not in ansible_facts.packages"
       tags: install_postgresql_repo
@@ -146,7 +148,9 @@
       register: dnf_variables
       changed_when: false
       check_mode: false
-      when: install_postgresql_repo | bool
+      when:
+        - postgresql_distribution == "community"
+        - install_postgresql_repo | bool
       tags: install_postgresql_repo
 
     - name: Use the major version in the PostgreSQL repository URLs
@@ -155,6 +159,7 @@
         regexp: '\$releasever_major\.\$releasever_minor'
         replace: "$releasever_major"
       when:
+        - postgresql_distribution == "community"
         - install_postgresql_repo | bool
         - dnf_variables.stdout is not regex('(?m)^releasever_minor = \S')
       tags: install_postgresql_repo
@@ -167,6 +172,7 @@
         - pgdg_extras_result.rc != 0
         - "'No matching repo' not in pgdg_extras_result.stderr"
       when:
+        - postgresql_distribution == "community"
         - install_postgresql_repo_extras | bool
         - install_postgresql_repo | bool
       tags: install_postgresql_repo
@@ -203,7 +209,9 @@
             gpgcheck: false
             enabled: true
           when: repo_check.found == 0
-      when: debuginfo_package in postgresql_packages
+      when:
+        - postgresql_distribution == "community"
+        - debuginfo_package in postgresql_packages
       vars:
         debuginfo_package: "postgresql{{ postgresql_version }}-debuginfo"
       tags: install_postgresql_repo, debuginfo
@@ -211,6 +219,15 @@
   when: installation_method == "packages" and ansible_os_family == "RedHat"
   tags: add_repo
   ignore_errors: "{{ ansible_check_mode }}"
+
+- name: Percona repository
+  ansible.builtin.import_tasks: percona.yml
+  environment: "{{ proxy_env | default({}) }}"
+  when:
+    - installation_method == "packages"
+    - postgresql_distribution == "percona"
+    - install_postgresql_repo | bool
+  tags: add_repo, install_postgresql_repo
 
 - name: Extensions repository
   ansible.builtin.import_tasks: extensions.yml

@@ -1,0 +1,67 @@
+---
+# Deploy a PostgreSQL cluster using Percona Distribution for PostgreSQL (postgresql_distribution: "percona")
+- name: Converge
+  hosts: all
+  gather_facts: true
+
+  tasks:
+    - name: Set variables for PostgreSQL Cluster deployment (Percona Distribution for PostgreSQL)
+      ansible.builtin.set_fact:
+        ansible_become_method: su # Override become_method
+        postgresql_distribution: "percona"
+        postgresql_version: "{{ lookup('ansible.builtin.env', 'PERCONA_POSTGRESQL_VERSION') | default(18, true) | int }}"
+        firewall_enabled_at_boot: false
+        firewall_enable_ipv6: false # to prevent test failures in CI
+        swap_file_create: false # to prevent test failures in CI
+        sysctl_set: false # to prevent test failures in CI
+        chronyd_ignore_errors: true # to prevent failures in CI
+        nameservers: ["8.8.8.8", "9.9.9.9"]
+        timezone: "Etc/UTC"
+        with_haproxy_load_balancing: false
+        pgbouncer_install: false # percona-pgbouncer is not covered by this scenario
+        dcs_type: "etcd"
+        synchronous_mode: true
+        pgbackrest_install: true # install pgBackRest from the Percona repository (percona-pgbackrest), local posix repository
+        local_postgresql_parameters:
+          - { option: "shared_buffers", value: "128MB" }
+          - { option: "effective_cache_size", value: "512MB" }
+        cacheable: true
+      delegate_to: localhost
+      run_once: true # noqa run-once
+
+    - name: Write test_vars.yml file (for Molecule verify)
+      ansible.builtin.copy:
+        content: |
+          ---
+          postgresql_distribution: "percona"
+          test_postgresql_version: {{ postgresql_version }}
+        dest: "../../test_vars_percona.yml"
+      delegate_to: localhost
+      run_once: true # noqa run-once
+
+    - name: Update all system packages
+      ansible.builtin.include_role:
+        name: ../../roles/update
+        tasks_from: system
+
+    - name: Install openssh-server package
+      become: true
+      ansible.builtin.package:
+        name: openssh-server
+        state: present
+
+    - name: Start ssh service
+      become: true
+      ansible.builtin.systemd:
+        name: "{{ 'ssh' if ansible_os_family == 'Debian' else 'sshd' }}"
+        state: started
+        enabled: true
+
+    - name: Delete "/run/nologin" file (if exists)
+      become: true
+      ansible.builtin.file:
+        path: /run/nologin
+        state: absent
+
+- name: Deploy PostgreSQL Cluster (Percona)
+  ansible.builtin.import_playbook: ../../playbooks/deploy_pgcluster.yml

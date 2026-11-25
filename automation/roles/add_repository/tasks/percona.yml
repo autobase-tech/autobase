@@ -1,0 +1,68 @@
+---
+# Percona Distribution for PostgreSQL repository (if 'postgresql_distribution' is 'percona')
+# The repository is enabled with the 'percona-release' utility: "percona-release setup ppg-<major version>"
+
+- name: Gather package facts
+  ansible.builtin.package_facts:
+    manager: auto
+  check_mode: false
+  when: ansible_facts.packages is not defined
+  tags: install_postgresql_repo
+
+# Debian/Ubuntu
+- name: Install percona-release package (Debian-based)
+  ansible.builtin.apt:
+    deb: "{{ percona_release_deb_url }}"
+    state: present
+  register: apt_status
+  until: apt_status is success
+  delay: 5
+  retries: 3
+  when:
+    - ansible_os_family == "Debian"
+    - "'percona-release' not in ansible_facts.packages"
+  tags: install_postgresql_repo
+
+# RedHat/CentOS and other rpm-based distributions
+- name: Install percona-release package (RedHat-based)
+  ansible.builtin.dnf:
+    name: "{{ percona_release_rpm_url }}"
+    state: present
+    disable_gpg_check: true
+  register: package_status
+  until: package_status is success
+  delay: 5
+  retries: 3
+  when:
+    - ansible_os_family == "RedHat"
+    - "'percona-release' not in ansible_facts.packages"
+  tags: install_postgresql_repo
+
+- name: Get enabled Percona repositories
+  ansible.builtin.command: percona-release show
+  register: percona_release_show
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  tags: install_postgresql_repo
+
+- name: "Enable Percona repository {{ percona_release_repo }}"
+  ansible.builtin.command: "percona-release setup {{ percona_release_repo }}"
+  register: percona_release_setup
+  until: percona_release_setup is success
+  delay: 5
+  retries: 3
+  when: percona_release_show.stdout is not search(percona_release_repo ~ '(\s|-|$)')
+  tags: install_postgresql_repo
+
+- name: Update apt cache
+  ansible.builtin.apt:
+    update_cache: true
+  register: apt_status
+  until: apt_status is success
+  delay: 5
+  retries: 3
+  when:
+    - ansible_os_family == "Debian"
+    - percona_release_setup is changed
+  tags: install_postgresql_repo

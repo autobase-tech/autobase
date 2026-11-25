@@ -290,6 +290,10 @@ consul_postgresql_services:
 # PostgreSQL parameters
 ############################################################
 
+# PostgreSQL distribution to install (packages installation method):
+#   "community" -> PostgreSQL Community packages from PGDG (apt.postgresql.org / yum.postgresql.org)
+#   "percona"   -> Percona Distribution for PostgreSQL (repo.percona.com, enabled with 'percona-release setup ppg-<version>')
+postgresql_distribution: "community"
 postgresql_version: 18 # Postgres major version
 postgresql_version_minor: "latest" # Postgres minor version (e.g. '1' for 18.1, or 'latest' for newest). Applicable only on RedHat-based distros.
 # postgresql_connect_addr: "{{ ansible_hostname }}" # or 'ansible_fqdn'. Set in case you would like connections to be established by domain name, not IP.
@@ -924,7 +928,8 @@ wal_g_cron_jobs:
 
 # pgBackRest
 pgbackrest_install: false # or 'true' to install and configure backups using pgBackRest
-pgbackrest_install_from_pgdg_repo: true
+pgbackrest_install_from_pgdg_repo: true # adds the repository of the selected 'postgresql_distribution' (PGDG or Percona)
+pgbackrest_package: "{{ 'percona-pgbackrest' if postgresql_distribution == 'percona' else 'pgbackrest' }}"
 pgbackrest_stanza: "{{ patroni_cluster_name }}" # specify your --stanza
 pgbackrest_repo_type: "posix" # or "s3", "gcs", "azure"
 pgbackrest_repo_shared: false # 'true' if a posix repo1-path is on a shared network filesystem (stanza-create runs only on the master)
@@ -1487,7 +1492,9 @@ resizefs_target_path: "{{ postgresql_data_dir }}"
 pkg_type: "{{ 'deb' if ansible_os_family == 'Debian' else 'rpm' }}"
 
 # Debian
-apt_repository:
+# The PGDG repository is added only if postgresql_distribution is "community" (the Percona repository is configured by 'percona-release').
+apt_repository: "{{ _pgdg_apt_repository if postgresql_distribution == 'community' else [] }}"
+_pgdg_apt_repository:
   - repo: "deb https://apt.postgresql.org/pub/repos/apt/ {{ ansible_distribution_release }}-pgdg main" # postgresql apt repository
     key: "https://apt.postgresql.org/pub/repos/apt/ACCC4CF8.asc" # postgresql apt repository key
 #  - repo: "deb https://deb.debian.org/debian/ {{ ansible_distribution_release }} main"
@@ -1502,15 +1509,22 @@ yum_repository: []
 #    gpgkey: "https://my-repo-key.url"
 #    gpgcheck: "yes"
 
-install_postgresql_repo: true # or 'false' (installed from the package "pgdg-redhat-repo-latest.noarch.rpm")
+install_postgresql_repo: true # or 'false' (PGDG: package "pgdg-redhat-repo-latest.noarch.rpm"; Percona: package "percona-release")
 install_postgresql_repo_extras: true # enable PostgreSQL extras repository (e.g., pgdg-rhel8-extras)
 install_epel_repo: true # or 'false' (installed from the package "epel-release-latest.noarch.rpm")
+
+# Percona repository (used if postgresql_distribution is "percona")
+percona_release_deb_url: "https://repo.percona.com/apt/percona-release_latest.{{ ansible_distribution_release }}_all.deb"
+percona_release_rpm_url: "https://repo.percona.com/yum/percona-release-latest.noarch.rpm"
+percona_release_repo: "ppg-{{ postgresql_version }}" # Percona Distribution for PostgreSQL major release repository
 
 # Full PostgreSQL package version string (e.g., "18.1-1PGDG.rhel9").
 # Used only on RedHat-based distributions, where any minor version can be installed from the PGDG repo.
 # On Debian/Ubuntu, only the latest minor is available for each major release.
 postgresql_package_version_full: "\
   {% if postgresql_version_minor | string == 'latest' %}\
+  {% elif postgresql_distribution == 'percona' %}\
+  -{{ postgresql_version }}.{{ postgresql_version_minor }}\
   {% else %}\
   -{{ postgresql_version }}.{{ postgresql_version_minor }}-{{ postgresql_package_release }}PGDG.rhel{{ ansible_distribution_major_version }}\
   {% endif %}"
@@ -1518,7 +1532,7 @@ postgresql_package_release: 1 # release number of the package in the PGDG reposi
 # To find the correct release number, check the PGDG repository for your distribution, example:
 # https://download.postgresql.org/pub/repos/yum/18/redhat/rhel-9-x86_64/
 
-postgresql_os_specific_packages:
+postgresql_community_os_specific_packages:
   Debian:
     - postgresql-{{ postgresql_version }}
     - postgresql-client-{{ postgresql_version }}
@@ -1549,6 +1563,28 @@ postgresql_os_specific_packages:
 #   - pgvector_{{ postgresql_version }}
 #   - pgaudit17_{{ postgresql_version }}
 #   - pg_partman_{{ postgresql_version }}
+# Percona Distribution for PostgreSQL
+# Note: 'contrib' modules are part of the main package on Debian-based distributions.
+postgresql_percona_os_specific_packages:
+  Debian:
+    - percona-postgresql-{{ postgresql_version }}
+    - percona-postgresql-client-{{ postgresql_version }}
+    - percona-postgresql-server-dev-{{ postgresql_version }}
+#   - percona-postgresql-{{ postgresql_version }}-repack
+#   - percona-postgresql-{{ postgresql_version }}-pgaudit
+#   - percona-postgresql-{{ postgresql_version }}-pg-stat-monitor
+#   - percona-postgresql-{{ postgresql_version }}-wal2json
+  RedHat:
+    - percona-postgresql{{ postgresql_version }}{{ postgresql_package_version_full }}
+    - percona-postgresql{{ postgresql_version }}-server{{ postgresql_package_version_full }}
+    - percona-postgresql{{ postgresql_version }}-contrib{{ postgresql_package_version_full }}
+    - percona-postgresql{{ postgresql_version }}-devel{{ postgresql_package_version_full }}
+#   - percona-pg_repack{{ postgresql_version }}
+#   - percona-pgaudit{{ postgresql_version }}
+#   - percona-pg_stat_monitor{{ postgresql_version }}
+postgresql_os_specific_packages: "{{ postgresql_percona_os_specific_packages if postgresql_distribution == 'percona' else postgresql_community_os_specific_packages }}"
+# Debian: database-cluster manager package (pg_createcluster, etc.)
+postgresql_common_package: "{{ 'percona-postgresql-common' if postgresql_distribution == 'percona' else 'postgresql-common' }}"
 postgresql_packages: "{{ postgresql_os_specific_packages[ansible_os_family] }}"
 
 patroni_os_specific_packages:

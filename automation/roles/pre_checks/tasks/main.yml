@@ -5,6 +5,11 @@
   delegate_to: localhost
   when: ansible_version.full is version(minimal_ansible_version, '<')
 
+- name: Checking PostgreSQL distribution
+  ansible.builtin.fail:
+    msg: "postgresql_distribution must be 'community' or 'percona', got '{{ postgresql_distribution }}'"
+  when: postgresql_distribution not in ['community', 'percona']
+
 - name: Checking Linux distribution
   ansible.builtin.fail:
     msg: "{{ ansible_distribution }} is not supported"

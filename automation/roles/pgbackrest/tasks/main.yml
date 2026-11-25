@@ -54,14 +54,14 @@
 
 - name: Install pgbackrest
   ansible.builtin.package:
-    name: pgbackrest
+    name: "{{ pgbackrest_package }}"
     state: present
   register: package_status
   until: package_status is success
   delay: 5
   retries: 3
   environment: "{{ proxy_env | default({}) }}"
-  when: "'pgbackrest' not in ansible_facts.packages"
+  when: pgbackrest_package not in ansible_facts.packages
   tags: pgbackrest, pgbackrest_install
 
 - ansible.builtin.import_tasks: sync_versions.yml

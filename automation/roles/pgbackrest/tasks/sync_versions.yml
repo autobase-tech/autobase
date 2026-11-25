@@ -31,7 +31,7 @@
       block:
         - name: Install latest available pgBackRest package
           ansible.builtin.package:
-            name: pgbackrest
+            name: "{{ pgbackrest_package }}"
             state: latest
             update_cache: true
           environment: "{{ proxy_env | default({}) }}"

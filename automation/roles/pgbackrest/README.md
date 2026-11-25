@@ -7,7 +7,8 @@ Installs and configures [pgBackRest](https://github.com/pgbackrest/pgbackrest) f
 | Variable | Default | Description |
 |---|---|---|
 | `pgbackrest_install` | `false` | Enable installation and configuration of pgBackRest. |
-| `pgbackrest_install_from_pgdg_repo` | `true` | Install packages from PGDG repositories. |
+| `pgbackrest_install_from_pgdg_repo` | `true` | Add the package repository of the selected `postgresql_distribution` before installing pgBackRest: PGDG for `community`, Percona (`percona-release`) for `percona`. |
+| `pgbackrest_package` | `"pgbackrest"` (`"percona-pgbackrest"` if `postgresql_distribution` is `percona`) | Name of the pgBackRest package to install and update. |
 | `pgbackrest_auto_upgrade` | `true` | Update pgBackRest to the latest available package on managed hosts when their installed versions differ. Set to `false` to check versions without updating packages. |
 | `pgbackrest_stanza` | `"{{ patroni_cluster_name }}"` | Stanza name used by pgBackRest. |
 | `pgbackrest_repo_type` | `"posix"` | Repository type: posix, s3, gcs, azure. |

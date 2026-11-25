@@ -1,0 +1,10 @@
+---
+- name: Molecule.percona.cleanup
+  hosts: localhost
+  gather_facts: false
+
+  tasks:
+    - name: Delete test_vars_percona.yml file
+      ansible.builtin.file:
+        path: "../../test_vars_percona.yml"
+        state: absent

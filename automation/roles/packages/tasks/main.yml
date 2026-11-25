@@ -145,13 +145,13 @@
 - block:
     - name: Ensure postgresql database-cluster manager package
       ansible.builtin.apt:
-        name: postgresql-common
+        name: "{{ postgresql_common_package }}"
         state: present
       register: package_status
       until: package_status is success
       delay: 5
       retries: 3
-      when: "'postgresql-common' not in ansible_facts.packages"
+      when: postgresql_common_package not in ansible_facts.packages
 
     - name: Disable initializing of a default postgresql cluster
       ansible.builtin.replace:

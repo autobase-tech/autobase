@@ -1,0 +1,82 @@
+---
+- name: Molecule.percona.verify
+  hosts: all
+  gather_facts: true
+  tasks:
+    - name: Include common variables
+      ansible.builtin.include_vars:
+        file: ../../roles/common/defaults/main.yml
+
+    - name: Include test variables
+      ansible.builtin.include_vars:
+        file: ../../test_vars_percona.yml
+
+    - name: Check Patroni is healthy on all nodes
+      ansible.builtin.uri:
+        url: >-
+          {{ patroni_restapi_protocol | default('https') }}://{{ ansible_default_ipv4.address }}:{{ patroni_restapi_port | default('8008') }}/health
+        method: GET
+        return_content: true
+        validate_certs: false
+      register: patroni_health
+      until: patroni_health.status == 200 and patroni_health.json.state == 'running'
+      retries: 30
+      delay: 10
+
+    - name: Check PostgreSQL is accepting connections
+      become: true
+      become_user: postgres
+      ansible.builtin.command: "{{ postgresql_bin_dir }}/pg_isready -p {{ postgresql_port }}"
+      changed_when: false
+
+    - name: Gather package facts
+      ansible.builtin.package_facts:
+        manager: auto
+
+    - name: Check that the Percona packages are installed and the community server package is not
+      vars:
+        percona_server_package: "{{ 'percona-postgresql-' if ansible_os_family == 'Debian' else 'percona-postgresql' }}{{ test_postgresql_version }}"
+        community_server_package: "{{ 'postgresql-' if ansible_os_family == 'Debian' else 'postgresql' }}{{ test_postgresql_version }}"
+      ansible.builtin.assert:
+        that:
+          - percona_server_package in ansible_facts.packages
+          - community_server_package not in ansible_facts.packages
+          - "'percona-release' in ansible_facts.packages"
+          - "'percona-pgbackrest' in ansible_facts.packages"
+        success_msg: "{{ percona_server_package }} is installed"
+
+    - name: Get the PostgreSQL server version string
+      become: true
+      become_user: postgres
+      ansible.builtin.command: "{{ postgresql_bin_dir }}/psql -h {{ postgresql_unix_socket_dir }} -p {{ postgresql_port }} -Atc 'SHOW server_version'"
+      register: pg_server_version
+      changed_when: false
+
+    - name: Check the major version and the Percona build
+      ansible.builtin.assert:
+        that:
+          - pg_server_version.stdout is match(test_postgresql_version | string ~ '[.\s]')
+          - "'Percona' in pg_server_version.stdout"
+        fail_msg: "Unexpected server_version: {{ pg_server_version.stdout }}"
+
+    - name: Check that pgBackRest is installed from Percona and the stanza is healthy
+      become: true
+      become_user: postgres
+      ansible.builtin.command: pgbackrest --stanza={{ pgbackrest_stanza }} check
+      changed_when: false
+      when: inventory_hostname in groups['master']
+
+    - name: Get pgBackRest info
+      become: true
+      become_user: postgres
+      ansible.builtin.command: pgbackrest --stanza={{ pgbackrest_stanza }} info
+      register: pgbackrest_info
+      changed_when: false
+      when: inventory_hostname in groups['master']
+
+    - name: Check the pgBackRest stanza status
+      ansible.builtin.assert:
+        that:
+          - "'status: ok' in pgbackrest_info.stdout"
+        fail_msg: "{{ pgbackrest_info.stdout }}"
+      when: inventory_hostname in groups['master']

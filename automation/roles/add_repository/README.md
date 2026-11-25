@@ -21,7 +21,8 @@ The `add_repository` role is responsible for:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `install_postgresql_repo` | `true` | Install PostgreSQL PGDG repository from pgdg-redhat-repo-latest.noarch.rpm |
+| `postgresql_distribution` | `community` | `community` (PGDG repository) or `percona` (Percona Distribution for PostgreSQL, enabled with `percona-release setup ppg-<postgresql_version>`) |
+| `install_postgresql_repo` | `true` | Install the PostgreSQL repository: PGDG (pgdg-redhat-repo-latest.noarch.rpm) or Percona (`percona-release` package) |
 | `install_postgresql_repo_extras` | `true` | Enable PostgreSQL extras repository (e.g., pgdg-rhel8-extras) for additional packages like HAProxy |
 | `install_epel_repo` | `true` | Install EPEL repository from epel-release-latest.noarch.rpm |
 
