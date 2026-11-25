@@ -17,7 +17,7 @@ Provision the PostgreSQL cluster infrastructure in public clouds (AWS, GCP, Azur
   - community.digitalocean
   - hetzner.hcloud
 - Credentials via environment variables:
-  - AWS: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`
+  - AWS: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` (and `AWS_SESSION_TOKEN` for temporary credentials); see also `aws_assume_role_arn`
   - GCP: `GCP_SERVICE_ACCOUNT_CONTENTS` (JSON or base64)
   - Azure: `AZURE_SUBSCRIPTION_ID`, `AZURE_CLIENT_ID`, `AZURE_SECRET`, `AZURE_TENANT`
   - DigitalOcean: `DO_API_TOKEN`
@@ -157,6 +157,7 @@ The suffix reduces accidental collisions but does not guarantee that a name is a
 | AWS | aws_ec2_imds_v2_required | bool | true | Require IMDSv2 (session tokens) for the instance metadata service on new EC2 instances (IMDSv1 disabled). Not applied to Spot instances. |
 | AWS | aws_ebs_kms_key_id | string | "" | Customer-managed AWS KMS key ID or ARN for EBS encryption. If empty, AWS uses the default EBS encryption key. |
 | AWS | aws_ec2_instance_profile | string | "" | ARN or name of an existing IAM instance profile to attach to new EC2 instances. Existing instances are not changed. Requires `iam:PassRole` on its role; a name instead of an ARN also requires `iam:GetInstanceProfile`. |
+| AWS | aws_assume_role_arn | string | "" | ARN of an IAM role to assume for the EC2 instances, security groups, key pairs and load balancers, for example to manage them in another AWS account. The credentials from the environment must be allowed `sts:AssumeRole` on this role, and its trust policy must allow them. |
 | GCP | gcp_project | string | "" | Falls back to `project_id` from the service account credentials. |
 | GCP | gcp_subnetwork | string | "" | Name of a private subnetwork in `server_network` and the selected region. Defaults to the existing VMs' subnetwork, or the only private subnetwork in the region. Required when multiple private subnetworks exist and there are no existing VMs. |
 | GCP | gcp_compute_instance_preemptible | bool | false | Fallback for `server_spot`. |
