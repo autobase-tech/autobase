@@ -12,28 +12,10 @@
 
 # The AWS modules of this file use the credentials from the environment (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN),
 # or, if 'aws_assume_role_arn' is specified, the temporary credentials of this IAM role (for example, in another AWS account).
-- block:
-    - name: "AWS: Assume IAM role '{{ aws_assume_role_arn }}'"
-      amazon.aws.sts_assume_role:
-        role_arn: "{{ aws_assume_role_arn }}"
-        role_session_name: "{{ ('autobase-' ~ cluster_name)[:64] }}"
-        region: "{{ server_location }}"
-      register: aws_assume_role_result
-      failed_when: false
-      no_log: true # the result contains the credentials
-
-    - name: "AWS: Check the assumed IAM role"
-      ansible.builtin.assert:
-        that:
-          - aws_assume_role_result.sts_creds is defined
-        fail_msg: "Failed to assume IAM role '{{ aws_assume_role_arn }}': {{ aws_assume_role_result.msg | default('') }}"
-        quiet: true
-
-    - name: "Set variable: aws_credentials"
-      ansible.builtin.set_fact:
-        aws_credentials: "{{ aws_assume_role_result.sts_creds }}"
-      no_log: true
-  when: aws_assume_role_arn | default('') | length > 0
+- name: Import tasks for the AWS credentials
+  ansible.builtin.import_tasks: aws_credentials.yml
+  vars:
+    aws_assume_role_region: "{{ server_location }}"
 
 # Create (if state is present)
 - block:
@@ -584,6 +566,9 @@
     # the subnets of the existing NLB after the change, or all requested subnets for a new NLB (nothing is done then).
     - name: "AWS: Add Availability Zones to existing NLB (if any)"
       vitabaks.autobase.aws_nlb_subnets:
+        access_key: "{{ aws_credentials.access_key | default(omit) }}"
+        secret_key: "{{ aws_credentials.secret_key | default(omit) }}"
+        session_token: "{{ aws_credentials.session_token | default(omit) }}"
         name: "{{ cloud_load_balancer_names[item] }}"
         region: "{{ server_location }}"
         subnets: "{{ dict(instances | map(attribute='placement.availability_zone') | zip(instances | map(attribute='subnet_id'))).values() | list }}"
@@ -674,6 +659,9 @@
     # TODO: remove when community.aws.elb_network_lb supports the 'dns_record.client_routing_policy' attribute.
     - name: "AWS: Set NLB client routing policy"
       vitabaks.autobase.aws_nlb_attributes:
+        access_key: "{{ aws_credentials.access_key | default(omit) }}"
+        secret_key: "{{ aws_credentials.secret_key | default(omit) }}"
+        session_token: "{{ aws_credentials.session_token | default(omit) }}"
         name: "{{ cloud_load_balancer_names[item] }}"
         region: "{{ server_location }}"
         attributes:
