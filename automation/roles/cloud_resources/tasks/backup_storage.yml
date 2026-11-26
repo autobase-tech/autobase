@@ -72,10 +72,20 @@
 - name: Manage AWS backup storage
   when: cloud_backup_provider | default(cloud_provider) | lower == 'aws'
   block:
+    # The credentials from the environment, or the temporary credentials of 'aws_assume_role_arn' (if specified).
+    - name: Import tasks for the AWS credentials
+      ansible.builtin.import_tasks: aws_credentials.yml
+      vars:
+        aws_assume_role_region: "{{ aws_s3_bucket_region }}"
+      when: >-
+        (state == 'present' and aws_s3_bucket_create | bool) or
+        (state == 'absent' and (pgbackrest_install | bool or wal_g_install | bool) and aws_s3_bucket_absent | default(false) | bool)
+
     - name: "AWS: Create S3 bucket '{{ aws_s3_bucket_name | default('') }}'"
       amazon.aws.s3_bucket:
-        access_key: "{{ lookup('ansible.builtin.env', 'AWS_ACCESS_KEY_ID') }}"
-        secret_key: "{{ lookup('ansible.builtin.env', 'AWS_SECRET_ACCESS_KEY') }}"
+        access_key: "{{ aws_credentials.access_key | default(omit) }}"
+        secret_key: "{{ aws_credentials.secret_key | default(omit) }}"
+        session_token: "{{ aws_credentials.session_token | default(omit) }}"
         name: "{{ aws_s3_bucket_name }}"
         region: "{{ aws_s3_bucket_region }}"
         object_lock_enabled: "{{ aws_s3_bucket_object_lock_enabled }}"
@@ -92,8 +102,9 @@
 
     - name: "AWS: Delete S3 bucket '{{ aws_s3_bucket_name | default('') }}'"
       amazon.aws.s3_bucket:
-        access_key: "{{ lookup('ansible.builtin.env', 'AWS_ACCESS_KEY_ID') }}"
-        secret_key: "{{ lookup('ansible.builtin.env', 'AWS_SECRET_ACCESS_KEY') }}"
+        access_key: "{{ aws_credentials.access_key | default(omit) }}"
+        secret_key: "{{ aws_credentials.secret_key | default(omit) }}"
+        session_token: "{{ aws_credentials.session_token | default(omit) }}"
         name: "{{ aws_s3_bucket_name }}"
         region: "{{ aws_s3_bucket_region }}"
         state: absent
