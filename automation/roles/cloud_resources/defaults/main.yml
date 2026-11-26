@@ -10,8 +10,11 @@ cloud_provider_tags: # Custom tags requested when supported cloud resources are 
 cloud_backup_provider_tags: "{{ cloud_provider_tags }}" # Tags for backup storage resources. Defaults to cloud_provider_tags.
 state: present # Set to 'present' to create a server, 'absent' to delete.
 
-server_count: 3 # Number of servers in the cluster.
-server_name: "{{ patroni_cluster_name }}-pgnode" # (optional) If not provided, a name will be auto-generated. Servers will be automatically named with suffixes 01, 02, 03, etc.
+shards_count: 1 # Set above 1 for automatic shard placement with PgDog.
+servers_per_shard: 3 # Number of PostgreSQL servers in each automatically placed shard.
+server_shards: {} # Explicit placement by VM name, with shard_id and role for each VM.
+server_count: "{{ none if shards_count | int > 1 or server_shards else 3 }}" # Total number of servers for an unsharded cluster.
+server_name: "{{ cluster_name if shards_count | int > 1 else cluster_name ~ '-pgnode' }}" # Prefix for generated VM names.
 server_type: "" # (required) Server type.
 server_image: "" # (required) OS image for the server. For Azure, use variables 'azure_vm_image_offer', 'azure_vm_image_publisher', 'azure_vm_image_sku', 'azure_vm_image_version' instead of variable 'server_image'
 server_location: "" # (required) Server location or region.
@@ -75,11 +78,11 @@ cloud_load_balancer_roles: >-
      + (['sync'] if cloud_load_balancer_replica_sync | bool and server_count | int > 1 and synchronous_mode | bool else [])
      + (['async'] if cloud_load_balancer_replica_async | bool and server_count | int > 1 and synchronous_mode | bool else []) }}
 cloud_load_balancer_names:
-  pgdog: "{{ patroni_cluster_name }}"
-  primary: "{{ patroni_cluster_name }}-primary"
-  replica: "{{ patroni_cluster_name }}-replica"
-  sync: "{{ patroni_cluster_name }}-sync"
-  async: "{{ patroni_cluster_name }}-async"
+  pgdog: "{{ cluster_name }}"
+  primary: "{{ cluster_name }}-primary"
+  replica: "{{ cluster_name }}-replica"
+  sync: "{{ cluster_name }}-sync"
+  async: "{{ cluster_name }}-async"
 
 aws_nlb_client_routing_policy: "availability_zone_affinity" # NLB DNS client routing policy: 'availability_zone_affinity', 'partial_availability_zone_affinity' or 'any_availability_zone'.
 aws_nlb_replica_cross_zone: false # Cross-zone load balancing for replica NLBs. 'false' keeps reads in the client's zone when it has a healthy replica. Always enabled for the primary and PgDog NLBs.
@@ -89,14 +92,14 @@ cloud_backup_storage_id: "" # Optional stable, globally unique ID (for example, 
 cloud_backup_storage_suffix: "{{ (cloud_backup_storage_id | hash('sha256'))[:12] if cloud_backup_storage_id | length > 0 else '' }}"
 cloud_backup_bucket_name: >-
   {{
-    ((patroni_cluster_name | lower | regex_replace('[^a-z0-9]+', '-') | regex_replace('^-+|-+$', '') | default('postgres', true))[:43]
+    ((cluster_name | lower | regex_replace('[^a-z0-9]+', '-') | regex_replace('^-+|-+$', '') | default('postgres', true))[:43]
       | regex_replace('-+$', '')) ~ '-backup-' ~ cloud_backup_storage_suffix
-    if cloud_backup_storage_suffix | length > 0 else patroni_cluster_name ~ '-backup'
+    if cloud_backup_storage_suffix | length > 0 else cluster_name ~ '-backup'
   }}
 cloud_backup_azure_account_name: >-
   {{
-    (patroni_cluster_name | lower | regex_replace('[^a-z0-9]', '') | default('postgres', true))[:12] ~ cloud_backup_storage_suffix
-    if cloud_backup_storage_suffix | length > 0 else patroni_cluster_name | lower | replace('-', '') | truncate(24, true, '')
+    (cluster_name | lower | regex_replace('[^a-z0-9]', '') | default('postgres', true))[:12] ~ cloud_backup_storage_suffix
+    if cloud_backup_storage_suffix | length > 0 else cluster_name | lower | replace('-', '') | truncate(24, true, '')
   }}
 
 aws_s3_bucket_create: true # if 'cloud_backup_provider=aws'
@@ -116,7 +119,7 @@ gcp_bucket_absent: false # Allow to delete GCS bucket when deleting a cluster se
 
 azure_blob_storage_create: true # if 'cloud_backup_provider=azure'
 azure_backup_location: "{{ server_location }}" # Azure region for backup storage.
-azure_blob_storage_name: "{{ patroni_cluster_name }}-backup" # Name of a blob container within the storage account.
+azure_blob_storage_name: "{{ cluster_name }}-backup" # Name of a blob container within the storage account.
 azure_blob_storage_blob_type: "block" # Type of blob object. Values include: block, page.
 azure_blob_storage_account_name: "{{ cloud_backup_azure_account_name }}" # Storage account name must be between 3 and 24 characters in length and use numbers and lower-case letters only.
 azure_blob_storage_account_type: "Standard_RAGRS" # Type of storage account. Values include: Standard_LRS, Standard_GRS, Standard_RAGRS, Standard_ZRS, Standard_RAGZRS, Standard_GZRS, Premium_LRS, Premium_ZRS.

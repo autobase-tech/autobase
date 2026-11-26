@@ -2,9 +2,9 @@
 - name: "AWS: Validate cluster name length for NLB target groups"
   ansible.builtin.assert:
     that:
-      - patroni_cluster_name | length <= (29 if pgdog_install | bool else 21)
+      - cluster_name | length <= (29 if pgdog_install | bool else 21)
     fail_msg: >-
-      AWS NLB requires patroni_cluster_name to be {{ 29 if pgdog_install | bool else 21 }} characters or fewer because
+      AWS NLB requires cluster_name to be {{ 29 if pgdog_install | bool else 21 }} characters or fewer because
       the target group suffix is '{{ '-tg' if pgdog_install | bool else '-tg-primary' }}' and its name cannot exceed 32 characters.
   when:
     - state == 'present'
@@ -16,7 +16,7 @@
     - name: "AWS: Assume IAM role '{{ aws_assume_role_arn }}'"
       amazon.aws.sts_assume_role:
         role_arn: "{{ aws_assume_role_arn }}"
-        role_session_name: "{{ ('autobase-' ~ patroni_cluster_name)[:64] }}"
+        role_session_name: "{{ ('autobase-' ~ cluster_name)[:64] }}"
         region: "{{ server_location }}"
       register: aws_assume_role_result
       failed_when: false
@@ -135,11 +135,11 @@
         region: "{{ server_location }}"
         filters:
           instance-state-name: ["pending", "running", "shutting-down", "stopping", "stopped"]
-          "tag:Name": "{{ server_name | lower }}{{ '%02d' % (idx + 1) }}"
-      loop: "{{ range(0, server_count | int) | list }}"
+          "tag:Name": "{{ cloud_server_names[idx] }}"
+      loop: "{{ range(0, cloud_server_names | length) | list }}"
       loop_control:
         index_var: idx
-        label: "{{ server_name | lower }}{{ '%02d' % (idx + 1) }}"
+        label: "{{ cloud_server_names[idx] }}"
       register: ec2_instance_info
       when: not server_spot | default(aws_ec2_spot_instance | default(false)) | bool
 
@@ -152,11 +152,11 @@
         filters:
           instance-lifecycle: "spot"
           instance-state-name: ["pending", "running", "shutting-down", "stopping", "stopped"]
-          "tag:Name": "{{ server_name | lower }}{{ '%02d' % (idx + 1) }}"
-      loop: "{{ range(0, server_count | int) | list }}"
+          "tag:Name": "{{ cloud_server_names[idx] }}"
+      loop: "{{ range(0, cloud_server_names | length) | list }}"
       loop_control:
         index_var: idx
-        label: "{{ server_name | lower }}{{ '%02d' % (idx + 1) }}"
+        label: "{{ cloud_server_names[idx] }}"
       register: ec2_spot_instance_info
       when: server_spot | default(aws_ec2_spot_instance | default(false)) | bool
 
@@ -193,13 +193,13 @@
         access_key: "{{ aws_credentials.access_key | default(omit) }}"
         secret_key: "{{ aws_credentials.secret_key | default(omit) }}"
         session_token: "{{ aws_credentials.session_token | default(omit) }}"
-        name: "{{ patroni_cluster_name }}-security-group"
+        name: "{{ cluster_name }}-security-group"
         state: present
         description: "Security Group for Postgres cluster"
         vpc_id: "{{ vpc_id }}"
         region: "{{ server_location }}"
         rules: "{{ rules }}"
-        tags: "{{ cloud_provider_tags | combine({'Cluster': patroni_cluster_name}) }}"
+        tags: "{{ cloud_provider_tags | combine({'Cluster': cluster_name}) }}"
         purge_tags: false
       vars:
         vpc_cidr_blocks: >-
@@ -360,7 +360,7 @@
         key_material: "{{ ssh_key_content }}"
         region: "{{ server_location }}"
         state: present
-        tags: "{{ cloud_provider_tags | combine({'Cluster': patroni_cluster_name}) }}"
+        tags: "{{ cloud_provider_tags | combine({'Cluster': cluster_name}) }}"
         purge_tags: false
       register: ssh_key_result
       when:
@@ -374,7 +374,7 @@
             access_key: "{{ aws_credentials.access_key | default(omit) }}"
             secret_key: "{{ aws_credentials.secret_key | default(omit) }}"
             session_token: "{{ aws_credentials.session_token | default(omit) }}"
-            name: "{{ server_name | lower }}{{ '%02d' % (idx + 1) }}"
+            name: "{{ cloud_server_names[idx] }}"
             state: running
             instance_type: "{{ server_type }}"
             image_id: "{{ server_image }}"
@@ -389,12 +389,12 @@
                 delete_on_termination: true
             volumes: "{{ [system_volume] + ([] if use_local_disk | bool else [data_volume]) }}"
             metadata_options: "{{ imds_v2_options if aws_ec2_imds_v2_required | default(true) | bool else omit }}"
-            tags: "{{ cloud_provider_tags | combine({'Name': server_name | lower ~ '%02d' % (idx + 1), 'Cluster': patroni_cluster_name}) }}"
+            tags: "{{ cloud_provider_tags | combine({'Name': cloud_server_names[idx], 'Cluster': cluster_name}) }}"
             purge_tags: false
-          loop: "{{ range(0, server_count | int) | list }}"
+          loop: "{{ range(0, cloud_server_names | length) | list }}"
           loop_control:
             index_var: idx
-            label: "{{ server_name | lower }}{{ '%02d' % (idx + 1) }}"
+            label: "{{ cloud_server_names[idx] }}"
           register: ec2_instance_result
           retries: 3
           delay: 10
@@ -454,11 +454,11 @@
                   delete_on_termination: true
                   device_index: 0
               block_device_mappings: "{{ [system_volume] + ([] if use_local_disk | bool else [data_volume]) }}"
-            tags: "{{ cloud_provider_tags | combine({'Name': server_name | lower ~ '%02d' % (idx + 1), 'Cluster': patroni_cluster_name}) }}"
+            tags: "{{ cloud_provider_tags | combine({'Name': cloud_server_names[idx], 'Cluster': cluster_name}) }}"
           loop: "{{ ec2_spot_instance_info.results }}"
           loop_control:
             index_var: idx
-            label: "{{ server_name | lower }}{{ '%02d' % (idx + 1) }}"
+            label: "{{ cloud_server_names[idx] }}"
           register: ec2_spot_request_result
           when: item.instances[0] | default('') | length < 1
           vars:
@@ -494,7 +494,7 @@
           loop: "{{ ec2_spot_request_result.results }}"
           loop_control:
             index_var: idx
-            label: "{{ server_name | lower }}{{ '%02d' % (idx + 1) }}"
+            label: "{{ cloud_server_names[idx] }}"
           register: ec2_spot_instance_wait_result
           until:
             - ec2_spot_instance_wait_result.instances[0][ip_address_type] is defined
@@ -509,15 +509,15 @@
             secret_key: "{{ aws_credentials.secret_key | default(omit) }}"
             session_token: "{{ aws_credentials.session_token | default(omit) }}"
             region: "{{ server_location }}"
-            name: "{{ server_name | lower }}{{ '%02d' % (idx + 1) }}"
+            name: "{{ cloud_server_names[idx] }}"
             filters:
               spot-instance-request-id: "{{ item.spot_request.spot_instance_request_id }}"
-            tags: "{{ cloud_provider_tags | combine({'Name': server_name | lower ~ '%02d' % (idx + 1), 'Cluster': patroni_cluster_name}) }}"
+            tags: "{{ cloud_provider_tags | combine({'Name': cloud_server_names[idx], 'Cluster': cluster_name}) }}"
             purge_tags: false
           loop: "{{ ec2_spot_request_result.results }}"
           loop_control:
             index_var: idx
-            label: "{{ server_name | lower }}{{ '%02d' % (idx + 1) }}"
+            label: "{{ cloud_server_names[idx] }}"
           register: ec2_spot_instance_result
           until: ec2_spot_instance_result is success
           retries: 3
@@ -610,7 +610,7 @@
         access_key: "{{ aws_credentials.access_key | default(omit) }}"
         secret_key: "{{ aws_credentials.secret_key | default(omit) }}"
         session_token: "{{ aws_credentials.session_token | default(omit) }}"
-        name: "{{ patroni_cluster_name }}-tg{{ '-' ~ item if item != 'pgdog' else '' }}"
+        name: "{{ cluster_name }}-tg{{ '-' ~ item if item != 'pgdog' else '' }}"
         region: "{{ server_location }}"
         vpc_id: "{{ vpc_id }}"
         protocol: "TCP"
@@ -629,11 +629,11 @@
         modify_targets: true
         wait: false
         state: present
-        tags: "{{ cloud_provider_tags | combine({'Cluster': patroni_cluster_name}) }}"
+        tags: "{{ cloud_provider_tags | combine({'Cluster': cluster_name}) }}"
         purge_tags: false
       loop: "{{ cloud_load_balancer_roles }}"
       loop_control:
-        label: "{{ patroni_cluster_name }}-tg{{ '-' ~ item if item != 'pgdog' else '' }}"
+        label: "{{ cluster_name }}-tg{{ '-' ~ item if item != 'pgdog' else '' }}"
       vars:
         target_port: "{{ connection_pooler_port | default('6432') if connection_pooler_enabled | bool else postgresql_port | default('5432') }}"
       when: cloud_load_balancer | bool
@@ -651,12 +651,12 @@
             Port: "{{ target_port }}"
             DefaultActions:
               - Type: forward
-                TargetGroupName: "{{ patroni_cluster_name }}-tg{{ '-' ~ item if item != 'pgdog' else '' }}"
+                TargetGroupName: "{{ cluster_name }}-tg{{ '-' ~ item if item != 'pgdog' else '' }}"
         cross_zone_load_balancing: "{{ true if item in ['primary', 'pgdog'] else aws_nlb_replica_cross_zone | bool }}"
         scheme: "{{ 'internet-facing' if database_public_access | bool else 'internal' }}"
         wait: false
         state: present
-        tags: "{{ cloud_provider_tags | combine({'Cluster': patroni_cluster_name}) }}"
+        tags: "{{ cloud_provider_tags | combine({'Cluster': cluster_name}) }}"
         purge_tags: false
       loop: "{{ cloud_load_balancer_roles }}"
       loop_control:
@@ -703,8 +703,7 @@
       zone: "{{ item.instances[0].placement.availability_zone | default('N/A', true) }}"
   loop: "{{ server_result.results | default([]) }}"
   loop_control:
-    index_var: idx
-    label: "{{ server_name | lower }}{{ '%02d' % (idx + 1) }}"
+    label: "{{ item.instances[0].tags.Name | default('N/A', true) }}"
   when:
     - server_result.results is defined
     - item.instances is defined
@@ -716,6 +715,7 @@
         ip_addresses: >-
           {{ ip_addresses | default([]) +
             [{
+              'name': item.instances[0].tags.Name,
               'public_ip': item.instances[0].public_ip_address | default(''),
               'private_ip': item.instances[0].private_ip_address | default(''),
               'zone': item.instances[0].placement.availability_zone | default(''),
@@ -770,14 +770,14 @@
         region: "{{ server_location }}"
         filters:
           instance-state-name: ["pending", "running", "shutting-down", "stopping", "stopped"]
-          "tag:Name": "{{ server_name | lower }}{{ '%02d' % (idx + 1) }}"
-          "tag:Cluster": "{{ patroni_cluster_name }}"
+          "tag:Name": "{{ cloud_server_names[idx] }}"
+          "tag:Cluster": "{{ cluster_name }}"
         state: absent
         wait: true
-      loop: "{{ range(0, server_count | int) | list }}"
+      loop: "{{ range(0, cloud_server_names | length) | list }}"
       loop_control:
         index_var: idx
-        label: "{{ server_name | lower }}{{ '%02d' % (idx + 1) }}"
+        label: "{{ cloud_server_names[idx] }}"
 
     - name: "AWS: Delete Network Load Balancer (NLB)"
       community.aws.elb_network_lb:
@@ -801,12 +801,12 @@
         access_key: "{{ aws_credentials.access_key | default(omit) }}"
         secret_key: "{{ aws_credentials.secret_key | default(omit) }}"
         session_token: "{{ aws_credentials.session_token | default(omit) }}"
-        name: "{{ patroni_cluster_name }}-tg{{ '-' ~ item if item != 'pgdog' else '' }}"
+        name: "{{ cluster_name }}-tg{{ '-' ~ item if item != 'pgdog' else '' }}"
         region: "{{ server_location }}"
         state: absent
       loop: "{{ cloud_load_balancer_roles }}"
       loop_control:
-        label: "{{ patroni_cluster_name }}-tg{{ '-' ~ item if item != 'pgdog' else '' }}"
+        label: "{{ cluster_name }}-tg{{ '-' ~ item if item != 'pgdog' else '' }}"
       register: aws_elb_target_group_delete
       until: aws_elb_target_group_delete is success
       retries: 3
@@ -817,7 +817,7 @@
         access_key: "{{ aws_credentials.access_key | default(omit) }}"
         secret_key: "{{ aws_credentials.secret_key | default(omit) }}"
         session_token: "{{ aws_credentials.session_token | default(omit) }}"
-        name: "{{ patroni_cluster_name }}-security-group"
+        name: "{{ cluster_name }}-security-group"
         region: "{{ server_location }}"
         state: absent
       register: ec2_security_group_delete

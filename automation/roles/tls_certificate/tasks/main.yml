@@ -188,7 +188,7 @@
     - name: "Create server CSR"
       community.crypto.openssl_csr_pipe:
         privatekey_path: "{{ tls_directory }}/{{ generate_tls_privatekey | default(tls_privatekey | default('server.key')) }}"
-        common_name: "{{ generate_tls_common_name | default(tls_common_name | default(patroni_cluster_name)) }}"
+        common_name: "{{ generate_tls_common_name | default(tls_common_name | default(cluster_name)) }}"
         key_usage:
           - digitalSignature
           - keyEncipherment

@@ -20,7 +20,7 @@
     query_age_threshold: "{{ pg_slow_active_query_treshold_to_terminate }}"
   register: pgdog_pool_pause_result
   ignore_errors: true
-  when: inventory_hostname in groups['primary']
+  when: inventory_hostname == groups['primary'][0]
 
 # Stop, if it was not possible to hold the client queries
 - block:

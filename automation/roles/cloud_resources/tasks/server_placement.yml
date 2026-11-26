@@ -1,0 +1,50 @@
+---
+- name: Validate the explicit server map
+  ansible.builtin.assert:
+    that: server_shards is mapping
+    fail_msg: Set server_shards to a mapping of VM names to their shard_id and role.
+
+- name: Validate the cloud shard count and size
+  ansible.builtin.assert:
+    that:
+      - (shards_count | string) is match('^[1-9][0-9]*$')
+      - (servers_per_shard | string) is match('^[1-9][0-9]*$')
+    fail_msg: Set shards_count and servers_per_shard to positive integers.
+  when: not server_shards
+
+- name: Check the inputs for a sharded deployment
+  ansible.builtin.assert:
+    that:
+      - pgdog_install | bool
+      - server_count is none
+    fail_msg: Set pgdog_install to true and remove server_count. Use shards_count with servers_per_shard, or provide server_shards.
+  when: server_shards | length > 0 or shards_count | int > 1
+
+- name: Resolve cloud shard placement
+  ansible.builtin.set_fact:
+    cloud_server_shards: >-
+      {{ server_shards if server_shards else
+         (server_name | lower | vitabaks.autobase.cloud_shard_placement(shards_count | int, servers_per_shard | int))
+         if shards_count | int > 1 else {} }}
+
+- name: Validate names and shard IDs in the cloud inventory
+  ansible.builtin.assert:
+    that:
+      - cloud_server_shards.keys() | reject('string') | list | length == 0
+      - "'' not in cloud_server_shards"
+      - cloud_server_shards.values() | rejectattr('shard_id', 'defined') | list | length == 0
+    fail_msg: Each server_shards entry must specify a VM name, a shard_id and a role.
+  when: cloud_server_shards | length > 0
+
+- name: Resolve the cloud server list and topology
+  ansible.builtin.set_fact:
+    cloud_server_names: >-
+      {{ cloud_server_shards.keys() | list if cloud_server_shards else
+         query('ansible.builtin.sequence', 'start=1 count=' ~ server_count ~ ' format=' ~ server_name | lower ~ '%02d') }}
+    cloud_shard_topology: >-
+      {{ cloud_groups | vitabaks.autobase.shard_topology(cloud_server_shards) if cloud_server_shards else {} }}
+  vars:
+    cloud_groups:
+      postgres_cluster: "{{ cloud_server_shards.keys() | list }}"
+      master: "{{ cloud_server_shards | dict2items | selectattr('value.role', 'equalto', 'master') | map(attribute='key') | list }}"
+      replica: "{{ cloud_server_shards | dict2items | selectattr('value.role', 'equalto', 'replica') | map(attribute='key') | list }}"

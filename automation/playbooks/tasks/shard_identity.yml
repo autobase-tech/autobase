@@ -1,0 +1,51 @@
+---
+- name: Look for the installed shard identity
+  become: true
+  ansible.builtin.stat:
+    path: /etc/autobase-shard.json
+  register: shard_identity_file
+
+- name: Check for an existing Patroni configuration before adopting a node
+  become: true
+  ansible.builtin.stat:
+    path: "{{ patroni_config_file | default('/etc/patroni/patroni.yml') }}"
+  register: existing_patroni_config
+  when: autobase_shards.explicit and not shard_identity_file.stat.exists
+
+- name: Prevent converting an existing Patroni cluster in place
+  ansible.builtin.assert:
+    that: not existing_patroni_config.stat.exists
+    fail_msg: Existing Patroni configuration on a node without the requested shard identity.
+  when: autobase_shards.explicit and not shard_identity_file.stat.exists
+
+- name: Ensure the installed shard identity matches inventory
+  vars:
+    expected_shard_identity:
+      cluster: "{{ cluster_name }}"
+      # Keep the existing on-disk label format when moving an inventory to numeric IDs.
+      shard: "shard{{ shard_id | default('') }}"
+      shards: "{{ autobase_shards.ids | map('string') | map('regex_replace', '^', 'shard') | list }}"
+  block:
+    - name: Record the fixed shard set and local membership
+      become: true
+      ansible.builtin.copy:
+        content: "{{ expected_shard_identity | to_json }}\n"
+        dest: /etc/autobase-shard.json
+        owner: root
+        group: root
+        mode: "0644"
+        force: false
+      when: autobase_shards.explicit and not shard_identity_file.stat.exists
+
+    - name: Read the installed shard identity
+      become: true
+      ansible.builtin.slurp:
+        src: /etc/autobase-shard.json
+      register: installed_shard_identity
+      when: shard_identity_file.stat.exists or (autobase_shards.explicit and not ansible_check_mode)
+
+    - name: Reject reassignment or changing the set of shards in place
+      ansible.builtin.assert:
+        that: installed_shard_identity.content | b64decode | from_json == expected_shard_identity
+        fail_msg: The configured shard topology differs from the installed cluster. Deploy a new cluster to redistribute data.
+      when: shard_identity_file.stat.exists or (autobase_shards.explicit and not ansible_check_mode)

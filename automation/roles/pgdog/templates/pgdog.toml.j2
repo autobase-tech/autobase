@@ -61,10 +61,20 @@ password = {{ pgdog_admin_password | to_json }}
 name = {{ pool.name | to_json }}
 database_name = {{ pool.dbname | to_json }}
 host = {{ (hostvars[host]['patroni_bind_address'] | default(hostvars[host]['bind_address'], true)) | to_json }}
-port = {{ postgresql_port | int }}
+port = {{ hostvars[host].postgresql_port | default(postgresql_port) | int }}
+{%     if hostvars[host].shard_id is defined %}
+shard = {{ hostvars[host].shard_id }}
+{%     endif %}
 role = "auto"
 {%     for key, value in (pool.pool_parameters | default({}, true)) | dictsort %}
 {{ key }} = {{ value | to_json }}
 {%     endfor %}
+{%   endfor %}
+{% endfor %}
+{% for table in pgdog_sharded_tables | default([]) %}
+
+[[sharded_tables]]
+{%   for key, value in table | dictsort %}
+{{ key }} = {{ value | to_json }}
 {%   endfor %}
 {% endfor %}

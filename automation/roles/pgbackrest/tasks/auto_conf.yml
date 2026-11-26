@@ -28,12 +28,10 @@
         - { option: "archive-get-queue-max", value: "1GiB" }
         - { option: "spool-path", value: "/var/spool/pgbackrest" }
         - { option: "process-max", value: "{{ pgbackrest_process_max | default([ansible_processor_vcpus | int // 2, 1] | max) }}" }
-        - { option: "backup-standby", value: "{{ 'y' if groups['postgres_cluster'] | length > 1 else 'n' }}" }
+        - { option: "backup-standby", value: "{{ 'y' if patroni_shard_hosts | length > 1 else 'n' }}" }
       stanza:
         - { option: "log-level-console", value: "info" }
         - { option: "pg1-path", value: "{{ postgresql_data_dir }}" }
-  delegate_to: localhost
-  run_once: true # noqa run-once
   no_log: true # do not output contents to the ansible log
   when: cloud_backup_provider | default(cloud_provider | default('')) | lower == 'aws'
 
@@ -59,7 +57,7 @@
         - { option: "archive-get-queue-max", value: "1GiB" }
         - { option: "spool-path", value: "/var/spool/pgbackrest" }
         - { option: "process-max", value: "{{ pgbackrest_process_max | default([ansible_processor_vcpus | int // 2, 1] | max) }}" }
-        - { option: "backup-standby", value: "{{ 'y' if groups['postgres_cluster'] | length > 1 else 'n' }}" }
+        - { option: "backup-standby", value: "{{ 'y' if patroni_shard_hosts | length > 1 else 'n' }}" }
       stanza:
         - { option: "log-level-console", value: "info" }
         - { option: "pg1-path", value: "{{ postgresql_data_dir }}" }
@@ -104,7 +102,7 @@
           }
         - {
             option: "repo1-azure-container",
-            value: "{{ pgbackrest_azure_container | default(azure_blob_storage_name | default(patroni_cluster_name + '-backup')) }}",
+            value: "{{ pgbackrest_azure_container | default(azure_blob_storage_name | default(cluster_name + '-backup')) }}",
           }
         - { option: "repo1-retention-full", value: "{{ pgbackrest_retention_full | default('30') }}" }
         - { option: "repo1-retention-full-type", value: "{{ pgbackrest_retention_full_type | default('time') }}" }
@@ -117,7 +115,7 @@
         - { option: "archive-get-queue-max", value: "1GiB" }
         - { option: "spool-path", value: "/var/spool/pgbackrest" }
         - { option: "process-max", value: "{{ pgbackrest_process_max | default([ansible_processor_vcpus | int // 2, 1] | max) }}" }
-        - { option: "backup-standby", value: "{{ 'y' if groups['postgres_cluster'] | length > 1 else 'n' }}" }
+        - { option: "backup-standby", value: "{{ 'y' if patroni_shard_hosts | length > 1 else 'n' }}" }
       stanza:
         - { option: "log-level-console", value: "info" }
         - { option: "pg1-path", value: "{{ postgresql_data_dir }}" }
@@ -154,7 +152,7 @@
         - { option: "archive-get-queue-max", value: "1GiB" }
         - { option: "spool-path", value: "/var/spool/pgbackrest" }
         - { option: "process-max", value: "{{ pgbackrest_process_max | default([ansible_processor_vcpus | int // 2, 1] | max) }}" }
-        - { option: "backup-standby", value: "{{ 'y' if groups['postgres_cluster'] | length > 1 else 'n' }}" }
+        - { option: "backup-standby", value: "{{ 'y' if patroni_shard_hosts | length > 1 else 'n' }}" }
       stanza:
         - { option: "log-level-console", value: "info" }
         - { option: "pg1-path", value: "{{ postgresql_data_dir }}" }
@@ -192,13 +190,11 @@
         - { option: "archive-get-queue-max", value: "1GiB" }
         - { option: "spool-path", value: "/var/spool/pgbackrest" }
         - { option: "process-max", value: "{{ pgbackrest_process_max | default([ansible_processor_vcpus | int // 2, 1] | max) }}" }
-        - { option: "backup-standby", value: "{{ 'y' if groups['postgres_cluster'] | length > 1 else 'n' }}" }
+        - { option: "backup-standby", value: "{{ 'y' if patroni_shard_hosts | length > 1 else 'n' }}" }
       stanza:
         - { option: "log-level-console", value: "info" }
         - { option: "pg1-path", value: "{{ postgresql_data_dir }}" }
   vars:
     default_region: "{{ (server_location in ['hel1', 'fsn1', 'nbg1']) | ternary(server_location, 'nbg1') }}"
-  delegate_to: localhost
-  run_once: true # noqa run-once
   no_log: true # do not output contents to the ansible log
   when: cloud_backup_provider | default(cloud_provider | default('')) | lower == 'hetzner'

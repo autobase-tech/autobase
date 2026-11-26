@@ -77,7 +77,7 @@
         }
       - {
           option: "WALG_AZ_PREFIX",
-          value: "{{ wal_g_az_prefix | default('azure://' + (azure_blob_storage_name | default(patroni_cluster_name + '-backup'))) }}",
+          value: "{{ wal_g_az_prefix | default('azure://' + (azure_blob_storage_name | default(cluster_name + '-backup'))) }}",
         }
       - { option: "WALG_COMPRESSION_METHOD", value: "{{ wal_g_compression_method | default('brotli') }}" }
       - { option: "WALG_DELTA_MAX_STEPS", value: "{{ wal_g_delta_max_steps | default('6') }}" }

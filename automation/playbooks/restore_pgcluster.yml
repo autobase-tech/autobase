@@ -1,6 +1,13 @@
 ---
+- name: Resolve shard topology
+  ansible.builtin.import_playbook: shard_topology.yml
+  vars:
+    shard_config_addresses: true
+    shard_check_identity: true
+    shard_identity_selected_only: true
+
 - name: vitabaks.autobase.restore_pgcluster | Restore PostgreSQL Cluster
-  hosts: postgres_cluster
+  hosts: "postgres_cluster:&autobase_{{ target_shard | default('all') }}"
   become: true
   become_method: sudo
   gather_facts: true
@@ -59,14 +66,14 @@
         fail_msg: >-
           Enable exactly one backup tool with 'pgbackrest_install' or 'wal_g_install'.
           If set, 'restore_pgcluster_tool' must match the enabled tool.
-      when: inventory_hostname == groups['master'][0]
+      when: inventory_hostname == patroni_bootstrap_host
 
     - name: Validate PostgreSQL restore command
       ansible.builtin.assert:
         that:
           - postgresql_restore_command | default('') | trim | length > 0
         fail_msg: The selected backup tool must provide a non-empty PostgreSQL restore command.
-      when: inventory_hostname == groups['master'][0]
+      when: inventory_hostname == patroni_bootstrap_host
 
     - name: Validate Patroni bootstrap command
       ansible.builtin.assert:
@@ -74,7 +81,7 @@
           - restore_pgcluster_selected_bootstrap_command | default('') | trim | length > 0
         fail_msg: >-
           The selected backup tool must provide a non-empty Patroni bootstrap command.
-      when: inventory_hostname == groups['master'][0]
+      when: inventory_hostname == patroni_bootstrap_host
 
     - name: Validate pgBackRest target action recovery type
       ansible.builtin.assert:
@@ -87,7 +94,7 @@
           The pgBackRest option '--target-action' requires '--type' to be
           immediate, lsn, name, time, or xid.
       when:
-        - inventory_hostname == groups['master'][0]
+        - inventory_hostname == patroni_bootstrap_host
         - restore_pgcluster_selected_tool == 'pgbackrest'
 
     - name: Validate pgBackRest target action value
@@ -100,7 +107,7 @@
         fail_msg: >-
           The pgBackRest option '--target-action' must be pause, promote, or shutdown.
       when:
-        - inventory_hostname == groups['master'][0]
+        - inventory_hostname == patroni_bootstrap_host
         - restore_pgcluster_selected_tool == 'pgbackrest'
 
     - name: Validate pgBackRest target timeline recovery type
@@ -114,7 +121,7 @@
           The pgBackRest option '--target-timeline' requires '--type' to be
           default, lsn, name, standby, time, or xid.
       when:
-        - inventory_hostname == groups['master'][0]
+        - inventory_hostname == patroni_bootstrap_host
         - restore_pgcluster_selected_tool == 'pgbackrest'
 
     - name: Validate PITR target action
@@ -123,7 +130,7 @@
           - restore_pgcluster_selected_target_action in ['pause', 'promote', 'shutdown']
         fail_msg: >-
           'restore_target_action' must be pause, promote, or shutdown.
-      when: inventory_hostname == groups['master'][0]
+      when: inventory_hostname == patroni_bootstrap_host
 
     - name: Validate PITR target timeline
       ansible.builtin.assert:
@@ -131,7 +138,7 @@
           - restore_pgcluster_selected_target_timeline | string | trim | length > 0
         fail_msg: >-
           'restore_target_timeline' must not be empty.
-      when: inventory_hostname == groups['master'][0]
+      when: inventory_hostname == patroni_bootstrap_host
 
     - name: Validate that PITR targets do not conflict
       ansible.builtin.assert:
@@ -139,7 +146,7 @@
           - not (restore_immediate | default(false) | bool and restore_target_time | default('') | length > 0)
         fail_msg: >-
           'restore_immediate' and 'restore_target_time' cannot be used together.
-      when: inventory_hostname == groups['master'][0]
+      when: inventory_hostname == patroni_bootstrap_host
 
     - name: Check that a pgBackRest backup is available before restore
       ansible.builtin.command:
@@ -158,7 +165,7 @@
       changed_when: false
       failed_when: false
       when:
-        - inventory_hostname == groups['master'][0]
+        - inventory_hostname == patroni_bootstrap_host
         - restore_pgcluster_selected_tool == 'pgbackrest'
 
     - name: Stop restore when pgBackRest backup is unavailable
@@ -168,7 +175,7 @@
           {{ pgbackrest_restore_backup_name | default('') }}
           is not accessible for stanza '{{ pgbackrest_stanza }}'.
       when:
-        - inventory_hostname == groups['master'][0]
+        - inventory_hostname == patroni_bootstrap_host
         - restore_pgcluster_selected_tool == 'pgbackrest'
         - pgbackrest_backup_check_result.rc != 0
           or ((pgbackrest_backup_check_result.stdout | from_json)
@@ -184,7 +191,7 @@
       changed_when: false
       failed_when: false
       when:
-        - inventory_hostname == groups['master'][0]
+        - inventory_hostname == patroni_bootstrap_host
         - restore_pgcluster_selected_tool == 'wal-g'
 
     - name: Stop restore when WAL-G backup is unavailable
@@ -194,7 +201,7 @@
           {{ wal_g_restore_backup_name | default('') }}
           is not accessible.
       when:
-        - inventory_hostname == groups['master'][0]
+        - inventory_hostname == patroni_bootstrap_host
         - restore_pgcluster_selected_tool == 'wal-g'
         - >-
           wal_g_backup_check_result.rc != 0
@@ -237,7 +244,7 @@
       register: postgresql_log_file_result
       changed_when: false
       failed_when: false
-      when: inventory_hostname == groups['master'][0]
+      when: inventory_hostname == patroni_bootstrap_host
 
     - name: Collect PostgreSQL recovery details
       ansible.builtin.shell: |
@@ -276,7 +283,7 @@
       changed_when: false
       failed_when: false
       when:
-        - inventory_hostname == groups['master'][0]
+        - inventory_hostname == patroni_bootstrap_host
         - postgresql_log_file_result.rc | default(1) == 0
         - postgresql_log_file_result.stdout | default('') | trim | length > 0
 
@@ -286,7 +293,7 @@
           {{ postgresql_recovery_details_result.stdout_lines
              if postgresql_recovery_details_result.stdout_lines | default([]) | length > 0
              else ['PostgreSQL recovery details were not found in the current log file.'] }}
-      when: inventory_hostname == groups['master'][0]
+      when: inventory_hostname == patroni_bootstrap_host
 
     - name: PostgreSQL cluster restore completed
       ansible.builtin.include_role:

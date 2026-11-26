@@ -5,8 +5,11 @@
 # The playbook first checks the health of the current cluster, verifies the version of PostgreSQL, and ensures the new PostgreSQL is not running.
 # If these checks pass, the playbook switches back to the old PostgreSQL paths and restarts the Patroni service.
 
+- name: Resolve shard topology
+  ansible.builtin.import_playbook: shard_topology.yml
+
 - name: "vitabaks.autobase.pg_upgrade_rollback | Rollback the PostgreSQL upgrade"
-  hosts: postgres_cluster
+  hosts: "postgres_cluster:&autobase_{{ target_shard | default('all') }}"
   gather_facts: true
   any_errors_fatal: true
   tasks:
@@ -25,7 +28,7 @@
         name: "{{ item }}"
         groups: primary
       # As Primary we specify the host in the 'master' group in the inventory file.
-      loop: "{{ groups['master'] }}"
+      loop: "{{ groups['master'] | select('in', autobase_shards.selected) }}"
       changed_when: false
 
     - name: '[Prepare] Add hosts to group "secondary" (in-memory inventory)'
@@ -33,7 +36,7 @@
         name: "{{ item }}"
         groups: secondary
       # As Secondary we specify the hosts in the 'replica' group in the inventory file.
-      loop: "{{ groups['replica'] | default([]) }}"
+      loop: "{{ groups.get('replica', []) | select('in', autobase_shards.selected) }}"
       changed_when: false
       when: "'replica' in groups and groups['replica'] | length > 0"
 
@@ -58,7 +61,7 @@
     - always
 
 - name: "Perform Rollback"
-  hosts: "primary:secondary"
+  hosts: "primary:secondary:&autobase_{{ target_shard | default('all') }}"
   gather_facts: false
   become: true
   become_user: postgres

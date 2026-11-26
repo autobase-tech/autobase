@@ -147,4 +147,4 @@
     PGPASSFILE: "{{ _postgresql_cli_passfile_path }}"
   when:
     - inventory_hostname in groups['primary']
-    - groups.get('secondary', []) | length > 0
+    - patroni_shard_replicas | length > 0

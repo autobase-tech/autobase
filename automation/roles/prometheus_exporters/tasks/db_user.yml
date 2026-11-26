@@ -34,8 +34,8 @@
   vars:
     prometheus_exporters_db_primary_host: >-
       {{
-        (groups['primary'] | default([]))[0]
-        | default(groups['master'][0] if not postgresql_cluster_maintenance | default(false) | bool else '', true)
+        patroni_shard_primaries[0]
+        | default(patroni_bootstrap_host if not postgresql_cluster_maintenance | default(false) | bool else '', true)
       }}
   when:
     - postgres_exporter_install | bool or pgbouncer_exporter_install | bool

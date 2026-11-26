@@ -64,5 +64,6 @@
   ignore_errors: true # show the error and continue the playbook execution
   when:
     - not with_haproxy_load_balancing | bool
+    - not pgdog_install | bool
     - cluster_vip | length > 0
     - connection_pooler_pause | bool

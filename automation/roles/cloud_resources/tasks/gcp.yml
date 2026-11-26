@@ -40,11 +40,10 @@
       or explicitly set the project ID in the gcp_project variable.
   when: gcp_project | default('') | length < 1
 
-- name: "Set variable: gcp_region, gcp_requested_zone, gcp_server_names"
+- name: "Set variable: gcp_region, gcp_requested_zone"
   ansible.builtin.set_fact:
     gcp_region: "{{ server_location | regex_replace('-[a-z]$', '') }}"
     gcp_requested_zone: "{{ server_location if server_location is match('.*-[a-z]$') else '' }}"
-    gcp_server_names: "{{ query('ansible.builtin.sequence', 'start=1 count=' ~ server_count ~ ' format=' ~ server_name | lower ~ '%02d') }}"
 
 - name: "GCP: Gather information about regional zones"
   vitabaks.autobase.gcp_compute_zones_info:
@@ -70,15 +69,22 @@
     project: "{{ gcp_project }}"
     zone: "{{ item }}"
     filters:
-      - "name eq {{ server_name | lower | regex_escape }}[0-9]+"
+      - >-
+        {%- if cloud_server_shards -%}
+        {%-   for name in cloud_server_names -%}
+        (name = {{ name | to_json }}){{ ' OR ' if not loop.last else '' }}
+        {%-   endfor -%}
+        {%- else -%}
+        name eq {{ server_name | lower | regex_escape }}[0-9]+
+        {%- endif -%}
   loop: "{{ gcp_zone_info.resources | map(attribute='name') | list }}"
   register: gcp_compute_instance_info
 
 - name: "Set variable: gcp_existing_instances"
   ansible.builtin.set_fact:
     gcp_existing_instances: >-
-      {{ discovered_instances | selectattr('name', 'in', gcp_server_names) | list
-         if state == 'present' else discovered_instances }}
+      {{ discovered_instances | selectattr('name', 'in', cloud_server_names) | list
+         if state == 'present' or cloud_server_shards else discovered_instances }}
   vars:
     discovered_instances: "{{ gcp_compute_instance_info.results | map(attribute='resources') | flatten }}"
 
@@ -90,8 +96,8 @@
 
 - name: "GCP: Validate existing VM cluster membership"
   ansible.builtin.assert:
-    that: patroni_cluster_name in (item.tags['items'] | default([]))
-    fail_msg: "VM '{{ item.name }}' in '{{ item.zone | basename }}' does not have the cluster tag '{{ patroni_cluster_name }}'."
+    that: cluster_name in (item.tags['items'] | default([]))
+    fail_msg: "VM '{{ item.name }}' in '{{ item.zone | basename }}' does not have the cluster tag '{{ cluster_name }}'."
     quiet: true
   loop: "{{ gcp_existing_instances }}"
   loop_control:
@@ -213,7 +219,7 @@
         auth_kind: "serviceaccount"
         service_account_contents: "{{ gcp_service_account_contents }}"
         project: "{{ gcp_project | default('') }}"
-        name: "{{ patroni_cluster_name }}-ssh-public"
+        name: "{{ cluster_name }}-ssh-public"
         description: "Firewall rule for public SSH access to Postgres cluster servers"
         allowed:
           - ip_protocol: tcp
@@ -221,7 +227,7 @@
               - "{{ ansible_ssh_port | default(22) }}"
         source_ranges: "{{ ssh_public_allowed_ips | default('0.0.0.0/0', true) | split(',') }}"
         target_tags:
-          - "{{ patroni_cluster_name }}" # Only VMs with this tag will be affected
+          - "{{ cluster_name }}" # Only VMs with this tag will be affected
         network:
           selfLink: "{{ gcp_network_info.resources[0].selfLink }}"
         state: present
@@ -235,7 +241,7 @@
         auth_kind: "serviceaccount"
         service_account_contents: "{{ gcp_service_account_contents }}"
         project: "{{ gcp_project | default('') }}"
-        name: "{{ patroni_cluster_name }}-netdata-public"
+        name: "{{ cluster_name }}-netdata-public"
         description: "Firewall rule for public Netdata monitoring access"
         allowed:
           - ip_protocol: tcp
@@ -243,7 +249,7 @@
               - "{{ netdata_port | default('19999') }}"
         source_ranges: "{{ netdata_public_allowed_ips | default('0.0.0.0/0', true) | split(',') }}"
         target_tags:
-          - "{{ patroni_cluster_name }}" # Only VMs with this tag will be affected
+          - "{{ cluster_name }}" # Only VMs with this tag will be affected
         network:
           selfLink: "{{ gcp_network_info.resources[0].selfLink }}"
         state: present
@@ -257,14 +263,14 @@
         auth_kind: "serviceaccount"
         service_account_contents: "{{ gcp_service_account_contents }}"
         project: "{{ gcp_project | default('') }}"
-        name: "{{ patroni_cluster_name }}-prometheus"
+        name: "{{ cluster_name }}-prometheus"
         description: "Firewall rule for the metrics access of Prometheus servers"
         allowed:
           - ip_protocol: tcp
             ports: "{{ (cloud_metrics_ports + [patroni_restapi_port | default('8008')]) | map('string') | list }}"
         source_ranges: "{{ prometheus_allowed_ips | split(',') }}"
         target_tags:
-          - "{{ patroni_cluster_name }}" # Only VMs with this tag will be affected
+          - "{{ cluster_name }}" # Only VMs with this tag will be affected
         network:
           selfLink: "{{ gcp_network_info.resources[0].selfLink }}"
         state: present
@@ -277,14 +283,14 @@
         auth_kind: "serviceaccount"
         service_account_contents: "{{ gcp_service_account_contents }}"
         project: "{{ gcp_project | default('') }}"
-        name: "{{ patroni_cluster_name }}-database-public"
+        name: "{{ cluster_name }}-database-public"
         description: "Firewall rule for public database access"
         allowed:
           - ip_protocol: tcp
             ports: "{{ allowed_ports }}"
         source_ranges: "{{ database_public_allowed_ips | default('0.0.0.0/0', true) | split(',') }}"
         target_tags:
-          - "{{ patroni_cluster_name }}" # Only VMs with this tag will be affected
+          - "{{ cluster_name }}" # Only VMs with this tag will be affected
         network:
           selfLink: "{{ gcp_network_info.resources[0].selfLink }}"
         state: present
@@ -307,14 +313,14 @@
         auth_kind: "serviceaccount"
         service_account_contents: "{{ gcp_service_account_contents }}"
         project: "{{ gcp_project | default('') }}"
-        name: "{{ patroni_cluster_name }}-firewall-rule"
+        name: "{{ cluster_name }}-firewall-rule"
         description: "Firewall rule for Postgres cluster"
         allowed:
           - ip_protocol: tcp
             ports: "{{ allowed_ports }}"
         source_ranges: "{{ gcp_network_ip_ranges }}"
         target_tags:
-          - "{{ patroni_cluster_name }}" # Only VMs with this tag will be affected
+          - "{{ cluster_name }}" # Only VMs with this tag will be affected
         network:
           selfLink: "{{ gcp_network_info.resources[0].selfLink }}"
         state: present
@@ -349,7 +355,7 @@
         auth_kind: "serviceaccount"
         service_account_contents: "{{ gcp_service_account_contents }}"
         project: "{{ gcp_project | default('') }}"
-        name: "{{ patroni_cluster_name }}-lb-firewall-rule"
+        name: "{{ cluster_name }}-lb-firewall-rule"
         description: "Firewall rule for Health Checks and Load Balancer access to the database"
         priority: 900
         allowed:
@@ -361,7 +367,7 @@
           - "35.191.0.0/16"
           - "130.211.0.0/22"
         target_tags:
-          - "{{ patroni_cluster_name }}" # Only VMs with this tag will be affected
+          - "{{ cluster_name }}" # Only VMs with this tag will be affected
         network:
           selfLink: "{{ gcp_network_info.resources[0].selfLink }}"
         state: present
@@ -388,14 +394,14 @@
           on_host_maintenance: "{{ 'TERMINATE' if (server_spot | bool or server_type is search('metal')) else 'MIGRATE' }}"
           preemptible: "{{ server_spot | default(gcp_compute_instance_preemptible | default(false)) | bool }}"
         tags:
-          items: "{{ existing_vm.tags['items'] if item.name in zones_existing else [patroni_cluster_name] }}"
+          items: "{{ existing_vm.tags['items'] if item.name in zones_existing else [cluster_name] }}"
         status: "{{ gcp_instance_status | default('RUNNING') }}"
         state: present
         labels: >-
           {{
             existing_vm.labels | default({}) if item.name in zones_existing
             else dict(cloud_provider_tags.keys() | map('lower') | zip(cloud_provider_tags.values() | map('lower')))
-            | combine({'cluster': patroni_cluster_name | lower})
+            | combine({'cluster': cluster_name | lower})
           }}
       loop: "{{ server_zone_placement }}"
       loop_control:
@@ -467,8 +473,8 @@
             auth_kind: "serviceaccount"
             service_account_contents: "{{ gcp_service_account_contents }}"
             project: "{{ gcp_project | default('') }}"
-            name: "{{ patroni_cluster_name }}"
-            description: "{{ patroni_cluster_name }} instance group"
+            name: "{{ cluster_name }}"
+            description: "{{ cluster_name }} instance group"
             region: "{{ gcp_region }}"
             zone: "{{ item }}"
             named_ports:
@@ -511,7 +517,7 @@
             project: "{{ gcp_project | default('') }}"
             # GCP health check protocols are immutable; use a separate name when switching to PgDog.
             name: "{{ cloud_load_balancer_names[item] }}-hc"
-            description: "{{ patroni_cluster_name }} {{ item }} health check"
+            description: "{{ cluster_name }} {{ item }} health check"
             type: "{{ 'TCP' if pgdog_install | bool else patroni_restapi_protocol | upper }}"
             tcp_health_check: "{{ {'port': pgdog_listen_port | int} if pgdog_install | bool else omit }}"
             http_health_check: "{{ ({'port': patroni_restapi_port|int, 'request_path': '/' ~ item})
@@ -535,7 +541,7 @@
             service_account_contents: "{{ gcp_service_account_contents }}"
             project: "{{ gcp_project | default('') }}"
             name: "{{ cloud_load_balancer_names[item] }}"
-            description: "{{ patroni_cluster_name }} {{ item }} backend"
+            description: "{{ cluster_name }} {{ item }} backend"
             protocol: "TCP"
             port_name: "{{ 'pgbouncer' if connection_pooler_enabled | bool else 'postgres' }}"
             load_balancing_scheme: "EXTERNAL"
@@ -560,7 +566,7 @@
             service_account_contents: "{{ gcp_service_account_contents }}"
             project: "{{ gcp_project | default('') }}"
             name: "{{ cloud_load_balancer_names[item] }}-proxy"
-            description: "{{ patroni_cluster_name }} {{ item }} TCP Proxy"
+            description: "{{ cluster_name }} {{ item }} TCP Proxy"
             service:
               selfLink: "{{ backend_service.results | selectattr('item', 'equalto', item) | map(attribute='selfLink') | first }}"
             proxy_header: "NONE"
@@ -577,7 +583,7 @@
             service_account_contents: "{{ gcp_service_account_contents }}"
             project: "{{ gcp_project | default('') }}"
             name: "{{ cloud_load_balancer_names[item] }}-ip"
-            description: "{{ patroni_cluster_name }} {{ item }} load balancer IP address"
+            description: "{{ cluster_name }} {{ item }} load balancer IP address"
             address_type: "EXTERNAL"
             ip_version: "IPV4"
             state: present
@@ -593,7 +599,7 @@
             service_account_contents: "{{ gcp_service_account_contents }}"
             project: "{{ gcp_project | default('') }}"
             name: "{{ cloud_load_balancer_names[item] }}{{ '-fr' if item != 'pgdog' else '' }}"
-            description: "{{ patroni_cluster_name }} {{ item }} forwarding rule"
+            description: "{{ cluster_name }} {{ item }} forwarding rule"
             load_balancing_scheme: "EXTERNAL"
             ip_address: "{{ (load_balancer_ip.results | selectattr('item', 'equalto', item) | map(attribute='address') | first) }}"
             ip_protocol: "TCP"
@@ -614,8 +620,8 @@
             service_account_contents: "{{ gcp_service_account_contents }}"
             project: "{{ gcp_project | default('') }}"
             region: "{{ gcp_region }}"
-            name: "{{ patroni_cluster_name }}"
-            description: "{{ patroni_cluster_name }} PgDog internal backend"
+            name: "{{ cluster_name }}"
+            description: "{{ cluster_name }} PgDog internal backend"
             protocol: "TCP"
             load_balancing_scheme: "INTERNAL"
             network:
@@ -632,8 +638,8 @@
             service_account_contents: "{{ gcp_service_account_contents }}"
             project: "{{ gcp_project | default('') }}"
             region: "{{ gcp_region }}"
-            name: "{{ patroni_cluster_name }}-ip"
-            description: "{{ patroni_cluster_name }} PgDog internal load balancer IP address"
+            name: "{{ cluster_name }}-ip"
+            description: "{{ cluster_name }} PgDog internal load balancer IP address"
             address_type: "INTERNAL"
             subnetwork:
               selfLink: "{{ gcp_selected_subnetworks[0].selfLink }}"
@@ -647,8 +653,8 @@
             service_account_contents: "{{ gcp_service_account_contents }}"
             project: "{{ gcp_project | default('') }}"
             region: "{{ gcp_region }}"
-            name: "{{ patroni_cluster_name }}"
-            description: "{{ patroni_cluster_name }} PgDog internal forwarding rule"
+            name: "{{ cluster_name }}"
+            description: "{{ cluster_name }} PgDog internal forwarding rule"
             load_balancing_scheme: "INTERNAL"
             ip_address: "{{ gcp_internal_load_balancer_ip.address }}"
             ip_protocol: "TCP"
@@ -674,7 +680,7 @@
   ansible.builtin.debug:
     msg:
       id: "{{ item.id | default('N/A', true) }}"
-      name: "{{ server_name | lower }}{{ '%02d' % (idx + 1) | default('N/A', true) }}"
+      name: "{{ item.name | default('N/A', true) }}"
       image: "{{ item.disks[0].licenses[0] | basename | default('N/A', true) }}"
       type: "{{ item.machineType | basename | default('N/A', true) }}"
       zone: "{{ item.zone | basename | default('N/A', true) }}"
@@ -683,8 +689,7 @@
       private_ip: "{{ item.networkInterfaces[0].networkIP | default('N/A', true) }}"
   loop: "{{ server_result.results }}"
   loop_control:
-    index_var: idx
-    label: "{{ server_name | lower }}{{ '%02d' % (idx + 1) }}"
+    label: "{{ item.name | default('N/A', true) }}"
   when:
     - server_result.results is defined
     - item.networkInterfaces is defined
@@ -696,6 +701,7 @@
         ip_addresses: >-
           {{ ip_addresses | default([]) +
             [{
+              'name': item.name,
               'public_ip': item.networkInterfaces[0].accessConfigs[0].natIP | default(''),
               'private_ip': item.networkInterfaces[0].networkIP | default(''),
               'zone': item.zone | basename,
@@ -791,7 +797,7 @@
         service_account_contents: "{{ gcp_service_account_contents }}"
         project: "{{ gcp_project | default('') }}"
         region: "{{ gcp_region }}"
-        name: "{{ patroni_cluster_name }}"
+        name: "{{ cluster_name }}"
         state: absent
 
     - name: "GCP: [Load Balancer] Delete internal static IP address"
@@ -800,7 +806,7 @@
         service_account_contents: "{{ gcp_service_account_contents }}"
         project: "{{ gcp_project | default('') }}"
         region: "{{ gcp_region }}"
-        name: "{{ patroni_cluster_name }}-ip"
+        name: "{{ cluster_name }}-ip"
         state: absent
 
     - name: "GCP: [Load Balancer] Delete internal backend service"
@@ -809,7 +815,7 @@
         service_account_contents: "{{ gcp_service_account_contents }}"
         project: "{{ gcp_project | default('') }}"
         region: "{{ gcp_region }}"
-        name: "{{ patroni_cluster_name }}"
+        name: "{{ cluster_name }}"
         state: absent
 
     - name: "GCP: [Load Balancer] Delete health check"
@@ -828,7 +834,7 @@
         auth_kind: "serviceaccount"
         service_account_contents: "{{ gcp_service_account_contents }}"
         project: "{{ gcp_project | default('') }}"
-        name: "{{ patroni_cluster_name }}"
+        name: "{{ cluster_name }}"
         region: "{{ gcp_region }}"
         zone: "{{ item }}"
         state: absent
@@ -839,7 +845,7 @@
         auth_kind: "serviceaccount"
         service_account_contents: "{{ gcp_service_account_contents }}"
         project: "{{ gcp_project | default('') }}"
-        name: "{{ patroni_cluster_name }}-ssh-public"
+        name: "{{ cluster_name }}-ssh-public"
         state: absent
 
     - name: "GCP: Delete Netdata public firewall rule"
@@ -847,7 +853,7 @@
         auth_kind: "serviceaccount"
         service_account_contents: "{{ gcp_service_account_contents }}"
         project: "{{ gcp_project | default('') }}"
-        name: "{{ patroni_cluster_name }}-netdata-public"
+        name: "{{ cluster_name }}-netdata-public"
         state: absent
 
     - name: "GCP: Delete Prometheus firewall rule"
@@ -855,7 +861,7 @@
         auth_kind: "serviceaccount"
         service_account_contents: "{{ gcp_service_account_contents }}"
         project: "{{ gcp_project | default('') }}"
-        name: "{{ patroni_cluster_name }}-prometheus"
+        name: "{{ cluster_name }}-prometheus"
         state: absent
 
     - name: "GCP: Delete Database public firewall rule"
@@ -863,7 +869,7 @@
         auth_kind: "serviceaccount"
         service_account_contents: "{{ gcp_service_account_contents }}"
         project: "{{ gcp_project | default('') }}"
-        name: "{{ patroni_cluster_name }}-database-public"
+        name: "{{ cluster_name }}-database-public"
         state: absent
 
     - name: "GCP: Delete Postgres cluster firewall rule"
@@ -871,7 +877,7 @@
         auth_kind: "serviceaccount"
         service_account_contents: "{{ gcp_service_account_contents }}"
         project: "{{ gcp_project | default('') }}"
-        name: "{{ patroni_cluster_name }}-firewall-rule"
+        name: "{{ cluster_name }}-firewall-rule"
         state: absent
 
     - name: "GCP: Delete health checks and LB firewall rule"
@@ -879,7 +885,7 @@
         auth_kind: "serviceaccount"
         service_account_contents: "{{ gcp_service_account_contents }}"
         project: "{{ gcp_project | default('') }}"
-        name: "{{ patroni_cluster_name }}-lb-firewall-rule"
+        name: "{{ cluster_name }}-lb-firewall-rule"
         state: absent
 
   when: state == 'absent'

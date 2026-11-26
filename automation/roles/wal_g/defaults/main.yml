@@ -6,14 +6,14 @@ wal_g_cloud_backup_storage_suffix: >-
       if cloud_backup_storage_id | default('') | length > 0 else '') }}
 wal_g_default_cloud_bucket_name: >-
   {{ cloud_backup_bucket_name | default(
-    ((patroni_cluster_name | lower | regex_replace('[^a-z0-9]+', '-') | regex_replace('^-+|-+$', '') | default('postgres', true))[:43]
+    ((cluster_name | lower | regex_replace('[^a-z0-9]+', '-') | regex_replace('^-+|-+$', '') | default('postgres', true))[:43]
       | regex_replace('-+$', '')) ~ '-backup-' ~ wal_g_cloud_backup_storage_suffix
-    if wal_g_cloud_backup_storage_suffix | length > 0 else patroni_cluster_name ~ '-backup'
+    if wal_g_cloud_backup_storage_suffix | length > 0 else cluster_name ~ '-backup'
   ) }}
 wal_g_default_azure_account_name: >-
   {{ cloud_backup_azure_account_name | default(
-    (patroni_cluster_name | lower | regex_replace('[^a-z0-9]', '') | default('postgres', true))[:12] ~ wal_g_cloud_backup_storage_suffix
-    if wal_g_cloud_backup_storage_suffix | length > 0 else patroni_cluster_name | lower | replace('-', '') | truncate(24, true, '')
+    (cluster_name | lower | regex_replace('[^a-z0-9]', '') | default('postgres', true))[:12] ~ wal_g_cloud_backup_storage_suffix
+    if wal_g_cloud_backup_storage_suffix | length > 0 else cluster_name | lower | replace('-', '') | truncate(24, true, '')
   ) }}
 
 wal_g_architecture_map:

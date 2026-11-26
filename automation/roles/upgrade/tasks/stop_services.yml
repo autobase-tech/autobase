@@ -29,31 +29,15 @@
   delay: 2
   changed_when: false
   failed_when: false
+  ignore_errors: true # Roll back all selected shards if the lag does not drop.
   vars:
     psql_command: "{{ pg_old_bindir }}/psql -h 127.0.0.1 -p {{ postgresql_port }} -U {{ patroni_superuser_username }} -d postgres"
   environment:
     PGPASSFILE: "{{ _postgresql_cli_passfile_path }}"
   when:
     - inventory_hostname in groups['primary']
-    - groups.get('secondary', []) | length > 0
+    - patroni_shard_replicas | length > 0
     - pg_old_version | string is version('10', '>=')
-
-# Stop, if replication lag is high
-- block:
-    - name: "Print replication lag"
-      ansible.builtin.debug:
-        msg: "Current replication lag: {{ pg_lag_bytes.stdout | int | human_readable }}"
-
-    # rollback
-    - name: Perform rollback
-      ansible.builtin.include_tasks: rollback.yml
-
-    - name: "Replication lag detected"
-      ansible.builtin.fail:
-        msg: "There's a replication lag in the PostgreSQL cluster. Please try again later."
-  when:
-    - pg_lag_bytes.stdout is defined
-    - pg_lag_bytes.stdout|int >= max_replication_lag_bytes|int
 
 # for compatibility with Postgres 9.x
 - name: "Wait until replication lag is less than {{ max_replication_lag_bytes | default(0) | int | human_readable }}"
@@ -67,31 +51,35 @@
   delay: 2
   changed_when: false
   failed_when: false
+  ignore_errors: true # Roll back all selected shards if the lag does not drop.
   vars:
     psql_command: "{{ pg_old_bindir }}/psql -h 127.0.0.1 -p {{ postgresql_port }} -U {{ patroni_superuser_username }} -d postgres"
   environment:
     PGPASSFILE: "{{ _postgresql_cli_passfile_path }}"
   when:
     - inventory_hostname in groups['primary']
-    - groups.get('secondary', []) | length > 0
+    - patroni_shard_replicas | length > 0
     - pg_old_version | string is version('10', '<')
 
-# Stop, if replication lag is high (for 9x)
-- block:
-    - name: "Print replication lag"
-      ansible.builtin.debug:
-        msg: "Current replication lag: {{ pg_lag_bytes_9x.stdout | int | human_readable }}"
+- name: Check whether replication lag prevents upgrade
+  ansible.builtin.set_fact:
+    upgrade_replication_lag_exceeded: "{{ observed_lag | length > 0 and observed_lag | int >= max_replication_lag_bytes | int }}"
+  vars:
+    observed_lag: "{{ pg_lag_bytes.stdout | default(pg_lag_bytes_9x.stdout | default('')) }}"
+  when: inventory_hostname in groups['primary']
 
-    # rollback
+- name: Abort the upgrade if any selected shard exceeds the replication lag limit
+  when: >-
+    groups['primary'] | select('in', ansible_play_hosts)
+    | map('extract', hostvars, 'upgrade_replication_lag_exceeded') | select('equalto', true) | list | length > 0
+  block:
     - name: Perform rollback
       ansible.builtin.include_tasks: rollback.yml
 
-    - name: "Replication lag detected"
+    - name: Replication lag detected
       ansible.builtin.fail:
-        msg: "There's a replication lag in the PostgreSQL cluster. Please try again later."
-  when:
-    - pg_lag_bytes_9x.stdout is defined
-    - pg_lag_bytes_9x.stdout|int >= max_replication_lag_bytes|int
+        msg: A selected shard exceeds the maximum replication lag. Retry after its replicas catch up.
+      run_once: true
 
 # if 'pgbouncer_install' is 'true' and 'pgbouncer_pool_pause' is 'true'
 - name: Perform PAUSE on all pgbouncers servers
@@ -106,6 +94,7 @@
   when:
     - pgdog_install | bool
     - pgdog_pool_pause | bool
+    - target_shard | default('all') == 'all'
 
 # Stop PostgreSQL (if replication lag is 0 bytes)
 - name: Stop PostgreSQL on the leader

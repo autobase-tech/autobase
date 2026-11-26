@@ -1,0 +1,86 @@
+---
+# Four PostgreSQL shards behind PgDog, with an etcd quorum on three bootstrap nodes.
+all:
+  vars:
+    ansible_connection: ssh
+    ansible_user: root
+    ansible_port: 22
+    ansible_ssh_private_key_file: /home/ubuntu/.ssh/id_rsa
+    ansible_python_interpreter: /usr/bin/python3
+    # ansible_ssh_common_args: "-o ProxyJump=ubuntu@bastion.example.com"
+    cluster_name: orders-db
+    postgresql_users:
+      - name: orders_user
+        password: "change-me" # Replace before deployment.
+    postgresql_databases:
+      - db: orders
+        owner: orders_user
+    pgdog_install: true
+#    pgdog_sharded_tables:
+#      - database: orders
+#        name: users
+#        column: id
+#        data_type: bigint
+#      - database: orders
+#        name: orders
+#        column: user_id
+#        data_type: bigint
+
+  children:
+    postgres_cluster:
+      vars:
+        hostname: "{{ inventory_hostname }}"
+        bind_address: "{{ ansible_host }}"
+      children:
+        master:
+          hosts:
+            orders-db-shard0-pg01:
+              ansible_host: 10.128.64.140
+              shard_id: 0
+            orders-db-shard1-pg01:
+              ansible_host: 10.128.64.142
+              shard_id: 1
+            orders-db-shard2-pg01:
+              ansible_host: 10.128.64.144
+              shard_id: 2
+            orders-db-shard3-pg01:
+              ansible_host: 10.128.64.146
+              shard_id: 3
+        replica:
+          hosts:
+            orders-db-shard0-pg02:
+              ansible_host: 10.128.64.141
+              shard_id: 0
+            orders-db-shard1-pg02:
+              ansible_host: 10.128.64.143
+              shard_id: 1
+            orders-db-shard2-pg02:
+              ansible_host: 10.128.64.145
+              shard_id: 2
+            orders-db-shard3-pg02:
+              ansible_host: 10.128.64.147
+              shard_id: 3
+    etcd_cluster:
+      hosts:
+        orders-db-shard0-pg01:
+        orders-db-shard1-pg01:
+        orders-db-shard2-pg01:
+    # With dcs_type: consul, define consul_instances instead of etcd_cluster.
+    # consul_instances:
+    #   vars:
+    #     consul_datacenter: dc1
+    #     consul_node_role: client
+    #   hosts:
+    #     orders-db-shard0-pg01: {consul_node_role: server}
+    #     orders-db-shard1-pg01: {consul_node_role: server}
+    #     orders-db-shard2-pg01: {consul_node_role: server}
+    #     orders-db-shard3-pg01:
+    #     orders-db-shard0-pg02:
+    #     orders-db-shard1-pg02:
+    #     orders-db-shard2-pg02:
+    #     orders-db-shard3-pg02:
+    # Optional dedicated pgBackRest repository host
+    # pgbackrest:
+    #   hosts:
+    #     repo01:
+    #       ansible_host: 10.128.64.150

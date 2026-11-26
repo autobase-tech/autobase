@@ -3,11 +3,16 @@
 # When facts for an unavailable node are missing, its name is resolved through DCS or Patroni membership addresses.
 # Use its inventory_hostname if its name is no longer present in cluster membership.
 # Local service and data cleanup is skipped on unavailable nodes.
+- name: Resolve shard topology
+  ansible.builtin.import_playbook: shard_topology.yml
+
 - name: vitabaks.autobase.remove_node | Prepare and perform pre-checks
   hosts: postgres_cluster:etcd_cluster:consul_instances
   become: true
   gather_facts: false
   any_errors_fatal: true
+  roles:
+    - vitabaks.autobase.common
 
   pre_tasks:
     - name: Validate that node_to_remove is specified
@@ -29,6 +34,16 @@
       ansible.builtin.group_by:
         key: removal_available_nodes
       when: removal_node_facts is not unreachable
+      tags: always
+
+    - name: Verify the installed topology before updating surviving routers
+      ansible.builtin.include_tasks:
+        file: tasks/shard_identity.yml
+        apply:
+          tags: always
+      when:
+        - removal_node_facts is not unreachable
+        - inventory_hostname in groups.get('postgres_cluster', [])
       tags: always
 
     - name: Group available nodes for cluster queries
@@ -59,10 +74,10 @@
           changed_when: false
           delegate_to: "{{ query_host }}"
           vars:
-            query_host: >-
-              {{ groups['postgres_cluster'] | default([]) | intersect(groups['removal_query_nodes'] | default([]))
-                 | first | default('localhost') }}
-          when: groups['postgres_cluster'] | default([]) | intersect(groups['removal_query_nodes'] | default([])) | length > 0
+            shard_query_hosts: "{{ autobase_shards.members[item] | select('in', groups.get('removal_query_nodes', [])) | list }}"
+            query_host: "{{ shard_query_hosts | first | default('localhost') }}"
+          loop: "{{ autobase_shards.ids }}"
+          when: shard_query_hosts | length > 0
 
         - name: Fetch etcd cluster members before removal
           run_once: true # noqa run-once
@@ -138,7 +153,8 @@
               {%- endfor -%}
               {{- result -}}
           vars:
-            patroni_members: "{{ patronictl_list_before.stdout | default('[]') | from_json }}"
+            patroni_members: >-
+              {{ patronictl_list_before.results | default([]) | selectattr('stdout', 'defined') | map(attribute='stdout') | map('from_json') | flatten }}
             etcd_members: "{{ (etcd_members_list_before.stdout | default('{}') | from_json).get('members', []) }}"
             consul_members: "{{ (consul_members_list_before.stdout_lines | default([]))[1:] }}"
       tags: always
@@ -157,6 +173,16 @@
       ansible.builtin.set_fact:
         target_node: "{{ removal_candidates[0].host }}"
         target_node_name: "{{ removal_candidates[0].name }}"
+      tags: always
+
+    - name: Validate shard membership of the node to remove
+      ansible.builtin.assert:
+        that:
+          - target_node in autobase_shards.selected
+          - autobase_shards.members[autobase_shards.by_host[target_node]]
+            | intersect(groups.get('removal_available_nodes', [])) | difference([target_node]) | length > 0
+        fail_msg: Removing this node would remove the last reachable member of a shard or affect a different shard.
+      when: autobase_shards.explicit and target_node in autobase_shards.by_host
       tags: always
 
     - name: Group remaining PostgreSQL nodes
@@ -214,7 +240,9 @@
             PATH: "{{ hostvars[query_host].ansible_env.PATH | default('/usr/bin:/bin') }}:/usr/bin:/usr/local/bin"
           delegate_to: "{{ query_host }}"
           vars:
-            query_host: "{{ groups['removal_postgres_survivors'] | default([]) | first | default('localhost') }}"
+            query_host: >-
+              {{ groups['removal_postgres_survivors'] | select('in', autobase_shards.members[autobase_shards.by_host[target_node]])
+                 | first if autobase_shards.explicit else groups['removal_postgres_survivors'] | first }}
 
         - name: Show Patroni cluster members before removal
           run_once: true # noqa run-once

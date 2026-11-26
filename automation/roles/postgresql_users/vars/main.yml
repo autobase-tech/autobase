@@ -1,0 +1,7 @@
+---
+postgresql_users_normalized: "{{ postgresql_users | default([], true) | flatten(1) }}"
+postgresql_users_existing_names: >-
+  {{ postgresql_existing_users_result.query_result | default([])
+     | selectattr('rolname', 'defined') | map(attribute='rolname') | list }}
+postgresql_users_provision_hosts: "{{ groups.get('autobase_provision_primaries', []) | select('in', ansible_play_hosts) | list }}"
+postgresql_users_credential_source: "{{ postgresql_users_provision_hosts | first }}"

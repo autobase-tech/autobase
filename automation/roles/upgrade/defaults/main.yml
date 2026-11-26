@@ -95,7 +95,7 @@ pg_slow_active_query_treshold: 1000
 pg_slow_active_query_treshold_to_terminate: 100 # (0 = terminate all active backends)
 
 # if 'pgdog_install' is 'true'
-pgdog_pool_pause: true # or 'false' if you don't want to hold the client queries in PgDog during upgrade.
+pgdog_pool_pause: "{{ target_shard | default('all') == 'all' }}" # or 'false' if you don't want to hold the client queries in PgDog during upgrade.
 # PgDog uses the same 'pg_pool_pause_terminate_after', 'pg_pool_pause_stop_after' and
 # 'pg_slow_active_query_treshold_to_terminate' settings. It waits for all current transactions, regardless of query age.
 # Its maintenance mode has no timeout of its own to set.

@@ -1,5 +1,5 @@
 [template]
-prefix = "/{{ patroni_etcd_namespace | default('service') }}/{{ patroni_cluster_name }}"
+prefix = "/{{ patroni_etcd_namespace | default('service') }}/{{ patroni_scope }}"
 src = "haproxy.tmpl"
 dest = "/etc/haproxy/haproxy.cfg"
 check_cmd = "/usr/sbin/haproxy -c -f {% raw %}{{ .src }}{% endraw %}"

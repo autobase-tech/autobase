@@ -1,0 +1,70 @@
+---
+- name: Resolve Patroni shards from inventory
+  hosts: postgres_cluster:pgbackrest:etcd_cluster:consul_instances:balancers
+  gather_facts: false
+  any_errors_fatal: true
+  tags: always
+  roles:
+    - vitabaks.autobase.common
+  tasks:
+    - name: Validate the complete logical cluster topology
+      ansible.builtin.set_fact:
+        autobase_shards: "{{ groups | vitabaks.autobase.shard_topology(hostvars, target_shard | default('all')) }}"
+      run_once: true # noqa run-once
+
+    - name: Group PostgreSQL members and their repository by shard
+      ansible.builtin.group_by:
+        key: "autobase_{{ item }}"
+      loop: "{{ ['all'] + member_shards }}"
+      vars:
+        member_shards: >-
+          {{ [shard_id | default(0)] if 'postgres_cluster' in group_names else
+             autobase_shards.ids if 'pgbackrest' in group_names else [] }}
+      changed_when: false
+
+    - name: Validate routing for explicitly sharded inventories
+      ansible.builtin.assert:
+        that:
+          - pgdog_install | default(false) | bool
+          - patroni_scope == expected_scope
+          - not (pgbackrest_install | default(false) | bool) or pgbackrest_stanza | default(expected_scope) == expected_scope
+          - not (pg_probackup_install | default(false) | bool) or pg_probackup_instance | default(expected_scope) == expected_scope
+        fail_msg: Explicit shards require PgDog and a backup namespace matching the generated Patroni scope.
+      vars:
+        expected_scope: "{{ cluster_name }}-shard{{ shard_id }}"
+      when: autobase_shards.explicit and inventory_hostname in groups['postgres_cluster']
+
+    - name: Reject cluster_vip when using PgDog
+      ansible.builtin.assert:
+        that: cluster_vip == ''
+        fail_msg: Clear cluster_vip when using PgDog. Use a TCP load balancer or a list of PgDog hosts.
+      when:
+        - pgdog_install | bool
+        - inventory_hostname in groups.get('postgres_cluster', [])
+
+    - name: Verify the installed topology before changing cluster membership or routing
+      ansible.builtin.include_tasks: tasks/shard_identity.yml
+      when:
+        - shard_check_identity | default(false) | bool
+        - inventory_hostname in groups['postgres_cluster']
+        - not shard_identity_selected_only | default(false) | bool or inventory_hostname in autobase_shards.selected
+
+    # Patroni needs the shared DCS endpoints and every PgDog source address when
+    # rendering pg_hba.conf. Inventories with bind_address need no remote lookup.
+    - name: Discover addresses needed to render configuration for a selected shard
+      when:
+        - shard_config_addresses | default(false) | bool and target_shard | default('all') != 'all'
+        - autobase_shards.explicit and bind_address is not defined
+        - inventory_hostname in groups.get('postgres_cluster', []) + groups.get('etcd_cluster', [])
+      block:
+        - name: Gather platform facts for backend address discovery
+          ansible.builtin.setup:
+            gather_subset: [min]
+          when: ansible_os_family is undefined
+
+        - name: Resolve backend address
+          ansible.builtin.include_role:
+            name: vitabaks.autobase.bind_address
+            apply:
+              become: true
+              tags: always

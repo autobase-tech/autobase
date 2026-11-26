@@ -7,7 +7,7 @@ This role installs and configures [etcd](https://etcd.io/), a distributed, relia
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `etcd_version` | `3.6.13` | etcd version. |
-| `etcd_cluster_name` | `"etcd-{{ patroni_cluster_name }}"` | etcd cluster name (token). |
+| `etcd_cluster_name` | `"etcd-{{ cluster_name }}"` | etcd cluster name (token). |
 | `etcd_bind_address` | `""` | IP address to bind etcd services (tasks fall back to `bind_address` when unset). |
 | `etcd_conf_dir` | `/etc/etcd` | etcd configuration directory. |
 | `etcd_data_dir` | `/var/lib/etcd` | etcd data directory. |

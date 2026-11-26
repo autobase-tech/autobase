@@ -38,7 +38,9 @@
           - "The PostgreSQL upgrade has encountered an error and a rollback has been initiated."
           - "For detailed information, please consult the pg_upgrade log located at '{{ pg_new_datadir }}/pg_upgrade_output.d'"
       run_once: true
-  when: hostvars[groups['primary'][0]].pg_upgrade_result is failed
+  when: >-
+    groups['primary'] | select('in', ansible_play_hosts) | map('extract', hostvars, 'pg_upgrade_result')
+    | select('failed') | list | length > 0
 
 # If the length of the pg_upgrade_result.stdout_lines is greater than 100 lines,
 # the upgrade_output variable will include the first 70 lines, an ellipsis (...),

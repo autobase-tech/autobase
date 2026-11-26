@@ -11,7 +11,20 @@ proxy_env: {} # yamllint disable rule:braces
 # Main cluster variables
 ############################################################
 
-patroni_cluster_name: "postgres-cluster" # the cluster name (must be unique for each cluster)
+# Logical cluster name shared by all PostgreSQL shards.
+cluster_name: "{{ patroni_cluster_name | default('postgres-cluster') }}"
+# Fall back to patroni_cluster_name for backward compatibility with existing inventories.
+
+# Patroni DCS scope and default namespace for shard-local backups.
+# An unsharded cluster uses cluster_name as its scope.
+patroni_scope: "{{ cluster_name ~ ('-shard' ~ shard_id if shard_id is defined else '') }}"
+
+# Members and roles of the current shard, or of the whole cluster without shard_id.
+# The bootstrap host comes from inventory. Primary and replica lists use discovered Patroni roles.
+patroni_shard_hosts: "{{ autobase_shards.members[shard_id] if shard_id is defined else groups.get('postgres_cluster', []) }}"
+patroni_bootstrap_host: "{{ autobase_shards.bootstrap[shard_id] if shard_id is defined else groups['master'][0] }}"
+patroni_shard_primaries: "{{ groups.get('primary', []) | select('in', patroni_shard_hosts) | list if shard_id is defined else groups.get('primary', []) }}"
+patroni_shard_replicas: "{{ groups.get('secondary', []) | select('in', patroni_shard_hosts) | list if shard_id is defined else groups.get('secondary', []) }}"
 
 patroni_superuser_username: "postgres"
 patroni_superuser_password: "" # Please specify a password. If not defined, will be generated automatically during deployment.
@@ -29,98 +42,6 @@ patroni_replication_auth_options:
 synchronous_mode: false # or 'true' for enable synchronous database replication
 synchronous_mode_strict: false # if 'true' then block all client writes to the master, when a synchronous replica is not available
 synchronous_node_count: 1 # number of synchronous standby databases
-
-# Load Balancing
-with_haproxy_load_balancing: false # or 'true' to use HAProxy with PgBouncer or directly with PostgreSQL; incompatible with PgDog.
-haproxy_listen_port:
-  master: 5000
-  replicas: 5001
-  replicas_sync: 5002
-  replicas_async: 5003
-  # The following ('_direct') ports are used for direct connections to the PostgreSQL database,
-  # bypassing the PgBouncer connection pool (if 'pgbouncer_install' is 'true').
-  # Uncomment the relevant lines if you need to set up direct connections.
-  #  master_direct: 6000
-  #  replicas_direct: 6001
-  #  replicas_sync_direct: 6002
-  #  replicas_async_direct: 6003
-  stats: 7000
-# Set to false to disable the synchronous / asynchronous replica listeners
-haproxy_replicas_sync_enabled: true # listener "replicas_sync" (haproxy_listen_port.replicas_sync)
-haproxy_replicas_async_enabled: true # listener "replicas_async" (haproxy_listen_port.replicas_async)
-haproxy_maxconn:
-  global: 100000
-  master: 10000
-  replica: 10000
-haproxy_timeout:
-  client: "60m"
-  server: "60m"
-# Per-server health-check / failover tuning (applied via 'default-server').
-# 'on_marked_down' controls what happens to active sessions when a backend is
-# marked down: the default "shutdown-sessions" terminates in-flight connections
-# (e.g. long-running queries) on failover. Set it to "" (empty) to keep active
-# sessions alive when a replica is marked down.
-haproxy_default_server:
-  inter: "3s"
-  fastinter: "1s"
-  fall: 3
-  rise_master: 4
-  rise_replica: 2
-  on_marked_down: "shutdown-sessions"
-# Expose the HAProxy metrics in the Prometheus format on this port (http://NODE:PORT/metrics), or "" to disable.
-# Requires HAProxy built with the Prometheus exporter ('haproxy -vv' shows "Prometheus exporter").
-haproxy_prometheus_port: ""
-# Optionally declare log format for haproxy.
-# Uncomment following lines (and remove extra space in front of variable definition) for JSON structured log format.
-# haproxy_log_format: "{
-#  \"pid\":%pid,\
-#  \"haproxy_frontend_type\":\"tcp\",\
-#  \"haproxy_process_concurrent_connections\":%ac,\
-#  \"haproxy_frontend_concurrent_connections\":%fc,\
-#  \"haproxy_backend_concurrent_connections\":%bc,\
-#  \"haproxy_server_concurrent_connections\":%sc,\
-#  \"haproxy_backend_queue\":%bq,\
-#  \"haproxy_server_queue\":%sq,\
-#  \"haproxy_queue_wait_time\":%Tw,\
-#  \"haproxy_server_wait_time\":%Tc,\
-#  \"response_time\":%Td,\
-#  \"session_duration\":%Tt,\
-#  \"request_termination_state\":\"%tsc\",\
-#  \"haproxy_server_connection_retries\":%rc,\
-#  \"remote_addr\":\"%ci\",\
-#  \"remote_port\":%cp,\
-#  \"frontend_addr\":\"%fi\",\
-#  \"frontend_port\":%fp,\
-#  \"frontend_ssl_version\":\"%sslv\",\
-#  \"frontend_ssl_ciphers\":\"%sslc\",\
-#  \"haproxy_frontend_name\":\"%f\",\
-#  \"haproxy_backend_name\":\"%b\",\
-#  \"haproxy_server_name\":\"%s\",\
-#  \"response_size\":%B,\
-#  \"request_size\":%U\
-#  }"
-
-# if with_haproxy_load_balancing: true
-confd_install: true # install confd for HAProxy config management (optional).
-confd_version: 0.33.1
-
-cluster_vip: "" # IP address for client access to the databases in the cluster (optional).
-vip_interface: "{{ ansible_default_ipv4.interface }}" # interface name (e.g., "ens32").
-# Note: VIP-based solutions such as keepalived or vip-manager may not function correctly in cloud environments.
-
-# keepalived (if 'cluster_vip' is specified and 'with_haproxy_load_balancing' is 'true')
-keepalived_virtual_router_id: "{{ cluster_vip.split('.')[3] | int }}" # The last octet of 'cluster_vip' IP address is used by default.
-# virtual_router_id - must be unique in the network (available values are 0..255).
-
-# vip-manager (if 'cluster_vip' is specified and 'with_haproxy_load_balancing' is 'false')
-# renovate: datasource=github-releases depName=cybertec-postgresql/vip-manager extractVersion=^v(?<version>.*)$
-vip_manager_version: 4.2.0
-vip_manager_conf: "/etc/patroni/vip-manager.yml"
-vip_manager_interval: "1000" # time (in milliseconds) after which vip-manager wakes up and checks if it needs to register or release ip addresses.
-vip_manager_iface: "{{ vip_interface }}" # interface to which the virtual ip will be added
-vip_manager_ip: "{{ cluster_vip }}" # the virtual ip address to manage
-vip_manager_mask: "24" # netmask for the virtual ip
-vip_manager_dcs_type: "{{ dcs_type }}" # etcd, consul or patroni
 
 # TLS certificate
 tls_cert_generate: "{{ tls_enable | default(true) }}" # or 'false' if you do not want to generate a self-signed certificate.
@@ -147,7 +68,7 @@ etcd_installation_method: "binary" # binary -> install from repo such as https:/
 etcd_bin_dir: "{{ '/usr/bin' if etcd_installation_method == pkg_type else '/usr/local/bin' }}"
 etcd_conf_dir: "/etc/etcd"
 etcd_data_dir: "/var/lib/etcd"
-etcd_cluster_name: "etcd-{{ patroni_cluster_name }}" # ETCD_INITIAL_CLUSTER_TOKEN
+etcd_cluster_name: "etcd-{{ cluster_name }}" # ETCD_INITIAL_CLUSTER_TOKEN
 etcd_on_dedicated_nodes: "{{ groups['etcd_cluster'] | difference(groups['postgres_cluster']) | length > 0 }}" # 'true' or 'false'
 # TLS
 # Enables TLS encryption with a self-signed certificate if 'tls_cert_generate' is true.
@@ -222,8 +143,8 @@ consul_join: [] # List of LAN servers of an existing consul cluster, to join.
 consul_services: "{{ consul_pgdog_services if pgdog_install | bool else consul_postgresql_services }}"
 consul_pgdog_address: "{{ bind_address if pgdog_listen_addr in ['0.0.0.0', '::'] else pgdog_listen_addr }}"
 consul_pgdog_services:
-  - name: "{{ patroni_cluster_name }}"
-    id: "{{ patroni_cluster_name }}-pgdog"
+  - name: "{{ cluster_name }}"
+    id: "{{ cluster_name }}-pgdog"
     tags: ["pgdog"]
     address: "{{ consul_pgdog_address }}"
     port: "{{ pgdog_listen_port }}"
@@ -231,60 +152,6 @@ consul_pgdog_services:
       - tcp: "{{ consul_pgdog_address }}:{{ pgdog_listen_port }}"
         interval: "5s"
         timeout: "2s"
-
-consul_postgresql_services:
-  - name: "{{ patroni_cluster_name }}"
-    id: "{{ patroni_cluster_name }}-master"
-    tags: ["master", "primary"]
-    port: "{{ connection_pooler_port if connection_pooler_enabled | bool else postgresql_port }}"
-    checks:
-      - http: >-
-          {{ patroni_restapi_protocol }}://{{ patroni_restapi_connect_addr
-          | default(patroni_bind_address
-          | default(bind_address, true), true) }}:{{ patroni_restapi_port }}/primary
-        tls_skip_verify: true
-        interval: "2s"
-      - args: ["systemctl", "status", "{{ connection_pooler_name | lower if connection_pooler_enabled | bool else 'patroni' }}"]
-        interval: "5s"
-  - name: "{{ patroni_cluster_name }}"
-    id: "{{ patroni_cluster_name }}-replica"
-    tags: ["replica"]
-    port: "{{ connection_pooler_port if connection_pooler_enabled | bool else postgresql_port }}"
-    checks:
-      - http: >-
-          {{ patroni_restapi_protocol }}://{{ patroni_restapi_connect_addr
-          | default(patroni_bind_address
-          | default(bind_address, true), true) }}:{{ patroni_restapi_port }}/replica?lag={{ patroni_maximum_lag_on_replica }}
-        tls_skip_verify: true
-        interval: "2s"
-      - args: ["systemctl", "status", "{{ connection_pooler_name | lower if connection_pooler_enabled | bool else 'patroni' }}"]
-        interval: "5s"
-#  - name: "{{ patroni_cluster_name }}"
-#    id: "{{ patroni_cluster_name }}-sync-replica"
-#    tags: ['sync-replica']
-#    port: "{{ connection_pooler_port if connection_pooler_enabled | bool else postgresql_port }}"
-#    checks:
-#      - http: >-
-#          {{ patroni_restapi_protocol }}://{{ patroni_restapi_connect_addr
-#          | default(patroni_bind_address
-#          | default(bind_address, true), true) }}:{{ patroni_restapi_port }}/sync
-#        tls_skip_verify: true
-#        interval: "2s"
-#      - args: ["systemctl", "status", "{{ connection_pooler_name | lower if connection_pooler_enabled | bool else 'patroni' }}"]
-#        interval: "5s"
-#  - name: "{{ patroni_cluster_name }}"
-#    id: "{{ patroni_cluster_name }}-async-replica"
-#    tags: ['async-replica']
-#    port: "{{ connection_pooler_port if connection_pooler_enabled | bool else postgresql_port }}"
-#    checks:
-#      - http: >-
-#          {{ patroni_restapi_protocol }}://{{ patroni_restapi_connect_addr
-#          | default(patroni_bind_address
-#          | default(bind_address, true), true) }}:{{ patroni_restapi_port }}/async?lag={{ patroni_maximum_lag_on_replica }}
-#        tls_skip_verify: true
-#        interval: "2s"
-#      - args: ["systemctl", "status", "{{ connection_pooler_name | lower if connection_pooler_enabled | bool else 'patroni' }}"]
-#        interval: "5s"
 
 ############################################################
 # PostgreSQL parameters
@@ -573,59 +440,6 @@ postgresql_index_maintenance_cron_jobs:
     job: "/usr/local/bin/pg_auto_reindexer --jobs={{ postgresql_index_maintenance.jobs }} --index-bloat={{ postgresql_index_maintenance.bloat_threshold }} --index-minsize={{ postgresql_index_maintenance.size_threshold }} --maintenance-start={{ postgresql_index_maintenance.start }} --maintenance-stop={{ postgresql_index_maintenance.stop }}"
 
 ############################################################
-# PgBouncer parameters
-############################################################
-
-pgbouncer_install: "{{ not (pgdog_install | bool) }}" # Defaults to false with PgDog; can be explicitly disabled otherwise.
-pgbouncer_processes: 1 # Number of pgbouncer processes to be used. Multiple processes use the so_reuseport option for better performance.
-pgbouncer_conf_dir: "/etc/pgbouncer"
-pgbouncer_log_dir: "/var/log/pgbouncer"
-pgbouncer_listen_addr: "0.0.0.0" # Listen on all interfaces. Or use "{{ bind_address }}" to listen on a specific IP address.
-pgbouncer_listen_port: 6432
-pgbouncer_max_client_conn: 100000
-pgbouncer_max_db_connections: 10000
-pgbouncer_max_prepared_statements: 1024
-pgbouncer_query_wait_timeout: 120
-pgbouncer_default_pool_size: 100
-pgbouncer_default_pool_mode: "session"
-pgbouncer_admin_users: "{{ patroni_superuser_username }}" # comma-separated list of users, who are allowed to change settings
-pgbouncer_stats_users: "{{ patroni_superuser_username }}" # comma-separated list of users who are just allowed to use SHOW command
-pgbouncer_ignore_startup_parameters: "extra_float_digits,geqo,search_path"
-pgbouncer_auth_type: "{{ postgresql_password_encryption_algorithm }}"
-pgbouncer_auth_user: true # or 'false' if you want to manage the list of users for authentication in the database via userlist.txt
-pgbouncer_auth_username: pgbouncer # user who can query the database via the user_search function
-pgbouncer_auth_password: "" # (optional) required if there is no trust rule in pg_hba for pgbouncer_auth_username
-pgbouncer_auth_dbname: "postgres"
-pgbouncer_tls_dir: "{{ tls_dir }}"
-pgbouncer_client_tls_sslmode: "{{ 'require' if tls_cert_generate | bool else 'disable' }}"
-pgbouncer_client_tls_key_file: "{{ tls_privatekey }}"
-pgbouncer_client_tls_cert_file: "{{ tls_cert }}"
-pgbouncer_client_tls_ca_file: "{{ tls_ca_cert }}"
-pgbouncer_client_tls_protocols: "secure" # allowed values: tlsv1.0, tlsv1.1, tlsv1.2, tlsv1.3, all, secure (tlsv1.2,tlsv1.3)
-pgbouncer_client_tls_ciphers: "secure" # allowed values: default, secure, fast, normal, all (not recommended)
-pgbouncer_server_tls_sslmode: "{{ 'require' if tls_cert_generate | bool else 'disable' }}"
-pgbouncer_server_tls_protocols: "secure"
-pgbouncer_server_tls_ciphers: "secure"
-pgbouncer_server_tls_key_file: "{{ tls_privatekey }}"
-pgbouncer_server_tls_cert_file: "{{ tls_cert }}"
-pgbouncer_server_tls_ca_file: "{{ tls_ca_cert }}"
-
-pgbouncer_pools:
-  - { name: "postgres", dbname: "postgres", pool_parameters: "" }
-#  - { name: "mydatabase", dbname: "mydatabase", pool_parameters: "pool_size=20 pool_mode=transaction" }
-#  - { name: "", dbname: "", pool_parameters: "" }
-#  - { name: "", dbname: "", pool_parameters: "" }
-
-############################################################
-# Connection pooler (derived, do not override)
-############################################################
-
-# Resolves to the pooler selected below: 'pgbouncer_install' or 'pgdog_install'.
-connection_pooler_enabled: "{{ pgbouncer_install | bool or pgdog_install | bool }}"
-connection_pooler_name: "{{ 'PgDog' if pgdog_install | bool else 'PgBouncer' }}"
-connection_pooler_port: "{{ pgdog_listen_port if pgdog_install | bool else pgbouncer_listen_port }}"
-
-############################################################
 # PgDog parameters
 ############################################################
 
@@ -640,7 +454,7 @@ connection_pooler_port: "{{ pgdog_listen_port if pgdog_install | bool else pgbou
 
 pgdog_install: false # or 'true' to use PgDog instead of PgBouncer and HAProxy
 # renovate: datasource=github-releases depName=pgdogdev/pgdog extractVersion=^v(?<version>.*)$
-pgdog_version: 0.1.64
+pgdog_version: 0.1.66
 pgdog_conf_dir: "/etc/pgdog"
 pgdog_listen_addr: "0.0.0.0" # Listen on all interfaces. Or use "{{ bind_address }}" to listen on a specific IP address.
 pgdog_listen_port: 6432
@@ -694,6 +508,233 @@ pgdog_pools:
 # Only required if 'pgdog_passthrough_auth' is "disabled", or to customize the pool of a user.
 pgdog_users: []
 #  - { name: "mydb-user", database: "mydatabase", password: "mydb-user-pass", pool_size: 20 }
+
+# [[sharded_tables]] rules (database, name, column, data_type)
+pgdog_sharded_tables: []
+#  - database: orders
+#    name: users
+#    column: id
+#    data_type: bigint
+#  - database: orders
+#    name: orders
+#    column: user_id
+#    data_type: bigint
+
+# Resolves to the pooler selected below: 'pgdog_install' or 'pgbouncer_install'.
+connection_pooler_enabled: "{{ pgdog_install | bool or pgbouncer_install | bool }}"
+connection_pooler_name: "{{ 'PgDog' if pgdog_install | bool else 'PgBouncer' }}"
+connection_pooler_port: "{{ pgdog_listen_port if pgdog_install | bool else pgbouncer_listen_port }}"
+
+############################################################
+# Legacy client connectivity
+############################################################
+# Client access settings for compatibility with deployments without PgDog.
+
+# PgBouncer
+pgbouncer_install: "{{ not (pgdog_install | bool) }}" # Defaults to false with PgDog; can be explicitly disabled otherwise.
+pgbouncer_processes: 1 # Number of pgbouncer processes to be used. Multiple processes use the so_reuseport option for better performance.
+pgbouncer_conf_dir: "/etc/pgbouncer"
+pgbouncer_log_dir: "/var/log/pgbouncer"
+pgbouncer_listen_addr: "0.0.0.0" # Listen on all interfaces. Or use "{{ bind_address }}" to listen on a specific IP address.
+pgbouncer_listen_port: 6432
+pgbouncer_max_client_conn: 100000
+pgbouncer_max_db_connections: 10000
+pgbouncer_max_prepared_statements: 1024
+pgbouncer_query_wait_timeout: 120
+pgbouncer_default_pool_size: 100
+pgbouncer_default_pool_mode: "session"
+pgbouncer_admin_users: "{{ patroni_superuser_username }}" # comma-separated list of users, who are allowed to change settings
+pgbouncer_stats_users: "{{ patroni_superuser_username }}" # comma-separated list of users who are just allowed to use SHOW command
+pgbouncer_ignore_startup_parameters: "extra_float_digits,geqo,search_path"
+pgbouncer_auth_type: "{{ postgresql_password_encryption_algorithm }}"
+pgbouncer_auth_user: true # or 'false' if you want to manage the list of users for authentication in the database via userlist.txt
+pgbouncer_auth_username: pgbouncer # user who can query the database via the user_search function
+pgbouncer_auth_password: "" # (optional) required if there is no trust rule in pg_hba for pgbouncer_auth_username
+pgbouncer_auth_dbname: "postgres"
+pgbouncer_tls_dir: "{{ tls_dir }}"
+pgbouncer_client_tls_sslmode: "{{ 'require' if tls_cert_generate | bool else 'disable' }}"
+pgbouncer_client_tls_key_file: "{{ tls_privatekey }}"
+pgbouncer_client_tls_cert_file: "{{ tls_cert }}"
+pgbouncer_client_tls_ca_file: "{{ tls_ca_cert }}"
+pgbouncer_client_tls_protocols: "secure" # allowed values: tlsv1.0, tlsv1.1, tlsv1.2, tlsv1.3, all, secure (tlsv1.2,tlsv1.3)
+pgbouncer_client_tls_ciphers: "secure" # allowed values: default, secure, fast, normal, all (not recommended)
+pgbouncer_server_tls_sslmode: "{{ 'require' if tls_cert_generate | bool else 'disable' }}"
+pgbouncer_server_tls_protocols: "secure"
+pgbouncer_server_tls_ciphers: "secure"
+pgbouncer_server_tls_key_file: "{{ tls_privatekey }}"
+pgbouncer_server_tls_cert_file: "{{ tls_cert }}"
+pgbouncer_server_tls_ca_file: "{{ tls_ca_cert }}"
+
+pgbouncer_pools:
+  - { name: "postgres", dbname: "postgres", pool_parameters: "" }
+#  - { name: "mydatabase", dbname: "mydatabase", pool_parameters: "pool_size=20 pool_mode=transaction" }
+#  - { name: "", dbname: "", pool_parameters: "" }
+#  - { name: "", dbname: "", pool_parameters: "" }
+
+# PgBouncer monitoring with Netdata
+netdata_pgbouncer_collector: "{{ pgbouncer_install }}" # Configure the collector when PgBouncer are enabled.
+netdata_pgbouncer_stats_user: "{{ patroni_superuser_username }}"
+netdata_pgbouncer_stats_password: "{{ patroni_superuser_password }}"
+
+# PgBouncer exporter - https://github.com/prometheus-community/pgbouncer_exporter
+# One exporter per PgBouncer process ('pgbouncer_processes'), on consecutive ports.
+pgbouncer_exporter_install: "{{ prometheus_exporters_install | bool and pgbouncer_install | bool }}"
+# renovate: datasource=github-releases depName=prometheus-community/pgbouncer_exporter extractVersion=^v(?<version>.*)$
+pgbouncer_exporter_version: 0.12.1
+pgbouncer_exporter_port: 9127
+pgbouncer_exporter_extra_args: []
+pgbouncer_exporter_package_repo: "https://github.com/prometheus-community/pgbouncer_exporter/releases/download/v{{ pgbouncer_exporter_version }}/pgbouncer_exporter-{{ pgbouncer_exporter_version }}.linux-{{ prometheus_exporters_architecture_map[ansible_architecture] }}.tar.gz"
+pgbouncer_exporter_package_checksum: "sha256:{{ pgbouncer_exporter_package_repo | dirname }}/sha256sums.txt"
+
+# HAProxy and confd
+with_haproxy_load_balancing: false # or 'true' to use HAProxy with PgBouncer or directly with PostgreSQL; incompatible with PgDog.
+haproxy_listen_port:
+  master: 5000
+  replicas: 5001
+  replicas_sync: 5002
+  replicas_async: 5003
+  # The following ('_direct') ports are used for direct connections to the PostgreSQL database,
+  # bypassing the PgBouncer connection pool (if 'pgbouncer_install' is 'true').
+  # Uncomment the relevant lines if you need to set up direct connections.
+  #  master_direct: 6000
+  #  replicas_direct: 6001
+  #  replicas_sync_direct: 6002
+  #  replicas_async_direct: 6003
+  stats: 7000
+# Set to false to disable the synchronous / asynchronous replica listeners
+haproxy_replicas_sync_enabled: true # listener "replicas_sync" (haproxy_listen_port.replicas_sync)
+haproxy_replicas_async_enabled: true # listener "replicas_async" (haproxy_listen_port.replicas_async)
+haproxy_maxconn:
+  global: 100000
+  master: 10000
+  replica: 10000
+haproxy_timeout:
+  client: "60m"
+  server: "60m"
+# Per-server health-check / failover tuning (applied via 'default-server').
+# 'on_marked_down' controls what happens to active sessions when a backend is
+# marked down: the default "shutdown-sessions" terminates in-flight connections
+# (e.g. long-running queries) on failover. Set it to "" (empty) to keep active
+# sessions alive when a replica is marked down.
+haproxy_default_server:
+  inter: "3s"
+  fastinter: "1s"
+  fall: 3
+  rise_master: 4
+  rise_replica: 2
+  on_marked_down: "shutdown-sessions"
+# Expose the HAProxy metrics in the Prometheus format on this port (http://NODE:PORT/metrics), or "" to disable.
+# Requires HAProxy built with the Prometheus exporter ('haproxy -vv' shows "Prometheus exporter").
+haproxy_prometheus_port: ""
+# Optionally declare log format for haproxy.
+# Uncomment following lines (and remove extra space in front of variable definition) for JSON structured log format.
+# haproxy_log_format: "{
+#  \"pid\":%pid,\
+#  \"haproxy_frontend_type\":\"tcp\",\
+#  \"haproxy_process_concurrent_connections\":%ac,\
+#  \"haproxy_frontend_concurrent_connections\":%fc,\
+#  \"haproxy_backend_concurrent_connections\":%bc,\
+#  \"haproxy_server_concurrent_connections\":%sc,\
+#  \"haproxy_backend_queue\":%bq,\
+#  \"haproxy_server_queue\":%sq,\
+#  \"haproxy_queue_wait_time\":%Tw,\
+#  \"haproxy_server_wait_time\":%Tc,\
+#  \"response_time\":%Td,\
+#  \"session_duration\":%Tt,\
+#  \"request_termination_state\":\"%tsc\",\
+#  \"haproxy_server_connection_retries\":%rc,\
+#  \"remote_addr\":\"%ci\",\
+#  \"remote_port\":%cp,\
+#  \"frontend_addr\":\"%fi\",\
+#  \"frontend_port\":%fp,\
+#  \"frontend_ssl_version\":\"%sslv\",\
+#  \"frontend_ssl_ciphers\":\"%sslc\",\
+#  \"haproxy_frontend_name\":\"%f\",\
+#  \"haproxy_backend_name\":\"%b\",\
+#  \"haproxy_server_name\":\"%s\",\
+#  \"response_size\":%B,\
+#  \"request_size\":%U\
+#  }"
+
+# if with_haproxy_load_balancing: true
+confd_install: true # install confd for HAProxy config management (optional).
+confd_version: 0.33.1
+confd_package_repo: "https://github.com/abtreece/confd/releases/download/v{{ confd_version }}/confd-v{{ confd_version }}-linux-{{ confd_architecture_map[ansible_architecture] }}.tar.gz"
+
+# Virtual IP
+cluster_vip: "" # Optional IP address for client access in deployments without PgDog.
+vip_interface: "{{ ansible_default_ipv4.interface }}" # interface name (e.g., "ens32").
+# Note: VIP-based solutions such as keepalived or vip-manager may not function correctly in cloud environments.
+
+# keepalived (if 'cluster_vip' is specified and 'with_haproxy_load_balancing' is 'true')
+keepalived_virtual_router_id: "{{ cluster_vip.split('.')[3] | int }}" # The last octet of 'cluster_vip' IP address is used by default.
+# virtual_router_id - must be unique in the network (available values are 0..255).
+
+# vip-manager (if 'cluster_vip' is specified and 'with_haproxy_load_balancing' is 'false')
+# renovate: datasource=github-releases depName=cybertec-postgresql/vip-manager extractVersion=^v(?<version>.*)$
+vip_manager_version: 4.2.0
+vip_manager_conf: "/etc/patroni/vip-manager.yml"
+vip_manager_interval: "1000" # time (in milliseconds) after which vip-manager wakes up and checks if it needs to register or release ip addresses.
+vip_manager_iface: "{{ vip_interface }}" # interface to which the virtual ip will be added
+vip_manager_ip: "{{ cluster_vip }}" # the virtual ip address to manage
+vip_manager_mask: "24" # netmask for the virtual ip
+vip_manager_dcs_type: "{{ dcs_type }}" # etcd, consul or patroni
+vip_manager_package_repo: "https://github.com/cybertec-postgresql/vip-manager/releases/download/v{{ vip_manager_version }}/vip-manager_{{ vip_manager_version }}_Linux_{{ vip_manager_architecture_map[ansible_architecture] }}.{{ pkg_type }}"
+
+# Consul endpoints by PostgreSQL role
+consul_postgresql_services:
+  - name: "{{ cluster_name }}"
+    id: "{{ cluster_name }}-master"
+    tags: ["master", "primary"]
+    port: "{{ connection_pooler_port if connection_pooler_enabled | bool else postgresql_port }}"
+    checks:
+      - http: >-
+          {{ patroni_restapi_protocol }}://{{ patroni_restapi_connect_addr
+          | default(patroni_bind_address
+          | default(bind_address, true), true) }}:{{ patroni_restapi_port }}/primary
+        tls_skip_verify: true
+        interval: "2s"
+      - args: ["systemctl", "status", "{{ connection_pooler_name | lower if connection_pooler_enabled | bool else 'patroni' }}"]
+        interval: "5s"
+  - name: "{{ cluster_name }}"
+    id: "{{ cluster_name }}-replica"
+    tags: ["replica"]
+    port: "{{ connection_pooler_port if connection_pooler_enabled | bool else postgresql_port }}"
+    checks:
+      - http: >-
+          {{ patroni_restapi_protocol }}://{{ patroni_restapi_connect_addr
+          | default(patroni_bind_address
+          | default(bind_address, true), true) }}:{{ patroni_restapi_port }}/replica?lag={{ patroni_maximum_lag_on_replica }}
+        tls_skip_verify: true
+        interval: "2s"
+      - args: ["systemctl", "status", "{{ connection_pooler_name | lower if connection_pooler_enabled | bool else 'patroni' }}"]
+        interval: "5s"
+#  - name: "{{ cluster_name }}"
+#    id: "{{ cluster_name }}-sync-replica"
+#    tags: ['sync-replica']
+#    port: "{{ connection_pooler_port if connection_pooler_enabled | bool else postgresql_port }}"
+#    checks:
+#      - http: >-
+#          {{ patroni_restapi_protocol }}://{{ patroni_restapi_connect_addr
+#          | default(patroni_bind_address
+#          | default(bind_address, true), true) }}:{{ patroni_restapi_port }}/sync
+#        tls_skip_verify: true
+#        interval: "2s"
+#      - args: ["systemctl", "status", "{{ connection_pooler_name | lower if connection_pooler_enabled | bool else 'patroni' }}"]
+#        interval: "5s"
+#  - name: "{{ cluster_name }}"
+#    id: "{{ cluster_name }}-async-replica"
+#    tags: ['async-replica']
+#    port: "{{ connection_pooler_port if connection_pooler_enabled | bool else postgresql_port }}"
+#    checks:
+#      - http: >-
+#          {{ patroni_restapi_protocol }}://{{ patroni_restapi_connect_addr
+#          | default(patroni_bind_address
+#          | default(bind_address, true), true) }}:{{ patroni_restapi_port }}/async?lag={{ patroni_maximum_lag_on_replica }}
+#        tls_skip_verify: true
+#        interval: "2s"
+#      - args: ["systemctl", "status", "{{ connection_pooler_name | lower if connection_pooler_enabled | bool else 'patroni' }}"]
+#        interval: "5s"
 
 ############################################################
 # Patroni parameters
@@ -831,7 +872,7 @@ postgresql_archive_command: >-
 pg_probackup_install: false
 pg_probackup_install_from_postgrespro_repo: true
 pg_probackup_version: "{{ postgresql_version }}"
-pg_probackup_instance: "pg_probackup_instance_name"
+pg_probackup_instance: "{{ patroni_scope }}"
 pg_probackup_dir: "/mnt/backup_dir"
 pg_probackup_threads: "4"
 pg_probackup_add_keys: "--recovery-target=latest --skip-external-dirs --no-validate"
@@ -854,7 +895,7 @@ wal_g_path: "/usr/local/bin/wal-g --config {{ postgresql_home_dir }}/.walg.json"
 wal_g_json: # config https://github.com/wal-g/wal-g#configuration
   - { option: "AWS_ACCESS_KEY_ID", value: "{{ wal_g_aws_access_key_id | default('') }}" } # define values or pass via --extra-vars
   - { option: "AWS_SECRET_ACCESS_KEY", value: "{{ wal_g_aws_secret_access_key | default('') }}" } # define values or pass via --extra-vars
-  - { option: "WALG_S3_PREFIX", value: "{{ wal_g_s3_prefix | default('s3://' + patroni_cluster_name) }}" } # define values or pass via --extra-vars
+  - { option: "WALG_S3_PREFIX", value: "{{ wal_g_s3_prefix | default('s3://' + cluster_name) }}" } # define values or pass via --extra-vars
   - { option: "WALG_COMPRESSION_METHOD", value: "{{ wal_g_compression_method | default('brotli') }}" } # or "lz4", "lzma", "zstd"
   - { option: "WALG_DELTA_MAX_STEPS", value: "{{ wal_g_delta_max_steps | default('6') }}" } # determines how many delta backups can be between full backups
   - { option: "WALG_PREFETCH_DIR", value: "{{ wal_g_prefetch_dir_path }}" } # prevent pg_rewind failures by setting non-default prefetch directory
@@ -925,7 +966,7 @@ wal_g_cron_jobs:
 # pgBackRest
 pgbackrest_install: false # or 'true' to install and configure backups using pgBackRest
 pgbackrest_install_from_pgdg_repo: true
-pgbackrest_stanza: "{{ patroni_cluster_name }}" # specify your --stanza
+pgbackrest_stanza: "{{ patroni_scope }}" # specify your --stanza
 pgbackrest_repo_type: "posix" # or "s3", "gcs", "azure"
 pgbackrest_repo_shared: false # 'true' if a posix repo1-path is on a shared network filesystem (stanza-create runs only on the master)
 pgbackrest_repo_host: "" # dedicated repository host (optional)
@@ -975,7 +1016,7 @@ pgbackrest_server_conf:
     - { option: "repo1-block", value: "y" }
     - { option: "archive-check", value: "y" }
     - { option: "archive-copy", value: "n" }
-    - { option: "backup-standby", value: "{{ 'y' if groups['postgres_cluster'] | length > 1 else 'n' }}" }
+    - { option: "backup-standby", value: "{{ 'y' if patroni_shard_hosts | length > 1 else 'n' }}" }
     - { option: "start-fast", value: "y" }
     - { option: "link-all", value: "y" }
     - { option: "resume", value: "n" }
@@ -1052,7 +1093,7 @@ pgbackrest_incr_backup_command: >-
 
 pgbackrest_cron_jobs:
   - name: "pgBackRest: Full Backup"
-    file: "/etc/cron.d/pgbackrest-{{ patroni_cluster_name }}"
+    file: "/etc/cron.d/pgbackrest-{{ patroni_scope }}"
     user: "postgres"
     minute: "00"
     hour: "{{ pgbackrest_backup_hour | default('3') }}"
@@ -1061,7 +1102,7 @@ pgbackrest_cron_jobs:
     weekday: "0"
     job: "{{ pgbackrest_full_backup_command }}"
   - name: "pgBackRest: Diff Backup"
-    file: "/etc/cron.d/pgbackrest-{{ patroni_cluster_name }}"
+    file: "/etc/cron.d/pgbackrest-{{ patroni_scope }}"
     user: "postgres"
     minute: "00"
     hour: "{{ pgbackrest_backup_hour | default('3') }}"
@@ -1070,7 +1111,7 @@ pgbackrest_cron_jobs:
     weekday: "1-6"
     job: "{{ pgbackrest_diff_backup_command }}"
   - name: "pgBackRest: Incr Backup"
-    file: "/etc/cron.d/pgbackrest-{{ patroni_cluster_name }}"
+    file: "/etc/cron.d/pgbackrest-{{ patroni_scope }}"
     user: "postgres"
     minute: "00"
     hour: "*/4"
@@ -1081,7 +1122,7 @@ pgbackrest_cron_jobs:
 
 # PITR mode (if patroni_cluster_bootstrap_method: "pgbackrest" or "wal-g"):
 # 1) The database cluster directory will be cleaned (for "wal-g") or overwritten (for "pgbackrest" --delta restore).
-# 2) And also the patroni cluster "{{ patroni_cluster_name }}" will be removed from the DCS (if exist) before recovery.
+# 2) And also the patroni cluster "{{ patroni_scope }}" will be removed from the DCS (if exist) before recovery.
 cluster_restore_timeout: 86400 # backup and WAL restore timeout in seconds (24 hours)
 
 disable_archive_command: false # set to true when cloning to prevent archiving to the source repository
@@ -1095,9 +1136,6 @@ keep_patroni_dynamic_json: true # or 'false' to remove patroni.dynamic.json afte
 # Open up your web browser of choice and navigate to http://NODE:19999
 netdata_install: true # Install Netdata on Postgres cluster nodes (with kickstart.sh)
 netdata_install_options: "--stable-channel --disable-telemetry --dont-wait"
-netdata_pgbouncer_collector: "{{ pgbouncer_install }}" # Configure the collector when PgBouncer are enabled.
-netdata_pgbouncer_stats_user: "{{ patroni_superuser_username }}"
-netdata_pgbouncer_stats_password: "{{ patroni_superuser_password }}"
 netdata_conf:
   web_default_port: "19999" # the listen port for the Netdata Web Server.
   web_bind_to: "*"
@@ -1184,14 +1222,6 @@ postgres_exporter_collectors:
 #  statio_user_tables: false
 #  settings: false
 postgres_exporter_extra_args: [] # other command-line flags, for example: ["--collector.stat_statements.limit=20"]
-
-# PgBouncer exporter - https://github.com/prometheus-community/pgbouncer_exporter
-# One exporter per PgBouncer process ('pgbouncer_processes'), on consecutive ports.
-pgbouncer_exporter_install: "{{ prometheus_exporters_install | bool and pgbouncer_install | bool }}"
-# renovate: datasource=github-releases depName=prometheus-community/pgbouncer_exporter extractVersion=^v(?<version>.*)$
-pgbouncer_exporter_version: 0.12.1
-pgbouncer_exporter_port: 9127
-pgbouncer_exporter_extra_args: []
 
 # pgBackRest exporter - https://github.com/woblerr/pgbackrest_exporter
 # Runs on every node. All nodes report the same backups, so aggregate them in the alerts (e.g. with 'max by (stanza)').
@@ -1617,8 +1647,6 @@ glibc_langpack:
 
 # additional packages
 etcd_package_repo: "https://github.com/etcd-io/etcd/releases/download/v{{ etcd_version }}/etcd-v{{ etcd_version }}-linux-{{ etcd_architecture_map[ansible_architecture] }}.tar.gz"
-vip_manager_package_repo: "https://github.com/cybertec-postgresql/vip-manager/releases/download/v{{ vip_manager_version }}/vip-manager_{{ vip_manager_version }}_Linux_{{ vip_manager_architecture_map[ansible_architecture] }}.{{ pkg_type }}"
-confd_package_repo: "https://github.com/abtreece/confd/releases/download/v{{ confd_version }}/confd-v{{ confd_version }}-linux-{{ confd_architecture_map[ansible_architecture] }}.tar.gz"
 pgdog_package_repo: "https://github.com/pgdogdev/pgdog/releases/download/v{{ pgdog_version }}/pgdog-v{{ pgdog_version }}-{{ ansible_architecture }}-unknown-linux-gnu.tar.gz"
 pgdog_package_checksum: "sha256:{{ pgdog_package_repo }}.sha256" # or "" to skip the verification, for example when using a mirror
 # Prometheus exporters: release archives and their checksum files (or "" to skip the verification).
@@ -1627,8 +1655,6 @@ node_exporter_package_repo: "https://github.com/prometheus/node_exporter/release
 node_exporter_package_checksum: "sha256:{{ node_exporter_package_repo | dirname }}/sha256sums.txt"
 postgres_exporter_package_repo: "https://github.com/prometheus-community/postgres_exporter/releases/download/v{{ postgres_exporter_version }}/postgres_exporter-{{ postgres_exporter_version }}.linux-{{ prometheus_exporters_architecture_map[ansible_architecture] }}.tar.gz"
 postgres_exporter_package_checksum: "sha256:{{ postgres_exporter_package_repo | dirname }}/sha256sums.txt"
-pgbouncer_exporter_package_repo: "https://github.com/prometheus-community/pgbouncer_exporter/releases/download/v{{ pgbouncer_exporter_version }}/pgbouncer_exporter-{{ pgbouncer_exporter_version }}.linux-{{ prometheus_exporters_architecture_map[ansible_architecture] }}.tar.gz"
-pgbouncer_exporter_package_checksum: "sha256:{{ pgbouncer_exporter_package_repo | dirname }}/sha256sums.txt"
 pgbackrest_exporter_package_repo: "https://github.com/woblerr/pgbackrest_exporter/releases/download/v{{ pgbackrest_exporter_version }}/pgbackrest_exporter-{{ pgbackrest_exporter_version }}-linux-{{ pgbackrest_exporter_architecture_map[ansible_architecture] }}.tar.gz"
 pgbackrest_exporter_package_checksum: "sha256:{{ pgbackrest_exporter_package_repo | dirname }}/pgbackrest_exporter_checksums.txt"
 consul_exporter_package_repo: "https://github.com/prometheus/consul_exporter/releases/download/v{{ consul_exporter_version }}/consul_exporter-{{ consul_exporter_version }}.linux-{{ prometheus_exporters_architecture_map[ansible_architecture] }}.tar.gz"
@@ -1722,7 +1748,7 @@ os_minimum_versions:
 ############################################################
 
 secrets_provider: "" # default: "" (disabled); "aws" = AWS Secrets Manager
-secrets_prefix: "autobase/{{ patroni_cluster_name }}"
+secrets_prefix: "autobase/{{ cluster_name }}"
 
 # Arbitrary secrets to create, update, or explicitly delete.
 secrets_values: []

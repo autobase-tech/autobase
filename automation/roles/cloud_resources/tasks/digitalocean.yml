@@ -151,7 +151,7 @@
 
     - name: "DigitalOcean: Build custom resource tags"
       ansible.builtin.set_fact:
-        digital_ocean_resource_tags: "{{ [patroni_cluster_name] }}"
+        digital_ocean_resource_tags: "{{ [cluster_name] }}"
 
     - name: "DigitalOcean: Convert custom tags to key:value strings"
       ansible.builtin.set_fact:
@@ -171,7 +171,7 @@
     - name: "DigitalOcean: Create or modify public firewall"
       community.digitalocean.digital_ocean_firewall:
         oauth_token: "{{ lookup('ansible.builtin.env', 'DO_API_TOKEN') }}"
-        name: "{{ patroni_cluster_name }}-public-firewall"
+        name: "{{ cluster_name }}-public-firewall"
         state: "present"
         inbound_rules: "{{ inbound_rules }}"
         outbound_rules:
@@ -188,7 +188,7 @@
             destinations:
               addresses: ["0.0.0.0/0", "::/0"]
         tags:
-          - "{{ patroni_cluster_name }}" # Only VMs with this tag will be affected
+          - "{{ cluster_name }}" # Only VMs with this tag will be affected
       vars:
         inbound_rules: >-
           {{
@@ -266,7 +266,7 @@
     - name: "DigitalOcean: Create or modify Postgres cluster firewall"
       community.digitalocean.digital_ocean_firewall:
         oauth_token: "{{ lookup('ansible.builtin.env', 'DO_API_TOKEN') }}"
-        name: "{{ patroni_cluster_name }}-private-firewall"
+        name: "{{ cluster_name }}-private-firewall"
         state: "present"
         inbound_rules: "{{ inbound_rules }}"
         outbound_rules:
@@ -283,7 +283,7 @@
             destinations:
               addresses: ["0.0.0.0/0", "::/0"]
         tags:
-          - "{{ patroni_cluster_name }}" # Only VMs with this tag will be affected
+          - "{{ cluster_name }}" # Only VMs with this tag will be affected
       vars:
         sources_addresses: "{{ (server_network | length > 0) | ternary(vpc_ip_range, default_ip_range) }}"
         inbound_rules: >-
@@ -440,11 +440,11 @@
     - name: "DigitalOcean: Gather information about Droplets"
       community.digitalocean.digital_ocean_droplet_info:
         oauth_token: "{{ lookup('ansible.builtin.env', 'DO_API_TOKEN') }}"
-        name: "{{ server_name | lower }}{{ '%02d' % (idx + 1) }}"
-      loop: "{{ range(0, server_count | int) | list }}"
+        name: "{{ cloud_server_names[idx] }}"
+      loop: "{{ range(0, cloud_server_names | length) | list }}"
       loop_control:
         index_var: idx
-        label: "{{ server_name | lower }}{{ '%02d' % (idx + 1) }}"
+        label: "{{ cloud_server_names[idx] }}"
       register: digital_ocean_droplet_info
       failed_when: false
 
@@ -452,7 +452,7 @@
       community.digitalocean.digital_ocean_droplet:
         oauth_token: "{{ lookup('ansible.builtin.env', 'DO_API_TOKEN') }}"
         state: present
-        name: "{{ server_name | lower }}{{ '%02d' % (idx + 1) }}"
+        name: "{{ cloud_server_names[idx] }}"
         unique_name: true
         size: "{{ server_type }}"
         region: "{{ server_location }}"
@@ -461,10 +461,10 @@
         vpc_uuid: "{{ vpc_id | default(omit) }}"
         wait_timeout: 500
         tags: "{{ digital_ocean_resource_tags }}"
-      loop: "{{ range(0, server_count | int) | list }}"
+      loop: "{{ range(0, cloud_server_names | length) | list }}"
       loop_control:
         index_var: idx
-        label: "{{ server_name | lower }}{{ '%02d' % (idx + 1) }}"
+        label: "{{ cloud_server_names[idx] }}"
       register: droplet_result
 
     - name: "DigitalOcean: Create or modify Block Storage"
@@ -472,13 +472,13 @@
         oauth_token: "{{ lookup('ansible.builtin.env', 'DO_API_TOKEN') }}"
         state: present
         command: create
-        volume_name: "{{ server_name | lower }}{{ '%02d' % (idx + 1) }}-storage"
+        volume_name: "{{ cloud_server_names[idx] }}-storage"
         region: "{{ server_location }}"
         block_size: "{{ volume_size | int }}"
-      loop: "{{ range(0, server_count | int) | list }}"
+      loop: "{{ range(0, cloud_server_names | length) | list }}"
       loop_control:
         index_var: idx
-        label: "{{ server_name | lower }}{{ '%02d' % (idx + 1) }}-storage"
+        label: "{{ cloud_server_names[idx] }}-storage"
       register: block_storage_result
       when: not use_local_disk | bool
 
@@ -487,13 +487,13 @@
         oauth_token: "{{ lookup('ansible.builtin.env', 'DO_API_TOKEN') }}"
         state: present
         command: attach
-        volume_name: "{{ server_name | lower }}{{ '%02d' % (idx + 1) }}-storage"
+        volume_name: "{{ cloud_server_names[idx] }}-storage"
         region: "{{ server_location }}"
         droplet_id: "{{ item.data.droplet.id }}"
       loop: "{{ droplet_result.results }}"
       loop_control:
         index_var: idx
-        label: "{{ server_name | lower }}{{ '%02d' % (idx + 1) }}-storage"
+        label: "{{ cloud_server_names[idx] }}-storage"
       when:
         - not use_local_disk | bool
         - droplet_result.results is defined
@@ -554,7 +554,7 @@
         size: "{{ (digital_ocean_load_balancer_size | default('lb-medium')) if server_location in ['ams2', 'nyc2', 'sfo1'] else omit }}"
         size_unit: "{{ (digital_ocean_load_balancer_size_unit | default(3)) if server_location not in ['ams2', 'nyc2', 'sfo1'] else omit }}"
         vpc_uuid: "{{ vpc_id | default(omit) }}"
-        tag: "{{ patroni_cluster_name }}" # a tag associated with droplets for load balancing.
+        tag: "{{ cluster_name }}" # a tag associated with droplets for load balancing.
       loop: "{{ cloud_load_balancer_roles }}"
       loop_control:
         label: "{{ cloud_load_balancer_names[item] }}"
@@ -573,7 +573,7 @@
   ansible.builtin.debug:
     msg:
       id: "{{ item.data.droplet.id | default('N/A', true) }}"
-      name: "{{ server_name | lower }}{{ '%02d' % (idx + 1) }}"
+      name: "{{ cloud_server_names[idx] }}"
       image: "{{ item.data.droplet.image.description | default('N/A', true) }}"
       type: "{{ server_type }}"
       volume_size: "{{ volume_size }} GB"
@@ -582,7 +582,7 @@
   loop: "{{ droplet_result.results }}"
   loop_control:
     index_var: idx
-    label: "{{ server_name | lower }}{{ '%02d' % (idx + 1) }}"
+    label: "{{ cloud_server_names[idx] }}"
   when:
     - droplet_result.results is defined
     - item.data is defined
@@ -594,6 +594,7 @@
         ip_addresses: >-
           {{ ip_addresses | default([]) +
             [{
+              'name': item.data.droplet.name,
               'public_ip': (item.data.droplet.networks.v4 | selectattr('type', 'equalto', 'public')).0.ip_address | default(''),
               'private_ip': (item.data.droplet.networks.v4 | selectattr('type', 'equalto', 'private')).0.ip_address | default(''),
               'new_node': (cluster_scaling | default(false) | bool and item.data.droplet.id not in existing_droplet_ids)
@@ -637,13 +638,13 @@
       community.digitalocean.digital_ocean_droplet:
         oauth_token: "{{ lookup('ansible.builtin.env', 'DO_API_TOKEN') }}"
         state: absent
-        name: "{{ server_name | lower }}{{ '%02d' % (idx + 1) }}"
+        name: "{{ cloud_server_names[idx] }}"
         unique_name: true
         region: "{{ server_location }}"
-      loop: "{{ range(0, server_count | int) | list }}"
+      loop: "{{ range(0, cloud_server_names | length) | list }}"
       loop_control:
         index_var: idx
-        label: "{{ server_name | lower }}{{ '%02d' % (idx + 1) }}"
+        label: "{{ cloud_server_names[idx] }}"
       register: droplet_absent
       until: not droplet_absent.failed
       retries: 3
@@ -654,12 +655,12 @@
         oauth_token: "{{ lookup('ansible.builtin.env', 'DO_API_TOKEN') }}"
         state: absent
         command: create
-        volume_name: "{{ server_name | lower }}{{ '%02d' % (idx + 1) }}-storage"
+        volume_name: "{{ cloud_server_names[idx] }}-storage"
         region: "{{ server_location }}"
-      loop: "{{ range(0, server_count | int) | list }}"
+      loop: "{{ range(0, cloud_server_names | length) | list }}"
       loop_control:
         index_var: idx
-        label: "{{ server_name | lower }}{{ '%02d' % (idx + 1) }}-storage"
+        label: "{{ cloud_server_names[idx] }}-storage"
       register: block_storage_absent
       until: not block_storage_absent.failed
       retries: 3
@@ -682,13 +683,13 @@
       community.digitalocean.digital_ocean_firewall:
         oauth_token: "{{ lookup('ansible.builtin.env', 'DO_API_TOKEN') }}"
         state: "absent"
-        name: "{{ patroni_cluster_name }}-public-firewall"
+        name: "{{ cluster_name }}-public-firewall"
 
     - name: "DigitalOcean: Delete Postgres cluster firewall"
       community.digitalocean.digital_ocean_firewall:
         oauth_token: "{{ lookup('ansible.builtin.env', 'DO_API_TOKEN') }}"
         state: "absent"
-        name: "{{ patroni_cluster_name }}-private-firewall"
+        name: "{{ cluster_name }}-private-firewall"
 
   ignore_errors: true
   when: state == 'absent'

@@ -9,7 +9,7 @@ Installs and configures [pgBackRest](https://github.com/pgbackrest/pgbackrest) f
 | `pgbackrest_install` | `false` | Enable installation and configuration of pgBackRest. |
 | `pgbackrest_install_from_pgdg_repo` | `true` | Install packages from PGDG repositories. |
 | `pgbackrest_auto_upgrade` | `true` | Update pgBackRest to the latest available package on managed hosts when their installed versions differ. Set to `false` to check versions without updating packages. |
-| `pgbackrest_stanza` | `"{{ patroni_cluster_name }}"` | Stanza name used by pgBackRest. |
+| `pgbackrest_stanza` | `"{{ patroni_scope }}"` | Stanza name used by pgBackRest. |
 | `pgbackrest_repo_type` | `"posix"` | Repository type: posix, s3, gcs, azure. |
 | `pgbackrest_repo_shared` | `false` | Set to `true` if a posix repo is on a shared network filesystem: stanza-create runs only on the master. |
 | `pgbackrest_repo_host` | `""` | Dedicated repository host (optional). |

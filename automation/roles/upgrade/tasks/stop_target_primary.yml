@@ -11,7 +11,7 @@
 - name: "Pause Patroni on the target cluster before stopping PostgreSQL"
   become: true
   become_user: postgres
-  ansible.builtin.command: "patronictl -c {{ patroni_config_file }} pause --wait {{ patroni_cluster_name }}"
+  ansible.builtin.command: "patronictl -c {{ patroni_config_file }} pause --wait {{ patroni_scope }}"
   environment:
     PATH: "{{ ansible_env.PATH }}:/usr/bin:/usr/local/bin"
   register: pause_result

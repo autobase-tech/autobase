@@ -1,6 +1,9 @@
 ---
+- name: Resolve shard topology
+  ansible.builtin.import_playbook: shard_topology.yml
+
 - name: vitabaks.autobase.backup_list | List PostgreSQL backups
-  hosts: postgres_cluster
+  hosts: "postgres_cluster:&autobase_{{ target_shard | default('all') }}"
   gather_facts: false
   serial: 1
   ignore_unreachable: true
@@ -16,12 +19,21 @@
     backup_list_json: "{{ backup_list_format | default('text') | lower == 'json' }}"
     backup_list_commands:
       pgbackrest: >-
-        pgbackrest --stanza={{ pgbackrest_stanza | default(patroni_cluster_name | default('postgres-cluster')) }}
+        pgbackrest --stanza={{ pgbackrest_stanza }}
         {{ '--output=json ' if backup_list_json | bool else '' }}info
       wal-g: >-
         {{ wal_g_path | default('/usr/local/bin/wal-g --config "$HOME/.walg.json"') }}
         backup-list{{ ' --detail --json' if backup_list_json | bool else '' }}
+  pre_tasks:
+    - name: Load cluster defaults
+      ansible.builtin.import_role:
+        name: vitabaks.autobase.common
   tasks:
+    - name: Skip members after reading a backup list for their shard
+      ansible.builtin.meta: end_host
+      when: >-
+        patroni_shard_hosts | map('extract', hostvars) | selectattr('backup_list_result.stdout', 'defined') | list | length > 0
+
     - name: Validate backup list parameters
       ansible.builtin.assert:
         that:
@@ -44,11 +56,7 @@
 
     - name: Fail when all PostgreSQL nodes are unreachable
       ansible.builtin.fail:
-        msg: All nodes in the 'postgres_cluster' group are unreachable.
+        msg: "All nodes in {{ patroni_scope }} are unreachable."
       when:
         - backup_list_result is unreachable
-        - inventory_hostname == ansible_play_hosts_all | last
-
-    - name: Stop after the first available node
-      ansible.builtin.meta: end_play
-      when: backup_list_result is not unreachable
+        - inventory_hostname == (ansible_play_hosts_all | select('in', patroni_shard_hosts) | last)

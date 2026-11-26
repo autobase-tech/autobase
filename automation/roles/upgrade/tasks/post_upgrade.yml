@@ -159,14 +159,12 @@
 - block:
     - name: pgbackrest | Check pg-path option
       delegate_to: "{{ pgbackrest_delegate }}"
-      run_once: true
       ansible.builtin.command: "grep -c '^pg[0-9]*-path=' {{ pgbackrest_conf_file | dirname }}/conf.d/{{ pgbackrest_stanza }}.conf"
       register: pg_path_count
       changed_when: false
 
     - name: pgbackrest | Update pg-path in pgbackrest.conf
       delegate_to: "{{ pgbackrest_delegate }}"
-      run_once: true
       ansible.builtin.replace:
         path: "{{ pgbackrest_conf_file | dirname }}/conf.d/{{ pgbackrest_stanza }}.conf"
         regexp: "^pg{{ idx + 1 }}-path=.*$"
@@ -179,7 +177,6 @@
 
     - name: pgbackrest | Upgrade stanza "{{ pgbackrest_stanza | default('') }}"
       delegate_to: "{{ pgbackrest_delegate }}"
-      run_once: true
       ansible.builtin.command: "pgbackrest --stanza={{ pgbackrest_stanza }} --no-online stanza-upgrade"
       when: pg_path_count.stdout | int > 0 and pgbackrest_stanza_upgrade | bool
   become: true
@@ -188,6 +185,7 @@
   vars:
     pgbackrest_delegate: "{{ (groups.get('pgbackrest', []) | list | first) | default(inventory_hostname, true) }}"
   when:
+    - inventory_hostname in groups.get('primary', [])
     - pgbackrest_install | bool
     - (pgbackrest_repo_host | default('')) | length > 0
     - (groups.get('pgbackrest', []) | length) > 0

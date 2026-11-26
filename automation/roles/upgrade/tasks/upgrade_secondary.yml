@@ -25,8 +25,8 @@
 - block:
     - name: "Upgrade the PostgreSQL on the replica (using rsync --hard-links)"
       vars:
-        secondary_servers: "{{ groups.get('secondary', []) | map('extract', hostvars, 'bind_address') | join('\n') }}"
-        secondary_count: "{{ groups.get('secondary', []) | length }}"
+        secondary_servers: "{{ patroni_shard_replicas | map('extract', hostvars, 'bind_address') | join('\n') }}"
+        secondary_count: "{{ patroni_shard_replicas | length }}"
       ansible.builtin.shell: |
         set -o pipefail;
         echo -e "{{ secondary_servers }}" | xargs -I {} -P "{{ secondary_count }}" -n 1 \
@@ -49,7 +49,7 @@
   become_user: postgres
   when:
     - inventory_hostname in groups['primary']
-    - groups.get('secondary', []) | length > 0
+    - patroni_shard_replicas | length > 0
     - pg_old_datadir|dirname == pg_upper_datadir + '/' + (pg_old_version | string)
     - pg_new_datadir|dirname == pg_upper_datadir + '/' + (pg_new_version | string)
 
@@ -58,8 +58,8 @@
 - block:
     - name: "Upgrade the PostgreSQL on the replica (using rsync --hard-links)"
       vars:
-        secondary_servers: "{{ groups.get('secondary', []) | join('\n') }}"
-        secondary_count: "{{ groups.get('secondary', []) | length }}"
+        secondary_servers: "{{ patroni_shard_replicas | map('extract', hostvars, 'bind_address') | join('\n') }}"
+        secondary_count: "{{ patroni_shard_replicas | length }}"
       ansible.builtin.shell: |
         set -o pipefail;
         echo -e "{{ secondary_servers }}" | xargs -I {} -P "{{ secondary_count }}" -n 1 \
@@ -82,7 +82,7 @@
   become_user: postgres
   when:
     - inventory_hostname in groups['primary']
-    - groups.get('secondary', []) | length > 0
+    - patroni_shard_replicas | length > 0
     - pg_old_datadir|dirname != pg_upper_datadir + '/' + (pg_old_version | string)
     - pg_new_datadir|dirname != pg_upper_datadir + '/' + (pg_new_version | string)
 
@@ -90,8 +90,8 @@
 - block:
     - name: "Upgrade the PostgreSQL tablespaces on the replica (using rsync --hard-links)"
       vars:
-        secondary_servers: "{{ groups.get('secondary', []) | join('\n') }}"
-        secondary_count: "{{ groups.get('secondary', []) | length }}"
+        secondary_servers: "{{ patroni_shard_replicas | map('extract', hostvars, 'bind_address') | join('\n') }}"
+        secondary_count: "{{ patroni_shard_replicas | length }}"
       ansible.builtin.shell: |
         set -o pipefail;
         for tablespace_location in {{ tablespace_location.stdout_lines | join(' ') }};
@@ -130,6 +130,6 @@
   become_user: postgres
   when:
     - inventory_hostname in groups['primary']
-    - groups.get('secondary', []) | length > 0
+    - patroni_shard_replicas | length > 0
     - tablespace_location.stdout_lines is defined
     - tablespace_location.stdout_lines | length > 0

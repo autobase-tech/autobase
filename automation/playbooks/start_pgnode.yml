@@ -1,6 +1,9 @@
 ---
+- name: Resolve shard topology
+  ansible.builtin.import_playbook: shard_topology.yml
+
 - name: vitabaks.autobase.start_pgnode | Start PostgreSQL Cluster node
-  hosts: postgres_cluster
+  hosts: "postgres_cluster:&autobase_{{ target_shard | default('all') }}"
   gather_facts: true
   become: true
   become_method: sudo
@@ -20,7 +23,7 @@
         that: patroni_start_node_name | default('') | length > 0
         fail_msg: >-
           Set patroni_start_node_name to the Patroni node name to start.
-      when: inventory_hostname == groups['postgres_cluster'][0]
+      when: inventory_hostname == patroni_shard_hosts[0]
 
     - name: Validate Patroni start node exists
       ansible.builtin.assert:
@@ -32,8 +35,8 @@
           | list)
         fail_msg: >-
           Patroni start node '{{ patroni_start_node_name | default('') }}' was not found in cluster
-          '{{ patroni_cluster_name | default('postgres-cluster') }}'.
-      when: inventory_hostname == groups['postgres_cluster'][0]
+          '{{ patroni_scope }}'.
+      when: inventory_hostname == patroni_shard_hosts[0]
 
     - name: Start services on the selected node
       ansible.builtin.import_role:

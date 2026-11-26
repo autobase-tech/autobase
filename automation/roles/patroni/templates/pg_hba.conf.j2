@@ -97,6 +97,6 @@
 {% else %}
   {{ host_type }}      replication              {{ patroni_replication_username }}               localhost                {{ postgresql_local_replication_auth_method }}
 {% endif %}
-{% for host in pg_hba_hosts | default(groups['postgres_cluster'] | default([])) %}
+{% for host in patroni_shard_hosts | select('in', pg_hba_hosts | default(patroni_shard_hosts)) %}
   {{ host_type }}      replication              {{ patroni_replication_username }}               {{ hostvars[host]['patroni_bind_address'] | default(hostvars[host]['bind_address'], true) }}/32         {{ postgresql_password_encryption_algorithm }}
 {% endfor %}

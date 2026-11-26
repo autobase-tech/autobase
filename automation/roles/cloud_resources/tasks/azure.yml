@@ -1,12 +1,11 @@
 ---
 # Create (if state is present)
 - block:
-    - name: "Set variable: azure_region, azure_resource_group_name, azure_network_name, azure_server_names"
+    - name: "Set variable: azure_region, azure_resource_group_name, azure_network_name"
       ansible.builtin.set_fact:
         azure_region: "{{ server_location | lower | replace(' ', '') }}"
         azure_resource_group_name: "{{ azure_resource_group | default('postgres-cluster-resource-group-' ~ server_location, true) }}"
         azure_network_name: "{{ server_network | default(azure_virtual_network | default('postgres-cluster-network'), true) }}"
-        azure_server_names: "{{ query('ansible.builtin.sequence', 'start=1 count=' ~ server_count ~ ' format=' ~ server_name | lower ~ '%02d') }}"
 
     - name: "Azure: Gather information about availability zones"
       vitabaks.autobase.azure_compute_zones_info:
@@ -37,7 +36,7 @@
 
     - name: "Set variable: azure_existing_vms, zones_available, zones_existing"
       ansible.builtin.set_fact:
-        azure_existing_vms: "{{ azure_vm_info.vms | default([]) | selectattr('name', 'in', azure_server_names) | list }}"
+        azure_existing_vms: "{{ azure_vm_info.vms | default([]) | selectattr('name', 'in', cloud_server_names) | list }}"
         zones_available: "{{ azure_zone_info.zones_available }}"
         zones_existing: {}
 
@@ -45,9 +44,9 @@
       ansible.builtin.assert:
         that:
           - item.location | lower | replace(' ', '') == azure_region
-          - (item.tags | default({}, true)).get('Cluster', '') == patroni_cluster_name
+          - (item.tags | default({}, true)).get('Cluster', '') == cluster_name
           - item.zones | default([], true) | length <= 1
-        fail_msg: "VM '{{ item.name }}' must belong to cluster '{{ patroni_cluster_name }}' in region '{{ azure_region }}'."
+        fail_msg: "VM '{{ item.name }}' must belong to cluster '{{ cluster_name }}' in region '{{ azure_region }}'."
         quiet: true
       loop: "{{ azure_existing_vms }}"
       loop_control:
@@ -87,7 +86,7 @@
 
         - name: "Set variable: server_zone_placement"
           ansible.builtin.set_fact:
-            server_zone_placement: "{{ azure_server_names | map('community.general.dict_kv', 'name') | map('combine', {'zone': ''}) | list }}"
+            server_zone_placement: "{{ cloud_server_names | map('community.general.dict_kv', 'name') | map('combine', {'zone': ''}) | list }}"
       when: zones_available | length == 0
 
     # if ssh_key_content is not defined, get the user public key from the system (if exists)
@@ -101,7 +100,7 @@
       azure.azcollection.azure_rm_resourcegroup:
         name: "{{ azure_resource_group_name }}"
         location: "{{ azure_region }}"
-        tags: "{{ cloud_provider_tags | combine({'Cluster': patroni_cluster_name}) }}"
+        tags: "{{ cloud_provider_tags | combine({'Cluster': cluster_name}) }}"
         append_tags: true
 
     # if server_network is not specified, create a network and subnet
@@ -112,7 +111,7 @@
             name: "{{ azure_network_name }}"
             location: "{{ azure_region }}"
             address_prefixes_cidr: ["{{ azure_virtual_network_prefix | default('10.0.0.0/16') }}"]
-            tags: "{{ cloud_provider_tags | combine({'Cluster': patroni_cluster_name}) }}"
+            tags: "{{ cloud_provider_tags | combine({'Cluster': cluster_name}) }}"
             append_tags: true
 
         - name: "Azure: Create subnet"
@@ -180,7 +179,7 @@
         location: "{{ azure_region }}"
         zones: "{{ azure_zone_info.region_zones if azure_zone_info.region_zones | length >= 3
           and ip_name not in existing_ip_names else omit }}"
-        tags: "{{ cloud_provider_tags | combine({'Cluster': patroni_cluster_name}) }}"
+        tags: "{{ cloud_provider_tags | combine({'Cluster': cluster_name}) }}"
         append_tags: true
       loop: "{{ server_zone_placement }}"
       loop_control:
@@ -195,9 +194,9 @@
     - name: "Azure: Create or modify Security Group"
       azure.azcollection.azure_rm_securitygroup:
         resource_group: "{{ azure_resource_group_name }}"
-        name: "{{ patroni_cluster_name }}-security-group"
+        name: "{{ cluster_name }}-security-group"
         rules: "{{ rules }}"
-        tags: "{{ cloud_provider_tags | combine({'Cluster': patroni_cluster_name}) }}"
+        tags: "{{ cloud_provider_tags | combine({'Cluster': cluster_name}) }}"
         append_tags: true
       vars:
         rules: >-
@@ -295,14 +294,14 @@
         name: "{{ item.name }}-network-interface"
         virtual_network: "{{ azure_network_name }}"
         subnet_name: "{{ azure_subnet | default('postgres-cluster-subnet') }}"
-        security_group: "{{ patroni_cluster_name }}-security-group"
+        security_group: "{{ cluster_name }}-security-group"
         ip_configurations:
           - name: ipconfig1
             primary: true
             public_ip_address_name: "{{ (item.name ~ '-public-ip') if server_public_ip | bool else None }}"
         dns_servers:
           - 8.8.8.8
-        tags: "{{ cloud_provider_tags | combine({'Cluster': patroni_cluster_name}) }}"
+        tags: "{{ cloud_provider_tags | combine({'Cluster': cluster_name}) }}"
         append_tags: true
       loop: "{{ server_zone_placement }}"
       loop_control:
@@ -338,7 +337,7 @@
           - "{{ item.name }}-network-interface"
         tags: >-
           {{
-            cloud_provider_tags | combine({'Cluster': patroni_cluster_name})
+            cloud_provider_tags | combine({'Cluster': cluster_name})
             if item.name not in zones_existing
             else omit
           }}
@@ -446,7 +445,7 @@
         sku: Standard
         zones: "{{ azure_zone_info.region_zones if azure_zone_info.region_zones | length >= 3
           and ip_name not in existing_ip_names else omit }}"
-        tags: "{{ cloud_provider_tags | combine({'Cluster': patroni_cluster_name}) }}"
+        tags: "{{ cloud_provider_tags | combine({'Cluster': cluster_name}) }}"
         append_tags: true
       loop: "{{ azure_lb_roles }}"
       loop_control:
@@ -505,7 +504,7 @@
             idle_timeout: 10
             enable_floating_ip: false
             disable_outbound_snat: true
-        tags: "{{ cloud_provider_tags | combine({'Cluster': patroni_cluster_name}) }}"
+        tags: "{{ cloud_provider_tags | combine({'Cluster': cluster_name}) }}"
         append_tags: true
       loop: "{{ azure_lb_roles }}"
       loop_control:
@@ -616,8 +615,10 @@
 
     - name: "Inventory | Keep existing Azure servers before new servers"
       ansible.builtin.set_fact:
-        ip_addresses: "{{ (ip_addresses | selectattr('name', 'in', zones_existing) | sort(attribute='name'))
-          + (ip_addresses | rejectattr('name', 'in', zones_existing) | sort(attribute='name')) }}"
+        ip_addresses: "{{ (ordered_servers | selectattr('name', 'in', zones_existing) | list)
+          + (ordered_servers | rejectattr('name', 'in', zones_existing) | list) }}"
+      vars:
+        ordered_servers: "{{ ip_addresses if cloud_server_shards else ip_addresses | sort(attribute='name') }}"
 
     - name: "Inventory | Generate in-memory inventory"
       ansible.builtin.import_tasks: inventory.yml
@@ -631,32 +632,32 @@
     - name: "Azure: Delete virtual machine"
       azure.azcollection.azure_rm_virtualmachine:
         resource_group: "{{ azure_resource_group | default('postgres-cluster-resource-group-' ~ server_location, true) }}"
-        name: "{{ server_name | lower }}{{ '%02d' % (idx + 1) }}"
+        name: "{{ cloud_server_names[idx] }}"
         state: absent
-      loop: "{{ range(0, server_count | int) | list }}"
+      loop: "{{ range(0, cloud_server_names | length) | list }}"
       loop_control:
         index_var: idx
-        label: "{{ server_name | lower }}{{ '%02d' % (idx + 1) }}"
+        label: "{{ cloud_server_names[idx] }}"
 
     - name: "Azure: Delete network interface"
       azure.azcollection.azure_rm_networkinterface:
         resource_group: "{{ azure_resource_group | default('postgres-cluster-resource-group-' ~ server_location, true) }}"
-        name: "{{ server_name | lower }}{{ '%02d' % (idx + 1) }}-network-interface"
+        name: "{{ cloud_server_names[idx] }}-network-interface"
         state: absent
-      loop: "{{ range(0, server_count | int) | list }}"
+      loop: "{{ range(0, cloud_server_names | length) | list }}"
       loop_control:
         index_var: idx
-        label: "{{ server_name | lower }}{{ '%02d' % (idx + 1) }}-network-interface"
+        label: "{{ cloud_server_names[idx] }}-network-interface"
 
     - name: "Azure: Delete public IP address"
       azure.azcollection.azure_rm_publicipaddress:
         resource_group: "{{ azure_resource_group | default('postgres-cluster-resource-group-' ~ server_location, true) }}"
-        name: "{{ server_name | lower }}{{ '%02d' % (idx + 1) }}-public-ip"
+        name: "{{ cloud_server_names[idx] }}-public-ip"
         state: absent
-      loop: "{{ range(0, server_count | int) | list }}"
+      loop: "{{ range(0, cloud_server_names | length) | list }}"
       loop_control:
         index_var: idx
-        label: "{{ server_name | lower }}{{ '%02d' % (idx + 1) }}-public-ip"
+        label: "{{ cloud_server_names[idx] }}-public-ip"
       when: server_public_ip | bool
 
     - name: "Azure: Delete Load Balancer"
@@ -683,7 +684,7 @@
     - name: "Azure: Delete Security Group"
       azure.azcollection.azure_rm_securitygroup:
         resource_group: "{{ azure_resource_group | default('postgres-cluster-resource-group-' ~ server_location, true) }}"
-        name: "{{ patroni_cluster_name }}-security-group"
+        name: "{{ cluster_name }}-security-group"
         state: absent
 
   when: state == 'absent'

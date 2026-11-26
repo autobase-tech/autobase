@@ -1,6 +1,9 @@
 ---
+- name: Resolve shard topology
+  ansible.builtin.import_playbook: shard_topology.yml
+
 - name: vitabaks.autobase.backup_pgcluster | Create PostgreSQL backup
-  hosts: postgres_cluster
+  hosts: "postgres_cluster:&autobase_{{ target_shard | default('all') }}"
   gather_facts: true
   become: true
   become_method: sudo
@@ -10,10 +13,10 @@
       ansible.builtin.assert:
         that:
           - backup_pgcluster_target | default('leader') == 'leader'
-            or backup_pgcluster_target in groups['postgres_cluster']
+            or backup_pgcluster_target in autobase_shards.selected
         fail_msg: >-
           Set 'backup_pgcluster_target' to 'leader' or to an inventory hostname from
-          the 'postgres_cluster' group.
+          the selected shard or shards.
 
     - name: Define bind_address
       ansible.builtin.import_role:
@@ -43,11 +46,11 @@
     - name: Fail when Patroni cluster has no healthy leader
       ansible.builtin.fail:
         msg: >-
-          No healthy leader node detected in cluster '{{ patroni_cluster_name | default('postgres-cluster') }}'.
+          No healthy leader node detected in cluster '{{ patroni_scope }}'.
       when:
         - backup_pgcluster_target | default('leader') == 'leader'
-        - inventory_hostname == groups['postgres_cluster'][0]
-        - (groups.get('postgres_cluster', [])
+        - inventory_hostname == patroni_shard_hosts[0]
+        - (patroni_shard_hosts
             | map('extract', hostvars)
             | selectattr('patroni_leader_result.status', 'defined')
             | selectattr('patroni_leader_result.status', 'equalto', 200)
@@ -57,7 +60,7 @@
       ansible.builtin.add_host:
         name: "{{ item }}"
         groups: backup_target
-      loop: "{{ groups['postgres_cluster'] }}"
+      loop: "{{ autobase_shards.selected }}"
       when:
         - backup_pgcluster_target | default('leader') != 'leader'
         - item == backup_pgcluster_target
@@ -68,7 +71,7 @@
       ansible.builtin.add_host:
         name: "{{ item }}"
         groups: backup_target
-      loop: "{{ groups['postgres_cluster'] }}"
+      loop: "{{ autobase_shards.selected }}"
       when:
         - backup_pgcluster_target | default('leader') == 'leader'
         - hostvars[item]['patroni_leader_result']['status'] | default(0) == 200
@@ -76,7 +79,7 @@
       check_mode: false
 
 - name: vitabaks.autobase.backup_pgcluster | Run backup command
-  hosts: backup_target
+  hosts: "backup_target:&autobase_{{ target_shard | default('all') }}"
   gather_facts: false
   become: true
   become_user: postgres

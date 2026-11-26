@@ -3,7 +3,7 @@
 - name: Pause Patroni cluster (enable maintenance mode)
   become: true
   become_user: postgres
-  ansible.builtin.command: "patronictl -c {{ patroni_config_file }} pause --wait {{ patroni_cluster_name }}"
+  ansible.builtin.command: "patronictl -c {{ patroni_config_file }} pause --wait {{ patroni_scope }}"
   environment:
     PATH: "{{ ansible_env.PATH }}:/usr/bin:/usr/local/bin"
   register: pause_result
@@ -59,7 +59,6 @@
 
 # Enable maintenance mode for vip-manager (Type B scheme)
 # if 'pgbouncer_install' is 'true' and 'pgbouncer_pool_pause' is 'true'
-# or 'pgdog_install' is 'true' and 'pgdog_pool_pause' is 'true'
 # Temporarily disable vip-manager service to keep database connections after stopping the Patroni service
 # and then pause the connection pooler.
 # This prevents the VIP from being removed when the Patroni leader is unavailable during maintenance.
@@ -87,6 +86,7 @@
   become_user: root
   when:
     - not with_haproxy_load_balancing | bool
+    - not pgdog_install | bool
     - cluster_vip | length > 0
     - connection_pooler_pause | bool
 

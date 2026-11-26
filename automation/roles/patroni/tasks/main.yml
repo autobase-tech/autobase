@@ -270,30 +270,21 @@
   tags: patroni, patroni_conf
 
 - block: # if cluster_scaling (add_node.yml)
-    - name: Fetch patroni.yml conf file from master
-      run_once: true
-      ansible.builtin.fetch:
+    - name: Read the Patroni configuration from the bootstrap member of this shard
+      ansible.builtin.slurp:
         src: /etc/patroni/patroni.yml
-        dest: "{{ files_dir | default(playbook_dir ~ '/files') }}/patroni.yml"
-        validate_checksum: true
-        flat: true
-      delegate_to: "{{ groups.master[0] }}"
+      delegate_to: "{{ patroni_bootstrap_host }}"
+      register: shard_patroni_config
+      no_log: true
 
-    - name: Copy patroni.yml conf file to replica
+    - name: Copy the shard's Patroni configuration to its new replica
       ansible.builtin.copy:
-        src: "{{ files_dir | default(playbook_dir ~ '/files') }}/patroni.yml"
+        content: "{{ shard_patroni_config.content | b64decode }}"
         dest: /etc/patroni/patroni.yml
         owner: postgres
         group: postgres
         mode: "0640"
-
-    - name: Remove patroni.yml conf files from localhost
-      become: false
-      run_once: true
-      ansible.builtin.file:
-        path: "{{ files_dir | default(playbook_dir ~ '/files') }}/patroni.yml"
-        state: absent
-      delegate_to: localhost
+      no_log: true
 
     - name: Prepare patroni.yml conf file (replace "name","listen","connect_address")
       ansible.builtin.lineinfile:
@@ -584,7 +575,7 @@
           become: true
           become_user: postgres
       when:
-        - inventory_hostname == groups['master'][0]
+        - inventory_hostname == patroni_bootstrap_host
         - patroni_standby_cluster.host | default('') | length < 1 # do not perform on the standby cluster
 
     - name: Prepare PostgreSQL | check PostgreSQL is started
@@ -653,7 +644,7 @@
       ansible.builtin.systemd:
         name: patroni
         state: stopped
-      when: inventory_hostname == groups['master'][0]
+      when: inventory_hostname == patroni_bootstrap_host
 
     - name: Check that PostgreSQL is stopped
       become: true
@@ -670,13 +661,13 @@
         {{ postgresql_bin_dir }}/pg_ctl stop -D {{ postgresql_data_dir }} -m fast -w -t {{ pg_ctl_timeout | default(3600) }}
       when: pg_ctl_status_result.rc is defined and (pg_ctl_status_result.rc != 3 and pg_ctl_status_result.rc != 4)
 
-    - name: Remove patroni cluster "{{ patroni_cluster_name | default('') }}" from DCS (if exist)
+    - name: Remove patroni cluster "{{ patroni_scope | default('') }}" from DCS (if exist)
       become: true
       become_user: postgres
       ansible.builtin.expect:
-        command: "patronictl -c /etc/patroni/patroni.yml remove {{ patroni_cluster_name }}"
+        command: "patronictl -c /etc/patroni/patroni.yml remove {{ patroni_scope }}"
         responses:
-          "Please confirm the cluster name to remove": "{{ patroni_cluster_name }}"
+          "Please confirm the cluster name to remove": "{{ patroni_scope }}"
           "You are about to remove all information in DCS": "Yes I am aware"
       register: patronictl_remove_result
       changed_when: patronictl_remove_result.rc == 0 and
@@ -684,7 +675,7 @@
       failed_when: patronictl_remove_result.rc != 0
       environment:
         PATH: "{{ ansible_env.PATH }}:/usr/bin:/usr/local/bin"
-      when: inventory_hostname == groups['master'][0]
+      when: inventory_hostname == patroni_bootstrap_host
 
     - block: # for pgbackrest only (for use --delta restore)
         - name: Run "{{ pgbackrest_patroni_cluster_bootstrap_command | default('') }}" on Master
@@ -692,7 +683,7 @@
           async: "{{ cluster_restore_timeout | default(86400) }}" # timeout 24 hours
           poll: 0
           register: pgbackrest_restore_master
-          when: inventory_hostname == groups['master'][0]
+          when: inventory_hostname == patroni_bootstrap_host
 
           # if patroni_create_replica_methods: "pgbackrest"
         - name: Run "{{ pgbackrest_patroni_replica_restore_command | default('') }}" on Replica
@@ -740,7 +731,7 @@
           async: "{{ pg_ctl_timeout | default(3600) }}" # run the command asynchronously
           poll: 0
           register: pg_ctl_start_result
-          when: inventory_hostname == groups['master'][0] or
+          when: inventory_hostname == patroni_bootstrap_host or
             ('replica' in groups and groups['replica'] | length > 0 and inventory_hostname in groups['replica']
             and 'pgbackrest' in patroni_create_replica_methods
             and pgbackrest_patroni_replica_restore_command is search('(^|\s)--type(?:=|\s+)standby(\s|$)'))
@@ -752,7 +743,7 @@
           until: pg_ctl_start_job_result.finished
           retries: "{{ (pg_ctl_timeout | default(3600) | int) // 10 }}"
           delay: 10
-          when: inventory_hostname == groups['master'][0] or
+          when: inventory_hostname == patroni_bootstrap_host or
             ('replica' in groups and groups['replica'] | length > 0 and inventory_hostname in groups['replica']
             and 'pgbackrest' in patroni_create_replica_methods
             and pgbackrest_patroni_replica_restore_command is search('(^|\s)--type(?:=|\s+)standby(\s|$)'))
@@ -769,7 +760,7 @@
           delay: 30
           changed_when: false
           failed_when: false
-          when: inventory_hostname == groups['master'][0]
+          when: inventory_hostname == patroni_bootstrap_host
 
         - name: Check that PostgreSQL is stopped
           ansible.builtin.command: "{{ postgresql_bin_dir }}/pg_ctl status -D {{ postgresql_data_dir }}"
@@ -920,7 +911,7 @@
       when:
         - (patroni_standby_cluster.host is not defined or patroni_standby_cluster.host | length < 1)
         - not ansible_check_mode
-  when: inventory_hostname == groups['master'][0]
+  when: inventory_hostname == patroni_bootstrap_host
   tags: patroni, patroni_start_master, point_in_time_recovery
 
 - block: # pg_hba (using a templates/pg_hba.conf.j2)
@@ -932,7 +923,7 @@
         group: postgres
         mode: "0640"
       register: generate_pg_hba
-      when: inventory_hostname == groups['master'][0] or
+      when: inventory_hostname == patroni_bootstrap_host or
         (('replica' in groups and groups['replica'] | length > 0 and inventory_hostname in groups['replica'] and postgresql_conf_dir != postgresql_data_dir)
         or postgresql_exists | default(false) | bool)
 
@@ -948,7 +939,7 @@
         query: "SELECT * FROM pg_hba_file_rules WHERE error IS NOT NULL"
       register: pg_hba_validate_result
       failed_when: pg_hba_validate_result.query_result | length > 0
-      when: inventory_hostname == groups['master'][0]
+      when: inventory_hostname == patroni_bootstrap_host
 
     - name: Prepare PostgreSQL | reload for apply the pg_hba.conf
       become: true
@@ -958,7 +949,7 @@
       changed_when: pg_ctl_reload_result.rc == 0
       # PostgreSQL is already running on master; replicas may not be started yet.
       # Keep reload best-effort on replicas (also when re-running with --tags pg_hba).
-      failed_when: pg_ctl_reload_result.rc != 0 and inventory_hostname == groups['master'][0]
+      failed_when: pg_ctl_reload_result.rc != 0 and inventory_hostname == patroni_bootstrap_host
       when: generate_pg_hba is changed
   when: cluster_scaling is not defined or not cluster_scaling | bool
   tags: patroni, pg_hba, pg_hba_generate
@@ -975,7 +966,7 @@
       retries: "{{ (cluster_restore_timeout | default(86400)) | int // 30 }}" # timeout 24 hours
       delay: 30
       changed_when: false
-      when: inventory_hostname == groups['master'][0]
+      when: inventory_hostname == patroni_bootstrap_host
 
     - name: Make sure the superuser and replication users are present, and password does not differ from the specified
       community.postgresql.postgresql_user:
@@ -995,7 +986,7 @@
         label: "{{ item.name }}"
       no_log: true # Loop items contain passwords.
       when:
-        - inventory_hostname == groups['master'][0]
+        - inventory_hostname == patroni_bootstrap_host
         - (patroni_superuser_username and patroni_superuser_password) is defined
         - (patroni_superuser_username and patroni_superuser_password) | length > 0
         - (patroni_replication_username and patroni_replication_password) is defined
@@ -1017,7 +1008,7 @@
       no_log: true # Loop items contain passwords.
       ignore_errors: true
       when:
-        - inventory_hostname == groups['master'][0]
+        - inventory_hostname == patroni_bootstrap_host
         - (postgresql_users is defined and postgresql_users | length > 0)
 
     - name: Update postgresql authentication in patroni.yml
@@ -1034,7 +1025,7 @@
             value: "{{ patroni_superuser_password }}"
         state: present
       no_log: true # Edits and the returned document contain passwords.
-      when: hostvars[groups['master'][0]]['postgresql_user_result'] is changed
+      when: hostvars[patroni_bootstrap_host]['postgresql_user_result'] is changed
   when:
     - patroni_cluster_bootstrap_method != "initdb"
     - (pgbackrest_install | bool or wal_g_install | bool)
@@ -1045,18 +1036,15 @@
   tags: patroni, point_in_time_recovery
 
 - block: # if cluster_scaling (add_node.yml)
-    - name: Prepare PostgreSQL | fetch pg_hba.conf file from master
-      run_once: true
-      ansible.builtin.fetch:
+    - name: Read pg_hba.conf from the bootstrap member of this shard
+      ansible.builtin.slurp:
         src: "{{ postgresql_conf_dir }}/pg_hba.conf"
-        dest: "{{ files_dir | default(playbook_dir ~ '/files') }}/pg_hba.conf"
-        validate_checksum: true
-        flat: true
-      delegate_to: "{{ groups.master[0] }}"
+      delegate_to: "{{ patroni_bootstrap_host }}"
+      register: shard_pg_hba
 
     - name: Prepare PostgreSQL | copy pg_hba.conf file to replica
       ansible.builtin.copy:
-        src: "{{ files_dir | default(playbook_dir ~ '/files') }}/pg_hba.conf"
+        content: "{{ shard_pg_hba.content | b64decode }}"
         dest: "{{ postgresql_conf_dir }}/pg_hba.conf"
         owner: postgres
         group: postgres

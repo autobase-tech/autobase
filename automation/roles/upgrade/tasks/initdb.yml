@@ -110,7 +110,7 @@
       {% endif %}
       {% endif %}
   vars:
-    pg_source_settings: "{{ hostvars[groups['primary'][0]].pg_settings.stdout | from_json }}"
+    pg_source_settings: "{{ hostvars[patroni_shard_primaries[0]].pg_settings.stdout | from_json }}"
 
 - name: Create temporary password file for install user
   ansible.builtin.copy:
@@ -126,26 +126,26 @@
   ansible.builtin.command: >-
     /usr/bin/pg_createcluster {{ pg_new_version }} {{ postgresql_cluster_name }}
     --datadir={{ pg_new_datadir }}
-    --encoding={{ (hostvars[groups['primary'][0]].pg_settings.stdout | from_json).server_encoding }}
-    --lc-collate={{ (hostvars[groups['primary'][0]].pg_settings.stdout | from_json).lc_collate }}
-    --lc-ctype={{ (hostvars[groups['primary'][0]].pg_settings.stdout | from_json).lc_ctype }}
-    --lc-messages={{ (hostvars[groups['primary'][0]].pg_settings.stdout | from_json).lc_messages }}
-    --lc-monetary={{ (hostvars[groups['primary'][0]].pg_settings.stdout | from_json).lc_monetary }}
-    --lc-numeric={{ (hostvars[groups['primary'][0]].pg_settings.stdout | from_json).lc_numeric }}
-    --lc-time={{ (hostvars[groups['primary'][0]].pg_settings.stdout | from_json).lc_time }}
+    --encoding={{ (hostvars[patroni_shard_primaries[0]].pg_settings.stdout | from_json).server_encoding }}
+    --lc-collate={{ (hostvars[patroni_shard_primaries[0]].pg_settings.stdout | from_json).lc_collate }}
+    --lc-ctype={{ (hostvars[patroni_shard_primaries[0]].pg_settings.stdout | from_json).lc_ctype }}
+    --lc-messages={{ (hostvars[patroni_shard_primaries[0]].pg_settings.stdout | from_json).lc_messages }}
+    --lc-monetary={{ (hostvars[patroni_shard_primaries[0]].pg_settings.stdout | from_json).lc_monetary }}
+    --lc-numeric={{ (hostvars[patroni_shard_primaries[0]].pg_settings.stdout | from_json).lc_numeric }}
+    --lc-time={{ (hostvars[patroni_shard_primaries[0]].pg_settings.stdout | from_json).lc_time }}
     --start-conf=manual
     --
-    --username={{ hostvars[groups['primary'][0]].pg_install_user.stdout }}
+    --username={{ hostvars[patroni_shard_primaries[0]].pg_install_user.stdout }}
     {{ pg_initdb_locale_options }}
     {% if pg_new_version | int >= 16 %}
-    --set wal_level={{ (hostvars[groups['primary'][0]].pg_settings.stdout | from_json).wal_level }}
+    --set wal_level={{ (hostvars[patroni_shard_primaries[0]].pg_settings.stdout | from_json).wal_level }}
     {% endif %}
     {% if pg_install_user_password is defined %}
     --pwfile="{{ postgresql_home_dir }}/.pg_install_user_password"
     {% endif %}
-    {% if (hostvars[groups['primary'][0]].pg_settings.stdout | from_json).data_checksums == 'on' %}
+    {% if (hostvars[patroni_shard_primaries[0]].pg_settings.stdout | from_json).data_checksums == 'on' %}
     --data-checksums
-    {% elif pg_new_version | int >= 18 and (hostvars[groups['primary'][0]].pg_settings.stdout | from_json).data_checksums == 'off' %}
+    {% elif pg_new_version | int >= 18 and (hostvars[patroni_shard_primaries[0]].pg_settings.stdout | from_json).data_checksums == 'off' %}
     --no-data-checksums
     {% endif %}
   when:
@@ -167,14 +167,14 @@
     --username={{ pg_install_user.stdout }}
     {{ pg_initdb_locale_options }}
     {% if pg_new_version | int >= 16 %}
-    --set wal_level={{ (hostvars[groups['primary'][0]].pg_settings.stdout | from_json).wal_level }}
+    --set wal_level={{ (hostvars[patroni_shard_primaries[0]].pg_settings.stdout | from_json).wal_level }}
     {% endif %}
     {% if pg_install_user_password is defined %}
     --pwfile={{ postgresql_home_dir }}/.pg_install_user_password
     {% endif %}
     {% if (pg_settings.stdout | from_json).data_checksums == 'on' %}
     --data-checksums
-    {% elif pg_new_version | int >= 18 and (hostvars[groups['primary'][0]].pg_settings.stdout | from_json).data_checksums == 'off' %}
+    {% elif pg_new_version | int >= 18 and (hostvars[patroni_shard_primaries[0]].pg_settings.stdout | from_json).data_checksums == 'off' %}
     --no-data-checksums
     {% endif %}
   when:
