@@ -63,6 +63,22 @@
   loop_control:
     label: "{{ item.name }}"
 
+- name: PgDog | Validate sharded table routing rules
+  ansible.builtin.assert:
+    that:
+      - item is mapping
+      - item.database in (pgdog_pools | map(attribute='name') | list + postgresql_databases | default([]) | map(attribute='db') | list)
+      - item.column is string and item.column | length > 0
+      - item.data_type in ['bigint', 'uuid', 'varchar']
+      - item.keys() | difference(['database', 'schema', 'name', 'column', 'data_type']) | length == 0
+  loop: "{{ pgdog_sharded_tables }}"
+
+- name: PgDog | Reserve backend routing fields for the inventory
+  ansible.builtin.assert:
+    that: item.pool_parameters | default({}, true) | intersect(['shard', 'role', 'host', 'port', 'name', 'database_name']) | length == 0
+  loop: "{{ pgdog_pools }}"
+  when: shard_id is defined
+
 - name: PgDog | Get max_connections
   ansible.builtin.import_tasks: max_connections.yml
 
@@ -81,16 +97,13 @@
           * (pgdog_default_pool_size | int)
         ) * (groups['postgres_cluster'] | length)
       }}
-  when: inventory_hostname == groups['master'][0]
 
 - name: PgDog | Show total pool_size
   ansible.builtin.debug:
     var: pgdog_total_pool_size
-  when: inventory_hostname == groups['master'][0]
 
 - name: PgDog | Failed when pgdog_total_pool_size > max_connections
   ansible.builtin.fail:
     msg: "pgdog_total_pool_size: {{ pgdog_total_pool_size }} > max_connections: {{ max_connections }}. Need change settings"
   when:
-    - inventory_hostname == groups['master'][0]
     - pgdog_total_pool_size | int > max_connections | default(100) | int

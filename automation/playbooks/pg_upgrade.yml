@@ -1,6 +1,9 @@
 ---
+- name: Resolve shard topology
+  ansible.builtin.import_playbook: shard_topology.yml
+
 - name: "vitabaks.autobase.pg_upgrade | Upgrade PostgreSQL to a new major version (in-place upgrade)"
-  hosts: postgres_cluster
+  hosts: "postgres_cluster:&autobase_{{ target_shard | default('all') }}"
   gather_facts: true
   become: true
   become_user: postgres
@@ -39,36 +42,36 @@
     - name: The Patroni cluster is unhealthy
       ansible.builtin.fail:
         msg: >
-          No healthy leader node detected in cluster '{{ patroni_cluster_name | default('postgres-cluster') }}'.
+          No healthy leader node detected in cluster '{{ patroni_scope }}'.
           Please ensure the cluster is up and node responds on REST API port ({{ patroni_restapi_port | default('8008') }}).
       when:
-        - inventory_hostname == groups['postgres_cluster'][0]
-        - (hostvars
-            | dict2items
-            | selectattr('value.patroni_leader_result.status', 'defined')
-            | selectattr('value.patroni_leader_result.status', 'equalto', 200)
+        - inventory_hostname == patroni_shard_hosts[0]
+        - (patroni_shard_hosts
+            | map('extract', hostvars)
+            | selectattr('patroni_leader_result.status', 'defined')
+            | selectattr('patroni_leader_result.status', 'equalto', 200)
             | list | length) == 0
 
     - name: '[Prepare] Add host to group "primary" (in-memory inventory)'
       ansible.builtin.add_host:
         name: "{{ item }}"
         groups: primary
-      when: hostvars[item]['patroni_leader_result']['status'] == 200
-      loop: "{{ groups['postgres_cluster'] }}"
+      when: hostvars[item]['patroni_leader_result']['status'] | default(0) == 200
+      loop: "{{ autobase_shards.selected }}"
       changed_when: false
 
     - name: '[Prepare] Add hosts to group "secondary" (in-memory inventory)'
       ansible.builtin.add_host:
         name: "{{ item }}"
         groups: secondary
-      when: hostvars[item]['patroni_leader_result']['status'] == 503
-      loop: "{{ groups['postgres_cluster'] }}"
+      when: hostvars[item]['patroni_leader_result']['status'] | default(0) == 503
+      loop: "{{ autobase_shards.selected }}"
       changed_when: false
 
     - name: "Print Patroni Cluster info"
       ansible.builtin.debug:
         msg:
-          - "Cluster Name: {{ patroni_cluster_name | default('postgres-cluster') }}"
+          - "Cluster Name: {{ patroni_scope }}"
           - "Cluster Leader: {{ ansible_hostname }}"
       when: inventory_hostname in groups['primary'] | default([])
 
@@ -91,7 +94,7 @@
     - always
 
 - name: "(1/6) PRE-UPGRADE: Perform Pre-Checks"
-  hosts: "primary:secondary"
+  hosts: "primary:secondary:&autobase_{{ target_shard | default('all') }}"
   gather_facts: false
   become: true
   become_user: postgres
@@ -107,7 +110,7 @@
     - pre-checks
 
 - name: "(2/6) PRE-UPGRADE: Install new PostgreSQL packages"
-  hosts: "primary:secondary"
+  hosts: "primary:secondary:&autobase_{{ target_shard | default('all') }}"
   gather_facts: false
   become: true
   become_user: root
@@ -124,7 +127,7 @@
     - packages
 
 - name: "(3/6) PRE-UPGRADE: Initialize new db, schema compatibility check, and pg_upgrade --check"
-  hosts: "primary:secondary"
+  hosts: "primary:secondary:&autobase_{{ target_shard | default('all') }}"
   gather_facts: false
   become: true
   become_user: postgres
@@ -159,7 +162,7 @@
     - schema-compatibility-check
 
 - name: "(4/6) PRE-UPGRADE: Prepare the Patroni configuration"
-  hosts: "primary:secondary"
+  hosts: "primary:secondary:&autobase_{{ target_shard | default('all') }}"
   gather_facts: false
   become: true
   become_user: postgres
@@ -174,7 +177,7 @@
     - update-config
 
 - name: "(5/6) UPGRADE: Upgrade PostgreSQL"
-  hosts: "primary:secondary"
+  hosts: "primary:secondary:&autobase_{{ target_shard | default('all') }}"
   gather_facts: false
   become: true
   become_user: postgres
@@ -230,7 +233,7 @@
     - upgrade
 
 - name: "(6/6) POST-UPGRADE: Analyze a PostgreSQL database (update optimizer statistics) and Post-Upgrade tasks"
-  hosts: "primary:secondary"
+  hosts: "primary:secondary:&autobase_{{ target_shard | default('all') }}"
   gather_facts: false
   become: true
   become_user: postgres

@@ -31,7 +31,7 @@
   delay: 2
   environment:
     no_proxy: "{{ patroni_bind_address | default(bind_address, true) }}"
-  when: groups['postgres_cluster'] | length > 1
+  when: patroni_shard_hosts | length > 1
 
 - name: Make sure leader endpoint is available on a single-node cluster
   ansible.builtin.uri:
@@ -45,7 +45,7 @@
   delay: 2
   environment:
     no_proxy: "{{ patroni_bind_address | default(bind_address, true) }}"
-  when: groups['postgres_cluster'] | length == 1
+  when: patroni_shard_hosts | length == 1
 
 # Warming up caches after reboot (if 'reboot_host_post_delay' is defined)
 - name: "Wait {{ reboot_host_post_delay | default('') }} minutes for caches to warm up after reboot"
@@ -54,4 +54,4 @@
   when:
     - (reboot_result.rebooted is defined and reboot_result.rebooted)
     - (reboot_host_post_delay is defined and reboot_host_post_delay | int > 0)
-    - (inventory_hostname in groups.get('secondary', []) and groups.get('secondary', []) | length > 1)
+    - (inventory_hostname in groups.get('secondary', []) and patroni_shard_replicas | length > 1)

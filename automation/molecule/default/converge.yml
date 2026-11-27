@@ -4,19 +4,6 @@
   gather_facts: true
 
   tasks:
-    # PgDog replaces both PgBouncer and HAProxy. Its binaries require glibc 2.39 or newer.
-    - name: Set variables for the connection pooler test (randomly PgBouncer or PgDog)
-      ansible.builtin.set_fact:
-        pgdog_install: "{{ ([true, false] | random) if pgdog_supported_os | bool else false }}"
-        cacheable: true
-      vars:
-        pgdog_supported_os: >-
-          {{ (ansible_distribution == 'Ubuntu' and ansible_distribution_version is version('24.04', '>='))
-          or (ansible_distribution == 'Debian' and ansible_distribution_major_version | int >= 13)
-          or (ansible_os_family == 'RedHat' and ansible_distribution_major_version | int >= 10) }}
-      delegate_to: localhost
-      run_once: true # noqa run-once
-
     - name: Set variables for PostgreSQL Cluster deployment test
       ansible.builtin.set_fact:
         ansible_become_method: su # Override become_method
@@ -27,20 +14,18 @@
         chronyd_ignore_errors: true # to prevent failures in CI
         nameservers: ["8.8.8.8", "9.9.9.9"]
         timezone: "Etc/UTC"
-        pgbouncer_install: "{{ not pgdog_install | bool }}"
-        with_haproxy_load_balancing: "{{ false if pgdog_install | bool else ([true, false] | random) }}"
+        pgdog_install: true
+        pgdog_default_pool_size: 4
+        pgdog_sharded_tables:
+          - {database: db1, name: pgdog_test, column: tenant_id, data_type: bigint}
         dcs_type: "{{ 'etcd' if ansible_distribution_major_version in ['10'] or ansible_distribution_release in ['trixie']
           else (['etcd', 'consul'] | random) }}" # TODO: Consul support for RHEL 10, Debian 13
-        consul_node_role: server # if dcs_type: "consul"
         postgresql_version: 18
         postgresql_locale_provider: "{{ ['', 'libc', 'icu', 'builtin'] | random }}"
         postgresql_icu_locale: "{{ ['und', 'en-US'] | random }}"
         postgresql_builtin_locale: "{{ ['C', 'C.UTF-8', 'PG_UNICODE_FAST'] | random }}"
-        pgbouncer_processes: 2 # Test multiple pgbouncer processes (so_reuseport)
         prometheus_exporters_install: true # Test the Prometheus exporters and the built-in metrics endpoints
         node_exporter_collectors: [cpu, filesystem, meminfo, vmstat, timex] # Test limiting the collectors (those of the alerts)
-        patroni_tags: "datacenter=dc1,key1=value1"
-        balancer_tags: "datacenter=dc1"
         enable_ssh_key_based_authentication: true
         synchronous_mode: true
         # Use low memory settings to allow testing on machines with limited RAM (e.g. 8 GB).
@@ -50,7 +35,6 @@
           - { option: "shared_buffers", value: "128MB" }
           - { option: "effective_cache_size", value: "512MB" }
         postgresql_users:
-          - { name: "pgbouncer", password: "pgbouncer-test-pass" }
           - { name: "db1_user", password: "db1_user-test-pass" }
         postgresql_databases:
           - { db: "db1", encoding: "UTF8", lc_collate: "en_US.UTF-8", lc_ctype: "en_US.UTF-8", owner: "db1_user" }
@@ -59,24 +43,17 @@
       delegate_to: localhost
       run_once: true # noqa run-once
 
-    - name: Set variables for vip-manager test
-      ansible.builtin.set_fact:
-        cluster_vip: "{{ ['10.172.0.200', ''] | random }}" # Randomly test with and without VIP
-        vip_manager_dcs_type: "{{ [dcs_type, 'patroni'] | random }}" # Randomly choose between dcs_type value or 'patroni'
-      delegate_to: localhost
-      run_once: true # noqa run-once
-      when: not with_haproxy_load_balancing | bool
-
     - name: Write test_vars.yml file (for Molecule verify)
       ansible.builtin.copy:
         content: |
           ---
+          ansible_become_method: "{{ ansible_become_method }}"
           dcs_type: "{{ dcs_type }}"
           pgdog_install: {{ pgdog_install | bool | lower }}
-          pgbouncer_processes: {{ pgbouncer_processes }}
+          cluster_name: "{{ cluster_name }}"
+          synchronous_mode: {{ synchronous_mode | bool | lower }}
           prometheus_exporters_install: {{ prometheus_exporters_install | bool | lower }}
           test_postgresql_version: {{ postgresql_version }}
-          test_cluster_vip: "{{ cluster_vip | default('') }}"
           postgresql_locale_provider: "{{ postgresql_locale_provider }}"
           postgresql_icu_locale: "{{ postgresql_icu_locale }}"
           postgresql_builtin_locale: "{{ postgresql_builtin_locale }}"

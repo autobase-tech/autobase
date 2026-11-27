@@ -8,7 +8,10 @@ This role installs and configures [Patroni](https://github.com/patroni/patroni),
 
 | Variable                           | Default              | Description                                                                                                       |
 | ---------------------------------- | -------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `patroni_cluster_name`             | `"postgres-cluster"` | PostgreSQL cluster name (must be unique for each cluster)                                                         |
+| `cluster_name` | `postgres-cluster` | Logical cluster name for shared resources. Existing inventories can omit it and keep their explicit `patroni_cluster_name`. |
+| `patroni_scope` | `cluster_name`, with `-shardN` appended when `shard_id` is set | Patroni DCS scope and default namespace for shard-local backups. |
+| `patroni_tags` | Unset | Comma-separated `key=value` tags for this Patroni member, for example `nosync=true,nofailover=true`. |
+| `patroni_replicatefrom` | Unset | Set on a replica to the upstream member name shown by `patronictl list` for cascading replication. In a sharded deployment, the upstream must be in the same shard. |
 | `patroni_superuser_username`       | `"postgres"`         | PostgreSQL superuser username                                                                                     |
 | `patroni_superuser_password`       | `""`                 | PostgreSQL superuser password (auto-generated if empty)                                                           |
 | `patroni_replication_username`     | `"replicator"`       | PostgreSQL replication user username                                                                              |
@@ -129,7 +132,7 @@ This role installs and configures [Patroni](https://github.com/patroni/patroni),
 
 Requirements:
 
-1. the cluster name for standby cluster must be unique (see 'patroni_cluster_name' variable)
+1. the cluster name for standby cluster must be unique (see `cluster_name`)
 2. the IP addresses (or network) of the standby cluster servers must be added to the pg_hba.conf of the Main Cluster (see 'postgresql_pg_hba' variable).
 
 Custom methods selected in `patroni_standby_cluster.create_replica_methods` must also be listed in `patroni_create_replica_methods`,

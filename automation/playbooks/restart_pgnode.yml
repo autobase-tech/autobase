@@ -1,6 +1,9 @@
 ---
+- name: Resolve shard topology
+  ansible.builtin.import_playbook: shard_topology.yml
+
 - name: vitabaks.autobase.restart_pgnode | Restart PostgreSQL Cluster node
-  hosts: postgres_cluster
+  hosts: "postgres_cluster:&autobase_{{ target_shard | default('all') }}"
   gather_facts: true
   become: true
   become_method: sudo
@@ -26,7 +29,7 @@
         that: patroni_restart_node_name | default('') | length > 0
         fail_msg: >-
           Set patroni_restart_node_name to the Patroni node name to restart.
-      when: inventory_hostname == groups['postgres_cluster'][0]
+      when: inventory_hostname == patroni_shard_hosts[0]
 
     - name: Validate Patroni restart node exists
       ansible.builtin.assert:
@@ -38,8 +41,8 @@
           | list)
         fail_msg: >-
           Patroni restart node '{{ patroni_restart_node_name | default('') }}' was not found in cluster
-          '{{ patroni_cluster_name | default('postgres-cluster') }}'.
-      when: inventory_hostname == groups['postgres_cluster'][0]
+          '{{ patroni_scope }}'.
+      when: inventory_hostname == patroni_shard_hosts[0]
 
     - name: "[Prepare] Get Patroni Cluster Leader Node"
       ansible.builtin.uri:
@@ -56,7 +59,7 @@
       environment:
         no_proxy: "{{ patroni_bind_address | default(bind_address, true) }}"
       when:
-        - (groups.get('postgres_cluster', [])
+        - (patroni_shard_hosts
             | map('extract', hostvars)
             | selectattr('patroni_leader_result.status', 'defined')
             | selectattr('patroni_leader_result.status', 'equalto', 200)
@@ -75,11 +78,11 @@
     - name: The Patroni cluster is unhealthy
       ansible.builtin.fail:
         msg: >
-          No healthy leader node detected in cluster '{{ patroni_cluster_name | default('postgres-cluster') }}'.
+          No healthy leader node detected in cluster '{{ patroni_scope }}'.
           Please ensure the cluster is up and node responds on REST API port ({{ patroni_restapi_port | default('8008') }}).
       when:
-        - inventory_hostname == groups['postgres_cluster'][0]
-        - (groups.get('postgres_cluster', [])
+        - inventory_hostname == patroni_shard_hosts[0]
+        - (patroni_shard_hosts
             | map('extract', hostvars)
             | selectattr('leader_result.status', 'defined')
             | selectattr('leader_result.status', 'equalto', 200)
@@ -91,9 +94,8 @@
         groups: primary
         postgresql_exists: true
       when:
-        - groups.get('primary', []) | length < 1
         - hostvars[item]['leader_result']['status'] | default(0) == 200
-      loop: "{{ groups['postgres_cluster'] }}"
+      loop: "{{ autobase_shards.selected }}"
       changed_when: false
       check_mode: false
 
@@ -103,16 +105,15 @@
         groups: secondary
         postgresql_exists: true
       when:
-        - groups.get('secondary', []) | length < 1
         - hostvars[item]['leader_result']['status'] | default(0) == 503
-      loop: "{{ groups['postgres_cluster'] }}"
+      loop: "{{ autobase_shards.selected }}"
       changed_when: false
       check_mode: false
 
     - name: "Print Patroni Cluster info"
       ansible.builtin.debug:
         msg:
-          - "Cluster Name: {{ patroni_cluster_name | default('postgres-cluster') }}"
+          - "Cluster Name: {{ patroni_scope }}"
           - "Cluster Leader: {{ ansible_hostname }}"
       when:
         - groups.get('primary', []) | length > 0

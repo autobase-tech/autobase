@@ -32,7 +32,7 @@
   check_mode: false
   environment:
     no_proxy: "{{ patroni_bind_address | default(bind_address, true) }}"
-  loop: "{{ groups.get('secondary', []) }}"
+  loop: "{{ patroni_shard_replicas }}"
   loop_control:
     loop_var: replica
     label: "{{ replica }}"
@@ -58,7 +58,7 @@
   become: true
   become_user: postgres
   ansible.builtin.command: >-
-    patronictl -c /etc/patroni/patroni.yml switchover {{ patroni_cluster_name }}
+    patronictl -c /etc/patroni/patroni.yml switchover {{ patroni_scope }}
     {{ '--candidate ' ~ patroni_switchover_candidate_name
       if patroni_switchover_candidate_name | default('') | length > 0 else '' }} --force
   register: patronictl_switchover_result
@@ -86,7 +86,7 @@
       become: true
       become_user: postgres
       ansible.builtin.command: >-
-        patronictl -c /etc/patroni/patroni.yml switchover {{ patroni_cluster_name }}
+        patronictl -c /etc/patroni/patroni.yml switchover {{ patroni_scope }}
         {{ '--candidate ' ~ patroni_switchover_candidate_name
           if patroni_switchover_candidate_name | default('') | length > 0 else '' }} --force
       register: patronictl_switchover_retry_result

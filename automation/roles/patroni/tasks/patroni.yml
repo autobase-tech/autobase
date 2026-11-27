@@ -1,4 +1,10 @@
 ---
+- name: Validate the upstream Patroni member for cascading replication
+  ansible.builtin.assert:
+    that: patroni_replicatefrom in (patroni_shard_hosts | map('extract', hostvars, 'ansible_hostname') | list)
+    fail_msg: "patroni_replicatefrom must name a member of {{ patroni_scope }}."
+  when: shard_id is defined and patroni_replicatefrom | default('') | length > 0
+
 - name: "Generate {{ patroni_config_file | default('/etc/patroni/patroni.yml') }}"
   ansible.builtin.template:
     src: templates/patroni.yml.j2

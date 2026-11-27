@@ -1,14 +1,17 @@
-[{{ pgbackrest_stanza }}]
+[{{ repo_stanza }}]
 {% for stanza in pgbackrest_server_conf.stanza | default([]) %}
 {{ stanza.option }}={{ stanza.value }}
 {% endfor %}
 {% set user_options = pgbackrest_server_conf.stanza | default([]) | map(attribute='option') | list %}
-{% for host in groups['postgres_cluster'] %}
+{% if autobase_shards.explicit | default(false) and repo_members | length == 1 and 'backup-standby' not in user_options %}
+backup-standby=n
+{% endif %}
+{% for host in repo_members %}
 {% if ('pg' ~ loop.index ~ '-host') not in user_options %}
 pg{{ loop.index }}-host={{ hostvars[host].bind_address }}
 {% endif %}
 {% if ('pg' ~ loop.index ~ '-port') not in user_options %}
-pg{{ loop.index }}-port={{ postgresql_port }}
+pg{{ loop.index }}-port={{ hostvars[host].postgresql_port | default(postgresql_port) }}
 {% endif %}
 {% if ('pg' ~ loop.index ~ '-socket-path') not in user_options %}
 pg{{ loop.index }}-socket-path={{ postgresql_unix_socket_dir }}

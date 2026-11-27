@@ -7,6 +7,7 @@
         | default('8008') }}/leader
     method: GET
     return_content: true
+    status_code: [200, 503]
     ca_path: "{{ patroni_restapi_cafile | default(omit, true) }}"
   register: patroni_response
   failed_when: "'running' not in patroni_response.json.state"
@@ -22,13 +23,8 @@
     ca_path: "{{ patroni_restapi_cafile | default(omit, true) }}"
   register: patroni_config_response
 
-# ✅ Verify that variables can be overridden via group_vars
-# 🧪 Ensure that patroni cluster name has the expected value "test-pgcluster" from Molecule inventory group_vars
-- name: Molecule.verify | Assert Patroni cluster scope is correct
-  run_once: true
+- name: Verify the Patroni scope and dynamic configuration of each shard
   ansible.builtin.assert:
     that:
-      - patroni_response.json.patroni.scope == "test-pgcluster"
+      - patroni_response.json.patroni.scope == 'test-pgcluster-shard' ~ shard_id
       - patroni_config_response.json.failsafe_mode | default(false) | bool
-    fail_msg: "Patroni config error: scope is '{{ patroni_response.json.patroni.scope }}', expected 'test-pgcluster'"
-    success_msg: "Patroni config OK: scope is 'test-pgcluster'"

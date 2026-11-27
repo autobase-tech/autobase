@@ -3,7 +3,7 @@
   become: true
   become_user: postgres
   ansible.builtin.command: >-
-    patronictl -c /etc/patroni/patroni.yml failover {{ patroni_cluster_name }}
+    patronictl -c /etc/patroni/patroni.yml failover {{ patroni_scope }}
     --candidate {{ patroni_failover_candidate_name | default(ansible_hostname, true) }} --force
   environment:
     PATH: "{{ ansible_env.PATH | default('') }}:/usr/bin:/usr/local/bin"

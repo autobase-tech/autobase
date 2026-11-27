@@ -33,6 +33,7 @@ Note:
 |----------|---------|-------------|
 | `haproxy_replicas_sync_enabled` | `true` | Render the `replicas_sync` listener (and `replicas_sync_direct`, if defined) |
 | `haproxy_replicas_async_enabled` | `true` | Render the `replicas_async` listener (and `replicas_async_direct`, if defined) |
+| `balancer_tags` | Unset | Set on an HAProxy host as a comma-separated list of `key=value` pairs, for example `datacenter=dc1`. HAProxy filters replicas by these Patroni tags in `/replica`, `/sync`, and `/async` health checks. |
 
 Set a flag to `false` to disable the listener, for example in a cluster with a single replica, where one of the two would be permanently DOWN.
 

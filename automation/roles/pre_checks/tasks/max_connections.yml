@@ -23,4 +23,3 @@
         )
         | default(100)
       }}
-  when: inventory_hostname == groups['master'][0]

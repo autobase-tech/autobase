@@ -33,7 +33,7 @@
     msg: "The Patroni cluster is already running. Stop rollback."
   vars:
     cluster_members: "{{ patroni_cluster_result.json.members | default([]) | rejectattr('state', 'equalto', 'stopped') | list | length }}"
-    total_nodes: "{{ groups['primary'] | length + groups.get('secondary', []) | length }}"
+    total_nodes: "{{ patroni_shard_primaries | length + patroni_shard_replicas | length }}"
   when:
     - inventory_hostname in groups['primary']
     # Check if the cluster members (excluding 'stopped') equals the total number of nodes
@@ -130,11 +130,11 @@
     - inventory_hostname in groups['primary']
 
 - name: "[Rollback] Resume Patroni (disable maintenance mode)"
-  run_once: true
-  ansible.builtin.command: "patronictl -c {{ patroni_config_file }} resume --wait {{ patroni_cluster_name }}"
+  ansible.builtin.command: "patronictl -c {{ patroni_config_file }} resume --wait {{ patroni_scope }}"
   environment:
     PATH: "{{ ansible_env.PATH }}:/usr/bin:/usr/local/bin"
   failed_when: false
+  when: inventory_hostname in groups['primary']
 
 - name: "[Rollback] Check Patroni is healthy on the leader"
   ansible.builtin.uri:

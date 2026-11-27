@@ -5,18 +5,33 @@
   become: true
   become_user: postgres
   community.postgresql.postgresql_query:
-    query: "select rolname from pg_catalog.pg_roles"
+    query: >-
+      {{ 'select rolname, rolpassword from pg_catalog.pg_authid where rolname = ANY(%s)'
+         if shard_id is defined else 'select rolname from pg_catalog.pg_roles' }}
+    positional_args: "{{ [postgresql_users_normalized | map(attribute='name') | list] if shard_id is defined else omit }}"
     login_host: "127.0.0.1"
     login_port: "{{ postgresql_port }}"
     login_user: "{{ patroni_superuser_username }}"
     login_password: "{{ patroni_superuser_password }}"
     login_db: "postgres"
+  no_log: true
   register: postgresql_existing_users_result
   changed_when: false
   when:
-    - postgresql_users | default([]) | length > 0
+    - postgresql_users_normalized | length > 0
     - postgresql_users_password_generation | default('disabled') == 'on_create'
     - patroni_standby_cluster.host | default('') | length < 1 # do not perform on the standby cluster
+  tags: postgresql_users, secrets
+
+- name: Select primaries that provision application credentials
+  ansible.builtin.group_by:
+    key: autobase_provision_primaries
+  changed_when: false
+  when:
+    - shard_id is defined
+    - postgresql_users_normalized | length > 0
+    - postgresql_users_password_generation != 'disabled'
+    - patroni_standby_cluster.host | default('') | length < 1
   tags: postgresql_users, secrets
 
 # Build the complete loop input in one step. Generated passwords remain in the
@@ -25,38 +40,46 @@
   ansible.builtin.set_fact:
     postgresql_users_effective: >-
       {%- set effective_users = [] -%}
-      {%- for user in postgresql_users | flatten(1) -%}
+      {%- for user in postgresql_users_normalized -%}
         {%- set user_flags =
           (user.flags | default('LOGIN', true) | upper | regex_replace('\\s+', '')).split(',') -%}
-        {%- set generate_password =
-          postgresql_users_password_generation | default('disabled') != 'disabled'
-          and
+        {%- set password_needed =
           user.state | default('present') == 'present'
-          and user.password | default('', true) | string | length == 0
+          and user.password | default('', true) | string | length == 0 -%}
+        {%- set password_fields = {} -%}
+        {%- if password_needed and user.name in existing_verifiers -%}
+          {%- set password_fields = {'password': existing_verifiers[user.name], '_recovered_verifier': true} -%}
+        {%- elif password_needed
+          and postgresql_users_password_generation != 'disabled'
           and 'NOLOGIN' not in user_flags
-          and (
-            postgresql_users_password_generation | default('disabled') == 'always'
-            or user.name not in postgresql_existing_users
-          ) -%}
-        {%- set effective_user = user | combine(
-          {'password': lookup('ansible.builtin.password', '/dev/null chars=ascii_letters,digits length=32')}
-          if generate_password else {}
-        ) -%}
-        {%- set _ = effective_users.append(effective_user) -%}
+          and (postgresql_users_password_generation == 'always' or user.name not in postgresql_users_existing_names) -%}
+          {%- set password_fields = {'password': lookup('ansible.builtin.password', '/dev/null chars=ascii_letters,digits length=32')} -%}
+        {%- endif -%}
+        {%- set _ = effective_users.append(user | combine(password_fields)) -%}
       {%- endfor -%}
       {{ effective_users }}
   vars:
-    postgresql_existing_users: >-
-      {{
-        (postgresql_existing_users_result | default({})).query_result
-        | default([])
-        | map(attribute='rolname')
-        | list
-      }}
+    existing_verifiers: >-
+      {{ postgresql_users_provision_hosts | map('extract', hostvars, 'postgresql_existing_users_result') | selectattr('query_result', 'defined')
+         | map(attribute='query_result') | flatten | selectattr('rolpassword', 'defined') | selectattr('rolpassword', 'string')
+         | items2dict(key_name='rolname', value_name='rolpassword')
+         if shard_id is defined and postgresql_users_password_generation == 'on_create' else {} }}
   no_log: true
   when:
-    - postgresql_users | default([]) | length > 0
+    - postgresql_users_normalized | length > 0
     - patroni_standby_cluster.host | default('') | length < 1 # do not perform on the standby cluster
+    - shard_id is undefined or postgresql_users_password_generation == 'disabled' or inventory_hostname == postgresql_users_credential_source
+  tags: postgresql_users, secrets
+
+- name: Share generated application credentials across shard primaries
+  ansible.builtin.set_fact:
+    postgresql_users_effective: "{{ hostvars[postgresql_users_credential_source].postgresql_users_effective }}"
+  no_log: true
+  when:
+    - shard_id is defined
+    - postgresql_users_normalized | length > 0
+    - postgresql_users_password_generation != 'disabled'
+    - patroni_standby_cluster.host | default('') | length < 1
   tags: postgresql_users, secrets
 
 - name: Create or modify PostgreSQL users
@@ -65,7 +88,9 @@
   community.postgresql.postgresql_user:
     name: "{{ item.name }}"
     # Omit empty passwords to preserve existing credentials while allowing other attributes to change.
-    password: "{{ item.password | default(omit, true) }}"
+    password: >-
+      {{ omit if item._recovered_verifier | default(false) and item.name in postgresql_users_existing_names
+         else item.password | default(omit, true) }}
     encrypted: true
     role_attr_flags: "{{ item.flags | default('LOGIN') }}"
     conn_limit: "{{ item.conn_limit | default(omit) }}"
@@ -82,7 +107,7 @@
   loop_control:
     label: "{{ item.name }}"
   when:
-    - postgresql_users | default('') | length > 0
+    - postgresql_users_normalized | length > 0
     - patroni_standby_cluster.host | default('') | length < 1 # do not perform on the standby cluster
   tags: postgresql_users, secrets
 
@@ -99,6 +124,7 @@
           and not (result.skipped | default(false) | bool)
           and result.item.state | default('present') == 'present'
           and result.item.password | default('', true) | string | length > 0
+          and not result.item._recovered_verifier | default(false)
           and result.item.secret | default(none) is not sameas false -%}
           {%- set _ = users.append({
             'name': result.item.secret if result.item.secret | default('', true) | length > 0
@@ -159,11 +185,10 @@
     state: "{{ item.state | default('present') }}"
   ignore_errors: "{{ postgresql_users_ignore_errors | default(false) }}"
   no_log: true # Loop items contain passwords.
-  loop: "{{ postgresql_users | flatten(1) }}"
+  loop: "{{ postgresql_users_normalized }}"
   loop_control:
     label: "{{ item.name }}"
   when:
-    - postgresql_users | default('') | length > 0
     - item.role | default('') | length > 0
     - patroni_standby_cluster.host | default('') | length < 1 # do not perform on the standby cluster
     - not ansible_check_mode # Users are not actually created in check mode, so membership would fail

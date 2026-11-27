@@ -21,6 +21,11 @@
         cluster_scaling: true
       tags: always
 
+- name: Resolve shard topology
+  ansible.builtin.import_playbook: shard_topology.yml
+  vars:
+    shard_check_identity: true
+
 - name: vitabaks.autobase.add_node | Prepare and perform pre-checks
   hosts: postgres_cluster:etcd_cluster:consul_instances:balancers
   become: true
@@ -80,6 +85,14 @@
             | map(attribute='inventory_hostname')
             | list
           }}
+      tags: always
+
+    - name: Check that new PostgreSQL nodes are replicas of a selected shard
+      ansible.builtin.assert:
+        that:
+          - new_postgres_nodes | difference(autobase_shards.selected) | length == 0
+          - new_postgres_nodes | intersect(groups.get('master', [])) | length == 0
+      when: autobase_shards.explicit
       tags: always
 
     # Stop, if no nodes found with new_node variable
@@ -300,6 +313,10 @@
   vars:
     cluster_scaling: true
     tls_source_host: "{{ groups['postgres_cluster'] | difference(new_postgres_nodes | default([])) | first }}"
+  pre_tasks:
+    - name: Load cluster defaults
+      ansible.builtin.import_role:
+        name: vitabaks.autobase.common
   tasks:
     - name: Generate Postgres TLS certificate
       ansible.builtin.include_role:
@@ -341,8 +358,10 @@
     - role: vitabaks.autobase.patroni
 
     - role: vitabaks.autobase.vip_manager
-      when: not with_haproxy_load_balancing | default(false) | bool and
-        (cluster_vip is defined and cluster_vip | length > 0)
+      when:
+        - not pgdog_install | bool
+        - not with_haproxy_load_balancing | bool
+        - cluster_vip | length > 0
 
     - role: vitabaks.autobase.postgresql_index_maintenance
 

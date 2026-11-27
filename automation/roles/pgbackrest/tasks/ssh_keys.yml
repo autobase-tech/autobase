@@ -97,7 +97,7 @@
     user: postgres
     state: present
     key: "{{ hostvars[item].get('postgres_cluster_sshkey', {}).get('content', '') | b64decode }}"
-  loop: "{{ groups['postgres_cluster'] }}"
+  loop: "{{ patroni_shard_hosts }}"
   when:
     - "'postgres_cluster' in group_names"
     - pgbackrest_conf.global | selectattr('option', 'equalto', 'backup-standby') | map(attribute='value') | list | last | default('') == 'y'
@@ -106,8 +106,11 @@
 
 - name: known_hosts | Get public ssh host keys (ssh-keyscan)
   ansible.builtin.command: ssh-keyscan -p {{ target_port }} {{ target_host }}
-  loop: "{{ (groups['postgres_cluster']) + (groups['pgbackrest'] | default([])) }}"
+  loop: "{{ db_hosts + groups.get('pgbackrest', []) }}"
   vars:
+    db_hosts: >-
+      {{ autobase_shards.selected if 'pgbackrest' in group_names and autobase_shards.explicit | default(false)
+         else patroni_shard_hosts }}
     target_host: "{{ hostvars[item].get('bind_address') if (item in (groups['postgres_cluster'])) else pgbackrest_repo_host }}"
     target_port: "{{ hostvars[item].get('ansible_ssh_port') or hostvars[item].get('ansible_port') or 22 }}"
   register: ssh_known_host_keyscan

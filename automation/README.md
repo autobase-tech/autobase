@@ -32,7 +32,7 @@ collections:
 
 1. Prepare your inventory file
 
-Note: It should follow the example [inventory](https://github.com/autobase-tech/autobase/blob/main/automation/inventory.example) structure and include required groups such as `master`, `replica` (as part of the `postgres_cluster` group), `etcd_cluster`, and others.
+The [YAML inventory example](inventory.example.yml) defines four Patroni shards behind PgDog. For a single Patroni cluster, omit `shard_id` and use one bootstrap host in `master`. See [deploying and operating PgDog shards](roles/pgdog/README.md#deploy-a-sharded-cluster) for the group layout and maintenance commands.
 
 2. Prepare your variables file
 
@@ -43,7 +43,7 @@ Refer to the default [variables](https://github.com/autobase-tech/autobase/blob/
 Execute it directly:
 
 ```bash
-ansible-playbook -i inventory vitabaks.autobase.deploy_pgcluster
+ansible-playbook -i inventory.yml vitabaks.autobase.deploy_pgcluster
 ```
 
 Or include the playbook in your project by calling it from within an existing playbook:

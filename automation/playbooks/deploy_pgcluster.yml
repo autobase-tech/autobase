@@ -4,6 +4,12 @@
   gather_facts: true
   any_errors_fatal: true
   pre_tasks:
+    - name: Deploy the complete logical cluster
+      ansible.builtin.assert:
+        that: target_shard | default('all') == 'all'
+        fail_msg: Deploy all shards together. Use a maintenance playbook to target an existing shard.
+      tags: always
+
     - name: Validate secrets configuration
       ansible.builtin.import_role:
         name: vitabaks.autobase.pre_checks
@@ -28,6 +34,11 @@
       when: cloud_provider | default('') | length > 0
       tags: always
 
+- name: Resolve shard topology
+  ansible.builtin.import_playbook: shard_topology.yml
+  vars:
+    shard_check_identity: true
+
 - name: vitabaks.autobase.deploy_pgcluster | Perform pre-checks and preparation
   hosts: "etcd_cluster:consul_instances:balancers:postgres_cluster"
   become: true
@@ -47,6 +58,49 @@
       ansible.builtin.import_role:
         name: vitabaks.autobase.bind_address
       when: bind_address is not defined
+      tags: always
+
+    - name: Discover existing shard leaders before reapplying a deployment
+      ansible.builtin.uri:
+        url: >-
+          {{ patroni_restapi_protocol }}://{{ patroni_restapi_connect_addr
+            | default(patroni_bind_address | default(bind_address, true), true) }}:{{ patroni_restapi_port }}/leader
+        ca_path: "{{ patroni_restapi_cafile | default(omit, true) }}"
+        status_code: [200, 503]
+      register: existing_shard_member
+      changed_when: false
+      failed_when: false
+      check_mode: false
+      environment:
+        no_proxy: "{{ patroni_bind_address | default(bind_address, true) }}"
+      when: shard_id is defined and shard_identity_file.stat.exists | default(false)
+      tags: always
+
+    - name: Reconfigure running shard members on repeat deployments
+      ansible.builtin.set_fact:
+        postgresql_cluster_maintenance: true
+        postgresql_exists: true
+      when: existing_shard_member.status | default(0) in [200, 503]
+      tags: always
+
+    - name: Group the current shard primaries and replicas
+      ansible.builtin.group_by:
+        key: "{{ 'primary' if existing_shard_member.status == 200 else 'secondary' }}"
+      changed_when: false
+      when: existing_shard_member.status | default(0) in [200, 503]
+      tags: always
+
+    - name: Reuse the credentials of a running shard when retrying deployment
+      ansible.builtin.set_fact:
+        shard_deploy_password_host: "{{ groups['primary'][0] }}"
+      when: shard_id is defined and groups.get('primary', []) | length > 0
+      tags: always
+
+    - name: Require a single primary on each running shard
+      ansible.builtin.assert:
+        that: patroni_shard_primaries | length == 1
+        fail_msg: "Cannot redeploy {{ patroni_scope }} without one healthy leader."
+      when: existing_shard_member.status | default(0) in [200, 503]
       tags: always
 
     # Print system information
@@ -330,27 +384,30 @@
     - role: vitabaks.autobase.pgpass
 
     - role: vitabaks.autobase.patroni
+      when: existing_shard_member.status | default(0) not in [200, 503]
 
     - role: vitabaks.autobase.vip_manager
-      when: not with_haproxy_load_balancing | default(false) | bool and
-        (cluster_vip is defined and cluster_vip | length > 0)
+      when:
+        - not pgdog_install | bool
+        - not with_haproxy_load_balancing | bool
+        - cluster_vip | length > 0
 
     # optional
     - role: vitabaks.autobase.postgresql_users
-      when: inventory_hostname == groups['master'][0]
+      when: inventory_hostname == (patroni_shard_primaries | first | default(patroni_bootstrap_host))
 
     - role: vitabaks.autobase.postgresql_databases
-      when: inventory_hostname == groups['master'][0]
+      when: inventory_hostname == (patroni_shard_primaries | first | default(patroni_bootstrap_host))
 
     - role: vitabaks.autobase.postgresql_schemas
-      when: inventory_hostname == groups['master'][0]
+      when: inventory_hostname == (patroni_shard_primaries | first | default(patroni_bootstrap_host))
 
     - role: vitabaks.autobase.postgresql_extensions
-      when: inventory_hostname == groups['master'][0]
+      when: inventory_hostname == (patroni_shard_primaries | first | default(patroni_bootstrap_host))
 
     # after the extensions, so that privileges can be granted on their objects
     - role: vitabaks.autobase.postgresql_privs
-      when: inventory_hostname == groups['master'][0]
+      when: inventory_hostname == (patroni_shard_primaries | first | default(patroni_bootstrap_host))
 
     - role: vitabaks.autobase.postgresql_index_maintenance
 
@@ -359,6 +416,12 @@
     - role: vitabaks.autobase.prometheus_exporters
 
   tasks:
+    - name: Configure existing shard members
+      ansible.builtin.import_role:
+        name: vitabaks.autobase.patroni
+        tasks_from: config
+      when: existing_shard_member.status | default(0) in [200, 503]
+
     - name: Create pgbackrest stanza
       ansible.builtin.import_role:
         name: vitabaks.autobase.pgbackrest

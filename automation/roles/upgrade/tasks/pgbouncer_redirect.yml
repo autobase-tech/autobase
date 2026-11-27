@@ -6,10 +6,10 @@
     msg: >-
       Replica count mismatch detected:
       source secondary={{ groups.get('source_secondary', []) | length }},
-      target secondary={{ groups.get('secondary', []) | length }}.
+      target secondary={{ patroni_shard_replicas | length }}.
       PgBouncer redirection will use deterministic modulo mapping across target replicas,
       and fallback to target primary when target replicas are absent.
-  when: (groups.get('secondary', []) | length) != (groups.get('source_secondary', []) | length)
+  when: (patroni_shard_replicas | length) != (groups.get('source_secondary', []) | length)
   run_once: true
 
 - name: Prepare PgBouncer configuration to redirect primary traffic
@@ -22,7 +22,7 @@
     loop_var: idx
     label: "pgbouncer{{ '-%d' % (idx + 1) if idx > 0 else '' }}.ini"
   vars:
-    target_primary_host: "{{ (groups.get('primary', []) | first) | default('', true) }}"
+    target_primary_host: "{{ (patroni_shard_primaries | first) | default('', true) }}"
     target_primary_host_addr: >-
       {{
         hostvars[target_primary_host].patroni_bind_address

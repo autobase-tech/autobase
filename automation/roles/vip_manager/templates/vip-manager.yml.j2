@@ -8,7 +8,7 @@ trigger-key: "/leader"
 trigger-value: 200
 {% else %}
 # the etcd or consul key which vip-manager will regularly poll.
-trigger-key: "/{{ patroni_etcd_namespace | default('service') }}/{{ patroni_cluster_name }}/leader"
+trigger-key: "/{{ patroni_etcd_namespace | default('service') }}/{{ patroni_scope }}/leader"
 # if the value of the above key matches the trigger-value (often the hostname of this host), vip-manager will try to add the virtual ip address to the interface specified in Iface
 trigger-value: "{{ ansible_hostname }}"
 {% endif %}

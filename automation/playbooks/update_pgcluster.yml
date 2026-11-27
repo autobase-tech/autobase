@@ -1,6 +1,9 @@
 ---
+- name: Resolve shard topology
+  ansible.builtin.import_playbook: shard_topology.yml
+
 - name: vitabaks.autobase.update_pgcluster | Update PostgreSQL Cluster
-  hosts: postgres_cluster
+  hosts: "postgres_cluster:&autobase_{{ target_shard | default('all') }}"
   gather_facts: true
   become: true
   become_method: sudo
@@ -43,14 +46,14 @@
     - name: The Patroni cluster is unhealthy
       ansible.builtin.fail:
         msg: >
-          No healthy leader node detected in cluster '{{ patroni_cluster_name | default('postgres-cluster') }}'.
+          No healthy leader node detected in cluster '{{ patroni_scope }}'.
           Please ensure the cluster is up and node responds on REST API port ({{ patroni_restapi_port | default('8008') }}).
       when:
-        - inventory_hostname == groups['postgres_cluster'][0]
-        - (hostvars
-            | dict2items
-            | selectattr('value.patroni_leader_result.status', 'defined')
-            | selectattr('value.patroni_leader_result.status', 'equalto', 200)
+        - inventory_hostname == patroni_shard_hosts[0]
+        - (patroni_shard_hosts
+            | map('extract', hostvars)
+            | selectattr('patroni_leader_result.status', 'defined')
+            | selectattr('patroni_leader_result.status', 'equalto', 200)
             | list | length) == 0
       tags: always
 
@@ -58,8 +61,8 @@
       ansible.builtin.add_host:
         name: "{{ item }}"
         groups: primary
-      when: hostvars[item]['patroni_leader_result']['status'] == 200
-      loop: "{{ groups['postgres_cluster'] }}"
+      when: hostvars[item]['patroni_leader_result']['status'] | default(0) == 200
+      loop: "{{ autobase_shards.selected }}"
       changed_when: false
       tags: always
 
@@ -67,15 +70,15 @@
       ansible.builtin.add_host:
         name: "{{ item }}"
         groups: secondary
-      when: hostvars[item]['patroni_leader_result']['status'] == 503
-      loop: "{{ groups['postgres_cluster'] }}"
+      when: hostvars[item]['patroni_leader_result']['status'] | default(0) == 503
+      loop: "{{ autobase_shards.selected }}"
       changed_when: false
       tags: always
 
     - name: "Print Patroni Cluster info"
       ansible.builtin.debug:
         msg:
-          - "Cluster Name: {{ patroni_cluster_name | default('postgres-cluster') }}"
+          - "Cluster Name: {{ patroni_scope }}"
           - "Cluster Leader: {{ ansible_hostname }}"
       when: inventory_hostname in groups['primary'] | default([])
       tags: always
@@ -97,7 +100,7 @@
       tags: always
 
 - name: "(1/4) PRE-UPDATE: Perform pre-update tasks"
-  hosts: "primary:secondary"
+  hosts: "primary:secondary:&autobase_{{ target_shard | default('all') }}"
   gather_facts: true
   become: true
   become_user: postgres
@@ -128,7 +131,7 @@
     - pre-checks
 
 - name: "(2/4) UPDATE: Secondary"
-  hosts: secondary
+  hosts: "secondary:&autobase_{{ target_shard | default('all') }}"
   serial: 1 # update replicas one by one
   gather_facts: true
   become: true
@@ -190,7 +193,7 @@
     - update-secondary
 
 - name: "(3/4) UPDATE: Primary"
-  hosts: primary
+  hosts: "primary:&autobase_{{ target_shard | default('all') }}"
   gather_facts: true
   become: true
   become_method: sudo
@@ -202,7 +205,7 @@
         name: vitabaks.autobase.patroni
         tasks_from: switchover
       when:
-        - groups['postgres_cluster'] | length > 1
+        - patroni_shard_hosts | length > 1
         - target | default('postgres') != 'pgdog'
 
     - name: Stop read-only traffic
@@ -259,7 +262,7 @@
     - update-primary
 
 - name: "(4/4) POST-UPDATE: Update extensions"
-  hosts: postgres_cluster
+  hosts: "postgres_cluster:&autobase_{{ target_shard | default('all') }}"
   gather_facts: true
   become: true
   become_user: postgres
@@ -281,7 +284,7 @@
           hostvars[item].update_postgres_failed | default(false) or
           hostvars[item].update_patroni_failed | default(false) or
           hostvars[item].update_system_failed | default(false) }}"
-      loop: "{{ groups['postgres_cluster'] }}"
+      loop: "{{ autobase_shards.selected }}"
 
     - name: Check the Patroni cluster state
       run_once: true # noqa run-once

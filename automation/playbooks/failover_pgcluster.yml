@@ -1,6 +1,9 @@
 ---
+- name: Resolve shard topology
+  ansible.builtin.import_playbook: shard_topology.yml
+
 - name: vitabaks.autobase.failover_pgcluster | Failover PostgreSQL Cluster
-  hosts: postgres_cluster
+  hosts: "postgres_cluster:&autobase_{{ target_shard | default('all') }}"
   gather_facts: true
   become: true
   become_method: sudo
@@ -40,12 +43,12 @@
     - name: Fail when a healthy Patroni leader is detected
       ansible.builtin.fail:
         msg: >
-          A healthy Patroni leader is present in cluster '{{ patroni_cluster_name | default('postgres-cluster') }}'.
+          A healthy Patroni leader is present in cluster '{{ patroni_scope }}'.
           Use switchover_pgcluster.yml for a planned role change.
       when:
         - not patroni_failover_force | default(false) | bool
-        - inventory_hostname == groups['postgres_cluster'][0]
-        - (groups.get('postgres_cluster', [])
+        - inventory_hostname == patroni_shard_hosts[0]
+        - (patroni_shard_hosts
             | map('extract', hostvars)
             | selectattr('failover_patroni_leader_result.status', 'defined')
             | selectattr('failover_patroni_leader_result.status', 'equalto', 200)
@@ -70,7 +73,7 @@
       ansible.builtin.set_fact:
         failover_candidates: >-
           {{
-            groups.get('postgres_cluster', [])
+            patroni_shard_hosts
             | map('extract', hostvars)
             | selectattr('failover_patroni_replica_result.status', 'defined')
             | selectattr('failover_patroni_replica_result.status', 'equalto', 200)
@@ -94,7 +97,7 @@
           - failover_executor in failover_candidates
         fail_msg: >-
           Failover candidate '{{ failover_executor }}' is not a healthy Patroni replica in cluster
-          '{{ patroni_cluster_name | default('postgres-cluster') }}'.
+          '{{ patroni_scope }}'.
 
     - name: Failover Patroni leader role
       ansible.builtin.import_role:

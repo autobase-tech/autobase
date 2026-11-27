@@ -36,8 +36,11 @@ The zone placement variables apply to AWS, GCP and Azure; see [Availability zone
 | cloud_provider_tags | dict | Managed: autobase | Custom tags for supported resources; see [Custom resource tags](#custom-resource-tags). |
 | cloud_backup_provider_tags | dict | cloud_provider_tags | Tags for backup storage resources. An explicit dictionary replaces the inherited tags. |
 | state | string | present | present to create, absent to delete |
-| server_count | int | 3 | Number of servers in the cluster |
-| server_name | string | {{ patroni_cluster_name }}-pgnode | Will be automatically named with suffixes 01, 02, 03, etc. |
+| server_count | int | `3` for unsharded clusters | Total number of PostgreSQL servers for an unsharded cluster |
+| shards_count | int | `1` | Set above `1` for automatic shard placement with PgDog |
+| servers_per_shard | int | `3` | Number of PostgreSQL VMs in each automatically placed shard |
+| server_shards | dict | `{}` | Complete map of VM names to their shard IDs and bootstrap roles. Takes precedence over automatic placement |
+| server_name | string | `cluster_name` with automatic sharding, otherwise `{{ cluster_name }}-pgnode` | Prefix for generated VM names |
 | server_type | string | "" | Instance/VM size (required) |
 | server_image | string | "" | OS image. For Azure, use variables 'azure_vm_image_offer', 'azure_vm_image_publisher', 'azure_vm_image_sku', 'azure_vm_image_version' instead of 'server_image' variable |
 | server_location | string | "" | Region/zone (required) |
@@ -72,7 +75,7 @@ The zone placement variables apply to AWS, GCP and Azure; see [Availability zone
 | cloud_backup_bucket_name | string | Generated bucket name | Optional common name for S3, GCS, Spaces and Hetzner buckets. Provider-specific names override it. |
 | cloud_backup_azure_account_name | string | Generated Azure Storage Account name | Optional common Azure account name. `azure_blob_storage_account_name` overrides it. |
 | aws_s3_bucket_create | bool | true | Create S3 bucket (if 'pgbackrest_install' or 'wal_g_install' is 'true') |
-| aws_s3_bucket_name | string | {{ patroni_cluster_name }}-backup | Bucket name |
+| aws_s3_bucket_name | string | {{ cluster_name }}-backup | Bucket name |
 | aws_s3_bucket_region | string | {{ server_location }} | Bucket region |
 | aws_s3_bucket_object_lock_enabled | bool | false | Enable S3 Object Lock |
 | aws_s3_bucket_encryption | string | AES256 | Server-side encryption ("AES256","aws:kms") |
@@ -80,15 +83,15 @@ The zone placement variables apply to AWS, GCP and Azure; see [Availability zone
 | aws_s3_bucket_ignore_public_acls | bool | true | IgnorePublicAcls |
 | aws_s3_bucket_absent | bool | false | Allow delete bucket on state=absent |
 | gcp_bucket_create | bool | true | Create GCS bucket (if 'pgbackrest_install' or 'wal_g_install' is 'true') |
-| gcp_bucket_name | string | {{ patroni_cluster_name }}-backup | Storage bucket name |
+| gcp_bucket_name | string | {{ cluster_name }}-backup | Storage bucket name |
 | gcp_bucket_storage_class | string | MULTI_REGIONAL | Storage bucket class |
 | gcp_bucket_default_object_acl | string | projectPrivate | Default object ACL |
 | gcp_bucket_absent | bool | false | Allow delete bucket on state=absent |
 | azure_blob_storage_create | bool | true | Create Azure Blob container (if 'pgbackrest_install' or 'wal_g_install' is 'true') |
 | azure_backup_location | string | {{ server_location }} | Azure region for backup storage. Can differ from the server region. |
-| azure_blob_storage_name | string | {{ patroni_cluster_name }}-backup | Name of a blob container within the storage account |
+| azure_blob_storage_name | string | {{ cluster_name }}-backup | Name of a blob container within the storage account |
 | azure_blob_storage_blob_type | string | block | Type of blob object. Values include: block, page |
-| azure_blob_storage_account_name | string | {{ patroni_cluster_name }} | Storage account name. Must be between 3 and 24 characters in length and use numbers and lower-case letters only |
+| azure_blob_storage_account_name | string | {{ cluster_name }} | Storage account name. Must be between 3 and 24 characters in length and use numbers and lower-case letters only |
 | azure_blob_storage_account_type | string | Standard_RAGRS | Type of storage account. Values include: Standard_LRS, Standard_GRS, Standard_RAGRS, Standard_ZRS, Standard_RAGZRS, Standard_GZRS, Premium_LRS, Premium_ZRS |
 | azure_blob_storage_account_kind | string | StorageV2 | The kind of storage. Values include: StorageV2, BlockBlobStorage, FileStorage |
 | azure_blob_storage_account_access_tier | string | Hot | The access tier for blob data in this storage account |
@@ -96,11 +99,11 @@ The zone placement variables apply to AWS, GCP and Azure; see [Availability zone
 | azure_blob_storage_account_allow_blob_public_access | bool | false | Allow anonymous blob access |
 | azure_blob_storage_absent | bool | false | Allow delete Azure Blob Storage on state=absent |
 | digital_ocean_spaces_create | bool | true | Create Spaces bucket (if 'pgbackrest_install' or 'wal_g_install' is 'true') |
-| digital_ocean_spaces_name | string | {{ patroni_cluster_name }}-backup | Spaces name |
+| digital_ocean_spaces_name | string | {{ cluster_name }}-backup | Spaces name |
 | digital_ocean_spaces_region | string | nyc3 | Spaces region |
 | digital_ocean_spaces_absent | bool | false | Allow delete Spaces on state=absent |
 | hetzner_object_storage_create | bool | true | Create Hetzner Object Storage (if 'pgbackrest_install' or 'wal_g_install' is 'true') |
-| hetzner_object_storage_name | string | {{ patroni_cluster_name }}-backup | Bucket name |
+| hetzner_object_storage_name | string | {{ cluster_name }}-backup | Bucket name |
 | hetzner_object_storage_region | string | {{ server_location }} | Region |
 | hetzner_object_storage_endpoint | string | https://{{ hetzner_object_storage_region }}.your-objectstorage.com | S3 endpoint |
 | hetzner_object_storage_access_key | string | "" | Object Storage ACCESS KEY (required) |
@@ -115,7 +118,7 @@ For a new backup storage, set a persistent, globally unique `cloud_backup_storag
 
 ```yaml
 # group_vars/all.yml, or all.vars in inventory
-patroni_cluster_name: postgres-cluster-01
+cluster_name: postgres-cluster-01
 cloud_backup_storage_id: "8bc4111e-8a6d-4b1a-a3db-1ab9d2c6e705"
 ```
 
@@ -188,6 +191,52 @@ The suffix reduces accidental collisions but does not guarantee that a name is a
 | Hetzner | hcloud_network_ip_range | string | 10.0.0.0/16 | Network CIDR. |
 | Hetzner | hcloud_subnetwork_ip_range | string | 10.0.1.0/24 | Subnet CIDR. |
 
+### Shard placement
+
+Use `shards_count` and `servers_per_shard` for shards of equal size, or provide a complete `server_shards` map for explicit placement. Both modes require `pgdog_install: true`. For an unsharded cluster, set `server_count` to the desired total.
+
+Both scaling examples start with `orders-db` deployed with `shards_count: 4` and the default `servers_per_shard: 3`, for a total of twelve VMs. Each shard has VMs numbered `pg01` through `pg03`. The `pg01` VM bootstraps the shard and the other VMs are replicas. On Hetzner, this layout exceeds the limit of one spread placement group. [Hetzner placement groups](#hetzner-placement-groups)
+
+#### Automatic placement with `servers_per_shard`
+
+Set `servers_per_shard: 4` to add one VM ending in `pg04` to each shard, bringing the cluster to sixteen VMs.
+
+```yaml
+cluster_name: orders-db
+pgdog_install: true
+shards_count: 4
+servers_per_shard: 4
+```
+
+#### Explicit placement with `server_shards`
+
+Append `orders-db-shard2-pg04` to place a thirteenth VM in shard `2`. Autobase takes the VM names, shard assignments and bootstrap roles from `server_shards`. Preserve existing names, assignments, and entry order when adding a VM. To manage already provisioned VMs, use their current names as the keys.
+
+```yaml
+cluster_name: orders-db
+pgdog_install: true
+server_shards:
+  orders-db-shard0-pg01: {shard_id: 0, role: master}
+  orders-db-shard1-pg01: {shard_id: 1, role: master}
+  orders-db-shard2-pg01: {shard_id: 2, role: master}
+  orders-db-shard3-pg01: {shard_id: 3, role: master}
+  orders-db-shard0-pg02: {shard_id: 0, role: replica}
+  orders-db-shard1-pg02: {shard_id: 1, role: replica}
+  orders-db-shard2-pg02: {shard_id: 2, role: replica}
+  orders-db-shard3-pg02: {shard_id: 3, role: replica}
+  orders-db-shard0-pg03: {shard_id: 0, role: replica}
+  orders-db-shard1-pg03: {shard_id: 1, role: replica}
+  orders-db-shard2-pg03: {shard_id: 2, role: replica}
+  orders-db-shard3-pg03: {shard_id: 3, role: replica}
+  orders-db-shard2-pg04: {shard_id: 2, role: replica}
+```
+
+Merge the chosen example into your deployment variables and run the add-node playbook with your existing cloud and SSH settings.
+
+```bash
+ansible-playbook -i inventory.yml vitabaks.autobase.add_node
+```
+
 ### Availability zones
 
 AWS, GCP and Azure support placement across availability zones. The role selects `server_zones_count` zones (3 by default).
@@ -207,11 +256,11 @@ Within that list, zones already used by existing servers take priority; the firs
 Deployment fails if fewer zones are available than requested, including when `server_zones` limits the selection.
 Single-zone placement must be explicitly enabled with `server_zones_count: 1`.
 
-Each server (`<server_name>01`, `<server_name>02`, ...) is placed as follows:
+The role places each VM using the following rules.
 
 1. An existing server keeps its placement, even if `server_placement` requests another zone.
 2. A new server listed in `server_placement` uses that zone, even if it is outside the selected set.
-3. Other new servers use the selected zone with the fewest servers; ties follow the zone order.
+3. Other new servers use the selected zone with the fewest members of the same shard, then the fewest servers overall. Ties follow the zone order. For unsharded clusters, placement uses the overall server count.
 
 Existing Azure VMs created without a zone keep their regional placement. Their actual zone is unknown.
 To change an existing server's placement, follow [Moving an existing cluster to multiple zones](#moving-an-existing-cluster-to-multiple-zones).
@@ -312,7 +361,7 @@ resolve the NLB IP address in their own zone, if it has a healthy target.
 
 ##### PgDog load balancing
 
-With `pgdog_install: true`, each provider creates one load balancer named after `patroni_cluster_name`, without a `-primary` suffix.
+With `pgdog_install: true`, each provider creates one load balancer named after `cluster_name`, without a `-primary` suffix.
 All PgDog instances are targets. Health checks use TCP on `pgdog_listen_port`; replica load balancer flags are ignored.
 Connection info contains one address and port. Existing load balancers with role suffixes are not automatically removed when switching to PgDog.
 Deletion uses the same endpoint list as creation. Keep the pooler and load balancer settings unchanged when deleting a cluster to include all its endpoints.
@@ -346,17 +395,17 @@ Configure the target zones with `server_zones_count`, optionally `server_zones` 
 Replace replicas one at a time:
 
 1. Remove a replica using `remove_node.yml`, delete its cloud VM and wait for deletion to finish (`terminated` for EC2).
-2. Add it again using `add_node.yml` with the same desired `server_count`. The role applies the new placement and updates the load balancers.
+2. Add it again using `add_node.yml` with the same VM layout. The role applies the new placement and updates the load balancers.
 3. Repeat for the remaining replicas. Switch over to a replica before replacing the primary.
 
 ### Hetzner placement groups
 
-By default, all Hetzner cluster servers are assigned to a `spread` placement group named `<patroni_cluster_name>-<server_location>`.
+By default, all Hetzner cluster servers are assigned to a `spread` placement group named `<cluster_name>-<server_location>`.
 The group is reused when scaling the cluster and deleted after the servers when `state: absent`.
 Hetzner guarantees that servers in the group run on different physical hosts; this does not provide availability-zone isolation.
 See the [Hetzner placement group FAQ](https://docs.hetzner.com/cloud/placement-groups/faq/).
 
-A spread group supports at most 10 servers. When `hetzner_placement_group` is enabled, deployment fails if `server_count` exceeds this limit.
+A spread group supports at most 10 servers. When `hetzner_placement_group` is enabled, deployment fails if the VM list exceeds this limit.
 Set `hetzner_placement_group: false` to skip placement group management during provisioning, without guaranteed host separation.
 This setting leaves existing server placement unchanged; cluster deletion still removes the managed group.
 

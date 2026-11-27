@@ -1,8 +1,20 @@
 ---
+- name: Resolve shard topology
+  ansible.builtin.import_playbook: shard_topology.yml
+
 - name: vitabaks.autobase.remove_cluster | Remove PostgreSQL Cluster
   hosts: postgres_cluster:pgbackrest
+  any_errors_fatal: true
   become: true
   gather_facts: true
+  pre_tasks:
+    - name: Load cluster defaults
+      ansible.builtin.import_role:
+        name: vitabaks.autobase.common
+    - name: Require the whole logical cluster for removal
+      ansible.builtin.assert:
+        that: target_shard | default('all') == 'all'
+        fail_msg: Removing a shard changes the fixed topology. Use remove_node to remove a replica.
   tasks:
     - block:
         - name: Stop and disable patroni service
@@ -42,53 +54,29 @@
       ignore_errors: true
       when: remove_postgres | default(false) | bool and inventory_hostname in groups['postgres_cluster']
 
-    - block:
-        - name: Check if pgBackRest stanza exists
-          become: true
-          become_user: "{{ pgbackrest_command_user }}"
-          ansible.builtin.command: "pgbackrest --stanza={{ pgbackrest_stanza | default(default_pgbackrest_stanza) }} info"
-          register: pgbackrest_info_result
-          failed_when: false
-          changed_when: false
-
-        - name: Run pgBackRest stop
-          become: true
-          become_user: "{{ pgbackrest_command_user }}"
-          ansible.builtin.command: "pgbackrest --stanza={{ pgbackrest_stanza | default(default_pgbackrest_stanza) }} stop --force"
-          register: pgbackrest_stop_result
-          when: pgbackrest_info_result.stdout is not search("missing stanza path") # skip if no stanza exists
-
-        - name: Delete pgBackRest stanza
-          become: true
-          become_user: "{{ pgbackrest_command_user }}"
-          ansible.builtin.command: "pgbackrest --stanza={{ pgbackrest_stanza | default(default_pgbackrest_stanza) }} stanza-delete --force"
-          when: pgbackrest_stop_result is defined
-
-        - name: Delete pgBackRest cron job
-          ansible.builtin.file:
-            path: "{{ item.file }}"
-            state: absent
-          loop: "{{ pgbackrest_cron_jobs | default(default_pgbackrest_cron_jobs) | unique(attribute='file') }}"
-          loop_control:
-            label: "{{ item.file }}"
-
-        - name: Run pgBackRest start
-          become: true
-          become_user: "{{ pgbackrest_command_user }}"
-          ansible.builtin.command: "pgbackrest --stanza={{ pgbackrest_stanza | default(default_pgbackrest_stanza) }} start" # delete stop file (it exists)
-          when: pgbackrest_stop_result is defined
+    - name: Remove backup metadata and jobs for each local stanza
+      ansible.builtin.include_role:
+        name: vitabaks.autobase.pgbackrest
+        tasks_from: remove_stanza
+        apply:
+          ignore_errors: true
+      loop: "{{ autobase_shards.ids if autobase_shards.explicit and 'pgbackrest' in group_names else [shard_id | default(none)] }}"
+      loop_control:
+        loop_var: removal_shard
       vars:
         pgbackrest_command_user: >-
           {{ (pgbackrest_repo_user | default('postgres', true))
              if inventory_hostname in groups.get('pgbackrest', [])
              else 'postgres' }}
-        default_pgbackrest_stanza: "{{ patroni_cluster_name | default('postgres-cluster') }}"
+        patroni_scope: "{{ cluster_name ~ ('-shard' ~ removal_shard if removal_shard is not none else '') }}"
+        removal_stanza: "{{ pgbackrest_stanza }}"
+        default_pgbackrest_stanza: "{{ removal_stanza }}"
         default_pgbackrest_cron_jobs: "{{ [{ 'file': '/etc/cron.d/pgbackrest-' ~ default_pgbackrest_stanza }] }}"
       ignore_errors: true
       when:
         - remove_pgbackrest | default(false) | bool
         - ('pgbackrest' in groups and groups['pgbackrest'] | length > 0 and inventory_hostname in groups['pgbackrest']) or
-          (('pgbackrest' not in groups or groups['pgbackrest'] | length == 0) and inventory_hostname == groups['postgres_cluster'][0])
+          (('pgbackrest' not in groups or groups['pgbackrest'] | length == 0) and inventory_hostname == patroni_shard_hosts[0])
 
 - name: vitabaks.autobase.remove_cluster | Remove Consul Cluster
   hosts: consul_instances
@@ -109,7 +97,7 @@
             - "{{ consul_data_path | default('/var/lib/consul') }}"
             - "{{ consul_config_path | default('/etc/consul') }}"
       ignore_errors: true
-      when: remove_consul | default(false) | bool
+      when: target_shard | default('all') == 'all' and remove_consul | default(false) | bool
 
 - name: vitabaks.autobase.remove_cluster | Remove Etcd Cluster
   hosts: etcd_cluster
@@ -130,4 +118,4 @@
             - "{{ etcd_data_dir | default('/var/lib/etcd') }}"
             - "{{ etcd_conf_dir | default('/etc/etcd') }}"
       ignore_errors: true
-      when: remove_etcd | default(false) | bool
+      when: target_shard | default('all') == 'all' and remove_etcd | default(false) | bool

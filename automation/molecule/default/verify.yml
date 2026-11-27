@@ -5,6 +5,11 @@
 - name: Molecule.default.verify
   hosts: all
   gather_facts: true
+  vars: &pgdog_test_vars
+    # Variable tests can override postgresql_version. Use the version installed by converge.
+    pgdog_test_psql: "{{ '/usr/lib/postgresql/' ~ test_postgresql_version ~ '/bin/psql' if ansible_os_family == 'Debian'
+      else '/usr/pgsql-' ~ test_postgresql_version ~ '/bin/psql' }}"
+    pgdog_test_uri: "postgresql://db1_user@127.0.0.1:6432/db1?sslmode=require&connect_timeout=10"
   pre_tasks:
     - name: Gather network facts
       ansible.builtin.setup:
@@ -49,11 +54,43 @@
         - ../tests/etcd/*.yml
         - ../tests/patroni/*.yml
         - ../tests/postgres/*.yml
-        - ../tests/roles/confd/main.yml
         - ../tests/roles/deploy_finish/main.yml
-        - ../tests/roles/haproxy/main.yml
         - ../tests/roles/patroni/main.yml
         - ../tests/roles/pre_checks/main.yml
         - ../tests/roles/prometheus_exporters/main.yml
         - ../tests/roles/swap/main.yml
-        - ../tests/roles/pgdog/main.yml # ends with a switchover, keep it last
+        - ../tests/roles/pgdog/main.yml
+
+- name: Switch leadership on shard1
+  ansible.builtin.import_playbook: ../../playbooks/switchover_pgcluster.yml
+  vars:
+    target_shard: 1
+
+- name: Verify scoped switchover and PgDog writes
+  hosts: postgres_cluster
+  gather_facts: false
+  vars: *pgdog_test_vars
+  tasks:
+    - name: Verify that only shard1 changed leaders
+      ansible.builtin.uri:
+        url: "{{ patroni_restapi_protocol }}://{{ bind_address }}:{{ patroni_restapi_port }}/leader"
+        ca_path: "{{ patroni_restapi_cafile | default(omit) }}"
+        status_code: "{{ expected_status }}"
+      vars:
+        expected_status: "{{ patroni_response.status if shard_id == 0 else (503 if patroni_response.status == 200 else 200) }}"
+      register: leader_after_switchover
+      until: leader_after_switchover.status == expected_status
+      retries: 12
+      delay: 2
+
+    - name: Write to shard1 through PgDog on the former leader
+      ansible.builtin.command: >-
+        {{ pgdog_test_psql }} {{ pgdog_test_uri }} -XAt -v ON_ERROR_STOP=1
+        -c "UPDATE pgdog_test SET updated = true WHERE tenant_id = {{ placement.stdout }} RETURNING updated"
+      environment:
+        PGPASSWORD: "db1_user-test-pass"
+      register: write_after_switchover
+      until: write_after_switchover.rc == 0 and 't' in write_after_switchover.stdout_lines
+      retries: 12
+      delay: 5
+      when: shard_id == 1 and patroni_response.status == 200

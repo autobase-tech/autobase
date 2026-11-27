@@ -14,7 +14,7 @@
     PGPASSFILE: "{{ _postgresql_cli_passfile_path }}"
   when:
     - inventory_hostname in groups['primary']
-    - groups.get('secondary', []) | length > 0
+    - patroni_shard_replicas | length > 0
 
 # Error, if no active replication connections found.
 - name: "Post-Check error. No active replication connections found."
@@ -26,7 +26,7 @@
   ignore_errors: true # show the error and continue the playbook execution
   when:
     - inventory_hostname in groups['primary']
-    - groups.get('secondary', []) | length > 0
+    - patroni_shard_replicas | length > 0
     - pg_replication_state.stdout | int == 0
 
 - name: Create a table "test_replication" with 10000 rows on the primary
@@ -44,7 +44,7 @@
     PGPASSFILE: "{{ _postgresql_cli_passfile_path }}"
   when:
     - inventory_hostname in groups['primary']
-    - groups.get('secondary', []) | length > 0
+    - patroni_shard_replicas | length > 0
 
 - name: Wait until the PostgreSQL replica is synchronized
   ansible.builtin.command: >
@@ -72,7 +72,7 @@
     PGPASSFILE: "{{ _postgresql_cli_passfile_path }}"
   when:
     - inventory_hostname in groups['primary']
-    - groups.get('secondary', []) | length > 0
+    - patroni_shard_replicas | length > 0
     - create_table_result is success
 
 - name: Print the result of checking the number of records

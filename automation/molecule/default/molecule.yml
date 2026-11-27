@@ -1,13 +1,9 @@
 ---
 platforms:
-  - name: pgnode01
+  - &postgres_node
+    name: pgnode01
     hostname: pgnode01
     image: "${IMAGE_NAMESPACE:-geerlingguy}/docker-${IMAGE_DISTRO:-ubuntu2404}-ansible:${IMAGE_TAG:-latest}"
-    # docker_networks:  # TODO github.com/ansible-community/molecule/pull/2696
-    # - name: test_docker_network
-    # ipam_config:
-    # - subnet: 10.172.0.0/24
-    # gateway: 10.172.0.1
     networks:
       - name: test_docker_network
         ipv4_address: 10.172.0.20
@@ -29,71 +25,36 @@ platforms:
     cgroupns_mode: host
     privileged: true
     pre_build_image: true
-    groups:
-      - etcd_cluster # if dcs_type: "etcd"
-      - consul_instances # if dcs_type: "consul"
-      - master
-      - postgres_cluster
-      - balancers
+    groups: [postgres_cluster, master, etcd_cluster, consul_instances]
 
-  - name: pgnode02
+  - <<: *postgres_node
+    name: pgnode02
     hostname: pgnode02
-    image: "${IMAGE_NAMESPACE:-geerlingguy}/docker-${IMAGE_DISTRO:-ubuntu2404}-ansible:${IMAGE_TAG:-latest}"
     networks:
       - name: test_docker_network
         ipv4_address: 10.172.0.21
-    exposed_ports:
-      - 22/tcp
-      - 2379/tcp
-      - 2380/tcp
-      - 8300/tcp
-      - 8301/tcp
-      - 8302/tcp
-      - 8500/tcp
-      - 8600/tcp
-      - 8008/tcp
-      - 5432/tcp
-      - 6432/tcp
-    command: ""
-    volumes:
-      - /sys/fs/cgroup:/sys/fs/cgroup:rw
-    cgroupns_mode: host
-    privileged: true
-    pre_build_image: true
-    groups:
-      - etcd_cluster
-      - consul_instances
-      - replica
-      - postgres_cluster
-      - balancers
+    groups: [postgres_cluster, replica, etcd_cluster, consul_instances]
 
-  - name: pgnode03
+  - <<: *postgres_node
+    name: pgnode03
     hostname: pgnode03
-    image: "${IMAGE_NAMESPACE:-geerlingguy}/docker-${IMAGE_DISTRO:-ubuntu2404}-ansible:${IMAGE_TAG:-latest}"
     networks:
       - name: test_docker_network
         ipv4_address: 10.172.0.22
-    exposed_ports:
-      - 22/tcp
-      - 2379/tcp
-      - 2380/tcp
-      - 8300/tcp
-      - 8301/tcp
-      - 8302/tcp
-      - 8500/tcp
-      - 8600/tcp
-      - 8008/tcp
-      - 5432/tcp
-      - 6432/tcp
-    command: ""
-    volumes:
-      - /sys/fs/cgroup:/sys/fs/cgroup:rw
-    cgroupns_mode: host
-    privileged: true
-    pre_build_image: true
-    groups:
-      - etcd_cluster
-      - consul_instances
-      - replica
-      - postgres_cluster
-      - balancers
+    groups: [postgres_cluster, master, etcd_cluster, consul_instances]
+
+  - <<: *postgres_node
+    name: pgnode04
+    hostname: pgnode04
+    networks:
+      - name: test_docker_network
+        ipv4_address: 10.172.0.23
+    groups: [postgres_cluster, replica, consul_instances]
+
+provisioner:
+  inventory:
+    host_vars:
+      pgnode01: {shard_id: 0, consul_node_role: server}
+      pgnode02: {shard_id: 0, consul_node_role: server}
+      pgnode03: {shard_id: 1, consul_node_role: server}
+      pgnode04: {shard_id: 1, consul_node_role: client}

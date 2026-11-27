@@ -182,10 +182,16 @@
     - name: "Generate stanza conf file {{ pgbackrest_conf_file | default('') | dirname }}/conf.d/{{ pgbackrest_stanza | default('') }}.conf"
       ansible.builtin.template:
         src: pgbackrest.server.stanza.conf.j2
-        dest: "{{ pgbackrest_conf_file | dirname }}/conf.d/{{ pgbackrest_stanza }}.conf"
+        dest: "{{ pgbackrest_conf_file | dirname }}/conf.d/{{ repo_stanza }}.conf"
         owner: "{{ pgbackrest_repo_user }}"
         group: "{{ pgbackrest_repo_user }}"
         mode: "0600"
+      loop: "{{ autobase_shards.selected_ids if autobase_shards.explicit | default(false) else [none] }}"
+      loop_control:
+        loop_var: repo_shard
+      vars:
+        repo_stanza: "{{ cluster_name ~ '-shard' ~ repo_shard if repo_shard is not none else pgbackrest_stanza }}"
+        repo_members: "{{ autobase_shards.members[repo_shard] if repo_shard is not none else groups['postgres_cluster'] }}"
   when:
     - "'pgbackrest' in group_names"
     - pgbackrest_server_conf is defined
@@ -220,7 +226,11 @@
     apply:
       tags: pgbackrest, pgbackrest_cron
   vars:
+    patroni_scope: "{{ cluster_name ~ ('-shard' ~ repo_shard if repo_shard is not none else '') }}"
     cron_jobs: "{{ pgbackrest_cron_jobs }}"
+  loop: "{{ autobase_shards.selected_ids if autobase_shards.explicit | default(false) else [none] }}"
+  loop_control:
+    loop_var: repo_shard
   when:
     - "'pgbackrest' in group_names"
     - pgbackrest_repo_host | default('') | length > 0

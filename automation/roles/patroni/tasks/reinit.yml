@@ -3,7 +3,7 @@
   become: true
   become_user: postgres
   ansible.builtin.command: >-
-    patronictl -c /etc/patroni/patroni.yml reinit {{ patroni_cluster_name }}
+    patronictl -c /etc/patroni/patroni.yml reinit {{ patroni_scope }}
     {{ patroni_reinit_member_name | default('') }} --force
   environment:
     PATH: "{{ ansible_env.PATH | default('') }}:/usr/bin:/usr/local/bin"
@@ -26,7 +26,7 @@
   delay: 30
   environment:
     no_proxy: "{{ patroni_bind_address | default(bind_address, true) }}"
-  loop: "{{ groups.get('secondary', []) }}"
+  loop: "{{ patroni_shard_replicas }}"
   loop_control:
     loop_var: reinit_member
     label: "{{ reinit_member }}"

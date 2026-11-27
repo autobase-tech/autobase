@@ -37,7 +37,7 @@ Generates and manages TLS certificates for the cluster. Creates a self-signed CA
 | generate_tls_privatekey | unset -> tls_privatekey | Override server key filename. |
 | generate_tls_ca_cert | unset -> tls_ca_cert | Override CA cert filename. |
 | generate_tls_ca_key | unset -> tls_ca_key | Override CA key filename. |
-| generate_tls_common_name | unset -> tls_common_name -> patroni_cluster_name | CN for server cert. |
+| generate_tls_common_name | unset -> tls_common_name -> cluster_name | CN for server cert. |
 | generate_tls_ca_common_name | Autobase CA | CN for CA. |
 | generate_tls_privatekey_size | 4096 | Key size for generated keys. |
 | generate_tls_privatekey_type | RSA | Key type (e.g., RSA). |

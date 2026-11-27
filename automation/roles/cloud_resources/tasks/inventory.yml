@@ -15,39 +15,26 @@
     - (ssh_key_name is defined and tmp_ssh_key_name is defined and ssh_key_name == tmp_ssh_key_name)
       or (ansible_ssh_private_key_file | default('') | length > 0)
 
-- name: "Inventory | Add host to 'postgres_cluster', 'master' groups"
+- name: "Inventory | Add PostgreSQL hosts and their bootstrap roles"
   ansible.builtin.add_host:
     name: "{{ item.private_ip }}"
     groups:
       - postgres_cluster
-      - master
+      - "{{ node_role }}"
+    shard_id: "{{ placement.shard_id | default(omit) }}"
     ansible_ssh_host: "{{ item[(server_public_ip | bool and ssh_public_access | bool) | ternary('public_ip', 'private_ip')] }}"
     ansible_ssh_private_key_file: "{{ ssh_private_key_file | default(None) }}"
     new_node: "{{ item.new_node | default(omit) }}"
     bind_address: "{{ item.private_ip }}"
     public_ip: "{{ item.public_ip | default(omit, true) }}"
     server_zone: "{{ item.zone | default(omit, true) }}"
-  loop: "{{ [ip_addresses[0]] }}" # add the first item in the list
+  loop: "{{ ip_addresses }}"
+  vars:
+    placement: "{{ cloud_server_shards[item.name] if cloud_server_shards else {} }}"
+    node_role: "{{ placement.role | default('master' if node_index == 0 else 'replica') }}"
   loop_control:
+    index_var: node_index
     label: "{{ item[(server_public_ip | bool and ssh_public_access | bool) | ternary('public_ip', 'private_ip')] }}"
-  changed_when: false
-
-- name: "Inventory | Add host to 'postgres_cluster', 'replica' groups"
-  ansible.builtin.add_host:
-    name: "{{ item.private_ip }}"
-    groups:
-      - postgres_cluster
-      - replica
-    ansible_ssh_host: "{{ item[(server_public_ip | bool and ssh_public_access | bool) | ternary('public_ip', 'private_ip')] }}"
-    ansible_ssh_private_key_file: "{{ ssh_private_key_file | default(None) }}"
-    new_node: "{{ item.new_node | default(omit) }}"
-    bind_address: "{{ item.private_ip }}"
-    public_ip: "{{ item.public_ip | default(omit, true) }}"
-    server_zone: "{{ item.zone | default(omit, true) }}"
-  loop: "{{ ip_addresses[1:] }}" # start with the 2nd item of the list
-  loop_control:
-    label: "{{ item[(server_public_ip | bool and ssh_public_access | bool) | ternary('public_ip', 'private_ip')] }}"
-  when: ip_addresses | length > 1 # only if there is more than one item
   changed_when: false
 
 - name: "Inventory | Add host to 'balancers' group"

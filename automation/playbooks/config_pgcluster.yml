@@ -1,6 +1,12 @@
 ---
+- name: Resolve shard topology
+  ansible.builtin.import_playbook: shard_topology.yml
+  vars:
+    shard_config_addresses: true
+    shard_check_identity: true
+
 - name: vitabaks.autobase.config_pgcluster | Configure PostgreSQL Cluster
-  hosts: postgres_cluster:etcd_cluster
+  hosts: "postgres_cluster:etcd_cluster:&autobase_{{ target_shard | default('all') }}"
   become: true
   become_method: sudo
   gather_facts: true
@@ -85,11 +91,11 @@
     - name: The Patroni cluster is unhealthy
       ansible.builtin.fail:
         msg: >
-          No healthy leader node detected in cluster '{{ patroni_cluster_name | default('postgres-cluster') }}'.
+          No healthy leader node detected in cluster '{{ patroni_scope }}'.
           Please ensure the cluster is up and node responds on REST API port ({{ patroni_restapi_port | default('8008') }}).
       when:
-        - inventory_hostname == groups['postgres_cluster'][0]
-        - (groups.get('postgres_cluster', [])
+        - inventory_hostname == patroni_shard_hosts[0]
+        - (patroni_shard_hosts
             | map('extract', hostvars)
             | selectattr('patroni_leader_result.status', 'defined')
             | selectattr('patroni_leader_result.status', 'equalto', 200)
@@ -110,8 +116,8 @@
         name: "{{ item }}"
         groups: primary
         postgresql_exists: true
-      when: hostvars[item]['patroni_leader_result']['status'] == 200
-      loop: "{{ groups['postgres_cluster'] }}"
+      when: hostvars[item]['patroni_leader_result']['status'] | default(0) == 200
+      loop: "{{ autobase_shards.selected }}"
       changed_when: false
       check_mode: false
       tags: always
@@ -121,8 +127,8 @@
         name: "{{ item }}"
         groups: secondary
         postgresql_exists: true
-      when: hostvars[item]['patroni_leader_result']['status'] == 503
-      loop: "{{ groups['postgres_cluster'] }}"
+      when: hostvars[item]['patroni_leader_result']['status'] | default(0) == 503
+      loop: "{{ autobase_shards.selected }}"
       changed_when: false
       check_mode: false
       tags: always
@@ -130,7 +136,7 @@
     - name: "Print Patroni Cluster info"
       ansible.builtin.debug:
         msg:
-          - "Cluster Name: {{ patroni_cluster_name | default('postgres-cluster') }}"
+          - "Cluster Name: {{ patroni_scope }}"
           - "Cluster Leader: {{ ansible_hostname }}"
       when: inventory_hostname in groups['primary'] | default([])
       tags: always
@@ -147,13 +153,19 @@
       tags: always
 
 - name: vitabaks.autobase.config_pgcluster | Configure PostgreSQL Cluster
-  hosts: "primary:secondary"
+  hosts: "primary:secondary:&autobase_{{ target_shard | default('all') }}"
   become: true
   become_method: sudo
   gather_facts: true
   any_errors_fatal: true
   environment: "{{ proxy_env | default({}) }}"
   pre_tasks:
+    - name: Use a certificate source on the selected shard
+      ansible.builtin.set_fact:
+        tls_source_host: "{{ patroni_bootstrap_host }}"
+      when: target_shard | default('all') != 'all' and tls_source_host is undefined
+      tags: tls, tls_cert_generate, tls_cert_copy
+
     - block: # Ensure Postgres TLS certificates exist on all nodes
         - name: Generate Postgres TLS certificate
           ansible.builtin.import_role:
@@ -219,8 +231,10 @@
     - role: vitabaks.autobase.cron
 
     - role: vitabaks.autobase.vip_manager
-      when: not with_haproxy_load_balancing | default(false) | bool and
-        (cluster_vip is defined and cluster_vip | length > 0)
+      when:
+        - not pgdog_install | bool
+        - not with_haproxy_load_balancing | bool
+        - cluster_vip | length > 0
 
     - role: vitabaks.autobase.postgresql_users
       when: inventory_hostname in groups['primary']
@@ -251,7 +265,9 @@
     - name: Configure pgdog
       ansible.builtin.import_role:
         name: vitabaks.autobase.pgdog
-      when: pgdog_install | default(false) | bool
+      when:
+        - pgdog_install | default(false) | bool
+        - target_shard | default('all') == 'all'
 
     - name: Configure PgBouncer monitoring
       ansible.builtin.import_role:
@@ -263,7 +279,7 @@
         name: vitabaks.autobase.prometheus_exporters
 
 - name: config_pgcluster | Configure pgBackRest
-  hosts: pgbackrest:postgres_cluster
+  hosts: "pgbackrest:postgres_cluster:&autobase_{{ target_shard | default('all') }}"
   become: true
   become_method: sudo
   gather_facts: true
@@ -289,6 +305,35 @@
         tasks_from: stanza_create
       when: pgbackrest_install | default(false) | bool
 
+- name: Publish shared PgDog routing after a shard configuration change
+  hosts: postgres_cluster
+  gather_facts: false
+  any_errors_fatal: true
+  become: true
+  tags: [pgdog, pgdog_conf]
+  tasks:
+    - name: Check whether this run has a shared routing update
+      ansible.builtin.meta: end_host
+      when: target_shard | default('all') == 'all' or not pgdog_install | default(false) | bool
+
+    - name: Gather facts for the PgDog configuration
+      ansible.builtin.setup:
+
+    - name: Resolve backend addresses
+      ansible.builtin.import_role:
+        name: vitabaks.autobase.bind_address
+      when: bind_address is not defined
+
+    - name: Reuse the logical cluster admin password
+      ansible.builtin.import_role:
+        name: vitabaks.autobase.pre_checks
+        tasks_from: pgdog_password
+
+    - name: Publish all backend addresses and sharding rules
+      ansible.builtin.import_role:
+        name: vitabaks.autobase.pgdog
+        tasks_from: config
+
 - name: Restart PostgreSQL Cluster if pending restart is required
   ansible.builtin.import_playbook: restart_pgcluster.yml
   when:
@@ -297,7 +342,7 @@
   tags: patroni_conf
 
 - name: vitabaks.autobase.config_pgcluster | Configure PostgreSQL Cluster and info
-  hosts: postgres_cluster
+  hosts: "postgres_cluster:&autobase_{{ target_shard | default('all') }}"
   become: true
   become_method: sudo
   gather_facts: true

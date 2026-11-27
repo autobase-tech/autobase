@@ -1,7 +1,7 @@
 #jinja2: trim_blocks:True,lstrip_blocks:True
 ---
 
-scope: {{ patroni_cluster_name }}
+scope: {{ patroni_scope }}
 name: {{ ansible_hostname }}
 namespace: /{{ patroni_etcd_namespace | default('service') }}
 

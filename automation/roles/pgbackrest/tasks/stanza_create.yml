@@ -40,7 +40,7 @@
         - stanza_create_result.rc == 0
         - stanza_create_result.stdout is not search("already exists")
       when: (repo1_type | lower == 'posix' and not (pgbackrest_repo_shared | default(false) | bool)) or
-        inventory_hostname == groups['master'][0] # run only on master if it's not posix or the posix repo is shared
+        inventory_hostname == patroni_bootstrap_host # run only on master if it's not posix or the posix repo is shared
   when:
     - pgbackrest_repo_host | length < 1
     - "'postgres_cluster' in group_names"
@@ -83,7 +83,12 @@
       become_user: "{{ pgbackrest_repo_user }}"
       delegate_to: "{{ pgbackrest_delegate }}"
       run_once: true
-      ansible.builtin.command: "pgbackrest --stanza={{ pgbackrest_stanza }} --no-online stanza-create"
+      ansible.builtin.command: "pgbackrest --stanza={{ repo_stanza }} --no-online stanza-create"
+      loop: "{{ autobase_shards.selected_ids if autobase_shards.explicit | default(false) else [none] }}"
+      loop_control:
+        loop_var: repo_shard
+      vars:
+        repo_stanza: "{{ cluster_name ~ '-shard' ~ repo_shard if repo_shard is not none else pgbackrest_stanza }}"
       register: stanza_create_result
       changed_when:
         - stanza_create_result.rc == 0

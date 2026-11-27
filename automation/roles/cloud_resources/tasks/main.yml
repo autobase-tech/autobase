@@ -1,4 +1,13 @@
 ---
+- name: Reject cluster_vip when using PgDog
+  ansible.builtin.assert:
+    that: cluster_vip == ''
+    fail_msg: Clear cluster_vip when using PgDog. Use a TCP load balancer or a list of PgDog hosts.
+  when: pgdog_install | bool
+
+- name: Resolve server names and shard placement before provisioning
+  ansible.builtin.import_tasks: server_placement.yml
+
 - name: Validate custom cloud tags
   ansible.builtin.assert:
     that:

@@ -33,9 +33,9 @@
       environment:
         no_proxy: "{{ patroni_bind_address | default(bind_address, true) }}"
 
-    - name: "[Prepare] Set variable: patroni_cluster_name"
+    - name: Use the Patroni scope reported by the running cluster
       ansible.builtin.set_fact:
-        patroni_cluster_name: "{{ patroni_result.json.patroni.scope }}"
+        patroni_scope: "{{ patroni_result.json.patroni.scope }}"
 
     - name: "[Prepare] Get Patroni cluster leader node"
       ansible.builtin.uri:
@@ -152,14 +152,14 @@
     - name: "Print source Patroni cluster info"
       ansible.builtin.debug:
         msg:
-          - "Source cluster name: {{ patroni_cluster_name }}"
+          - "Source cluster name: {{ patroni_scope }}"
           - "Source cluster leader: {{ ansible_hostname }}"
       when: inventory_hostname in groups['source_primary']
 
     - name: "Print target Patroni cluster info"
       ansible.builtin.debug:
         msg:
-          - "Target cluster name: {{ patroni_cluster_name }}"
+          - "Target cluster name: {{ patroni_scope }}"
           - "Target cluster leader: {{ ansible_hostname }}"
       when: inventory_hostname in groups['primary']
 

@@ -2,10 +2,10 @@
 ---
 - name: Prepare PostgreSQL CLI password file
   ansible.builtin.import_tasks: "{{ role_path }}/../pgpass/tasks/automation.yml"
-  delegate_to: "{{ groups.master[0] }}"
+  delegate_to: "{{ patroni_bootstrap_host }}"
   run_once: true # noqa run-once
   vars:
-    postgresql_cli_passfile_host: "{{ groups.master[0] }}"
+    postgresql_cli_passfile_host: "{{ patroni_bootstrap_host }}"
   tags: always
 
 - name: Make sure handlers are flushed immediately
@@ -24,9 +24,9 @@
     -d postgres
     -Xc '\du'
   environment:
-    PGPASSFILE: "{{ hostvars[groups.master[0]]._postgresql_cli_passfile_path }}"
+    PGPASSFILE: "{{ hostvars[patroni_bootstrap_host]._postgresql_cli_passfile_path }}"
   register: users_result
-  delegate_to: "{{ groups.master[0] }}"
+  delegate_to: "{{ patroni_bootstrap_host }}"
   changed_when: false
   ignore_errors: true
   tags: users, users_list, cluster_info, cluster_status, point_in_time_recovery
@@ -43,9 +43,9 @@
     -d postgres
     -Xc '\l'
   environment:
-    PGPASSFILE: "{{ hostvars[groups.master[0]]._postgresql_cli_passfile_path }}"
+    PGPASSFILE: "{{ hostvars[patroni_bootstrap_host]._postgresql_cli_passfile_path }}"
   register: dbs_result
-  delegate_to: "{{ groups.master[0] }}"
+  delegate_to: "{{ patroni_bootstrap_host }}"
   changed_when: false
   ignore_errors: true
   tags: databases, db_list, cluster_info, cluster_status, point_in_time_recovery
@@ -209,12 +209,12 @@
   ansible.builtin.debug:
     msg:
       address: >-
-        {{ 'pgdog.' ~ patroni_cluster_name ~ '.service.' ~ consul_domain if pgdog_install | bool else {
-             'primary': 'master.' ~ patroni_cluster_name ~ '.service.consul',
-             'replica': 'replica.' ~ patroni_cluster_name ~ '.service.consul',
-             'replica_sync': 'sync-replica.' ~ patroni_cluster_name ~ '.service.consul'
+        {{ 'pgdog.' ~ cluster_name ~ '.service.' ~ consul_domain if pgdog_install | bool else {
+             'primary': 'master.' ~ cluster_name ~ '.service.consul',
+             'replica': 'replica.' ~ cluster_name ~ '.service.consul',
+             'replica_sync': 'sync-replica.' ~ cluster_name ~ '.service.consul'
                if synchronous_mode | bool and 'sync-replica' in consul_service_tags else omit,
-             'replica_async': 'async-replica.' ~ patroni_cluster_name ~ '.service.consul'
+             'replica_async': 'async-replica.' ~ cluster_name ~ '.service.consul'
                if synchronous_mode | bool and 'async-replica' in consul_service_tags else omit
            } }}
       port: "{{ connection_pooler_port if connection_pooler_enabled | bool else postgresql_port }}"
@@ -223,7 +223,7 @@
   register: connection_info_consul
   ignore_errors: true
   vars:
-    consul_service_tags: "{{ consul_services | default([]) | selectattr('name', 'equalto', patroni_cluster_name) | map(attribute='tags', default=[]) | flatten }}"
+    consul_service_tags: "{{ consul_services | default([]) | selectattr('name', 'equalto', cluster_name) | map(attribute='tags', default=[]) | flatten }}"
     superuser_username: "{{ patroni_superuser_username }}"
     superuser_password: "{{ '********' if mask_password | default(false) | bool else patroni_superuser_password }}"
   when:
@@ -341,10 +341,10 @@
   register: connection_info_digitalocean
   ignore_errors: true
   vars:
-    load_balancer_primary: "{{ (hostvars['localhost']['digitalocean_load_balancer']['data'] | selectattr('name', 'equalto', (patroni_cluster_name if pgdog_install | bool else patroni_cluster_name + '-primary')) | first).ip | default('N/A') }}"
-    load_balancer_replica: "{{ (hostvars['localhost']['digitalocean_load_balancer']['data'] | selectattr('name', 'equalto', patroni_cluster_name + '-replica') | first).ip | default('N/A') }}"
-    load_balancer_replica_sync: "{{ (hostvars['localhost']['digitalocean_load_balancer']['data'] | selectattr('name', 'equalto', patroni_cluster_name + '-sync') | first).ip | default('N/A') }}"
-    load_balancer_replica_async: "{{ (hostvars['localhost']['digitalocean_load_balancer']['data'] | selectattr('name', 'equalto', patroni_cluster_name + '-async') | first).ip | default('N/A') }}"
+    load_balancer_primary: "{{ (hostvars['localhost']['digitalocean_load_balancer']['data'] | selectattr('name', 'equalto', (cluster_name if pgdog_install | bool else cluster_name + '-primary')) | first).ip | default('N/A') }}"
+    load_balancer_replica: "{{ (hostvars['localhost']['digitalocean_load_balancer']['data'] | selectattr('name', 'equalto', cluster_name + '-replica') | first).ip | default('N/A') }}"
+    load_balancer_replica_sync: "{{ (hostvars['localhost']['digitalocean_load_balancer']['data'] | selectattr('name', 'equalto', cluster_name + '-sync') | first).ip | default('N/A') }}"
+    load_balancer_replica_async: "{{ (hostvars['localhost']['digitalocean_load_balancer']['data'] | selectattr('name', 'equalto', cluster_name + '-async') | first).ip | default('N/A') }}"
     database_port: "{{ connection_pooler_port if connection_pooler_enabled | bool else postgresql_port }}"
     superuser_username: "{{ patroni_superuser_username }}"
     superuser_password: "{{ '********' if mask_password | default(false) | bool else patroni_superuser_password }}"
@@ -369,14 +369,14 @@
   register: connection_info_hetzner
   ignore_errors: true
   vars:
-    lb_primary_public: "{{ (hostvars['localhost']['hetzner_load_balancer']['hcloud_load_balancer_info'] | selectattr('name', 'equalto', (patroni_cluster_name if pgdog_install | bool else patroni_cluster_name + '-primary')) | first).ipv4_address | default('N/A') }}"
-    lb_primary_private: "{{ (hostvars['localhost']['hetzner_load_balancer']['hcloud_load_balancer_info'] | selectattr('name', 'equalto', (patroni_cluster_name if pgdog_install | bool else patroni_cluster_name + '-primary')) | first).private_ipv4_address | default('N/A') }}"
-    lb_replica_public: "{{ (hostvars['localhost']['hetzner_load_balancer']['hcloud_load_balancer_info'] | selectattr('name', 'equalto', patroni_cluster_name + '-replica') | first).ipv4_address | default('N/A') }}"
-    lb_replica_private: "{{ (hostvars['localhost']['hetzner_load_balancer']['hcloud_load_balancer_info'] | selectattr('name', 'equalto', patroni_cluster_name + '-replica') | first).private_ipv4_address | default('N/A') }}"
-    lb_replica_sync_public: "{{ (hostvars['localhost']['hetzner_load_balancer']['hcloud_load_balancer_info'] | selectattr('name', 'equalto', patroni_cluster_name + '-sync') | first).ipv4_address | default('N/A') }}"
-    lb_replica_async_public: "{{ (hostvars['localhost']['hetzner_load_balancer']['hcloud_load_balancer_info'] | selectattr('name', 'equalto', patroni_cluster_name + '-async') | first).ipv4_address | default('N/A') }}"
-    lb_replica_sync_private: "{{ (hostvars['localhost']['hetzner_load_balancer']['hcloud_load_balancer_info'] | selectattr('name', 'equalto', patroni_cluster_name + '-sync') | first).private_ipv4_address | default('N/A') }}"
-    lb_replica_async_private: "{{ (hostvars['localhost']['hetzner_load_balancer']['hcloud_load_balancer_info'] | selectattr('name', 'equalto', patroni_cluster_name + '-async') | first).private_ipv4_address | default('N/A') }}"
+    lb_primary_public: "{{ (hostvars['localhost']['hetzner_load_balancer']['hcloud_load_balancer_info'] | selectattr('name', 'equalto', (cluster_name if pgdog_install | bool else cluster_name + '-primary')) | first).ipv4_address | default('N/A') }}"
+    lb_primary_private: "{{ (hostvars['localhost']['hetzner_load_balancer']['hcloud_load_balancer_info'] | selectattr('name', 'equalto', (cluster_name if pgdog_install | bool else cluster_name + '-primary')) | first).private_ipv4_address | default('N/A') }}"
+    lb_replica_public: "{{ (hostvars['localhost']['hetzner_load_balancer']['hcloud_load_balancer_info'] | selectattr('name', 'equalto', cluster_name + '-replica') | first).ipv4_address | default('N/A') }}"
+    lb_replica_private: "{{ (hostvars['localhost']['hetzner_load_balancer']['hcloud_load_balancer_info'] | selectattr('name', 'equalto', cluster_name + '-replica') | first).private_ipv4_address | default('N/A') }}"
+    lb_replica_sync_public: "{{ (hostvars['localhost']['hetzner_load_balancer']['hcloud_load_balancer_info'] | selectattr('name', 'equalto', cluster_name + '-sync') | first).ipv4_address | default('N/A') }}"
+    lb_replica_async_public: "{{ (hostvars['localhost']['hetzner_load_balancer']['hcloud_load_balancer_info'] | selectattr('name', 'equalto', cluster_name + '-async') | first).ipv4_address | default('N/A') }}"
+    lb_replica_sync_private: "{{ (hostvars['localhost']['hetzner_load_balancer']['hcloud_load_balancer_info'] | selectattr('name', 'equalto', cluster_name + '-sync') | first).private_ipv4_address | default('N/A') }}"
+    lb_replica_async_private: "{{ (hostvars['localhost']['hetzner_load_balancer']['hcloud_load_balancer_info'] | selectattr('name', 'equalto', cluster_name + '-async') | first).private_ipv4_address | default('N/A') }}"
     database_port: "{{ connection_pooler_port if connection_pooler_enabled | bool else postgresql_port }}"
     superuser_username: "{{ patroni_superuser_username }}"
     superuser_password: "{{ '********' if mask_password | default(false) | bool else patroni_superuser_password }}"

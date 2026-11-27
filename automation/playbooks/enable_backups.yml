@@ -24,8 +24,13 @@
         - cloud_backup_provider | default(cloud_provider | default('')) | length > 0
         - pgbackrest_install | default(false) | bool or wal_g_install | default(false) | bool
 
+- name: Resolve shard topology
+  ansible.builtin.import_playbook: shard_topology.yml
+  vars:
+    shard_config_addresses: true
+
 - name: vitabaks.autobase.enable_backups | Prepare the existing PostgreSQL cluster
-  hosts: postgres_cluster
+  hosts: "postgres_cluster:&autobase_{{ target_shard | default('all') }}"
   become: true
   become_method: sudo
   gather_facts: true
@@ -86,12 +91,12 @@
     - name: Stop when the Patroni cluster is unhealthy
       ansible.builtin.fail:
         msg: >-
-          No healthy leader node detected in cluster '{{ patroni_cluster_name | default('postgres-cluster') }}'.
+          No healthy leader node detected in cluster '{{ patroni_scope }}'.
           Please ensure the cluster is up and a node responds on the Patroni REST API port
           ({{ patroni_restapi_port | default('8008') }}).
       when:
-        - inventory_hostname == groups['postgres_cluster'][0]
-        - (groups.get('postgres_cluster', [])
+        - inventory_hostname == patroni_shard_hosts[0]
+        - (patroni_shard_hosts
             | map('extract', hostvars)
             | selectattr('patroni_leader_result.status', 'defined')
             | selectattr('patroni_leader_result.status', 'equalto', 200)
@@ -103,7 +108,7 @@
         name: "{{ item }}"
         groups: primary
       when: hostvars[item]['patroni_leader_result']['status'] | default(0) == 200
-      loop: "{{ groups['postgres_cluster'] }}"
+      loop: "{{ autobase_shards.selected }}"
       changed_when: false
       check_mode: false
 
@@ -117,7 +122,7 @@
       when: patroni_restapi_password | default('') | length < 1
 
 - name: vitabaks.autobase.enable_backups | Install and configure pgBackRest
-  hosts: pgbackrest:postgres_cluster
+  hosts: "pgbackrest:postgres_cluster:&autobase_{{ target_shard | default('all') }}"
   become: true
   become_method: sudo
   gather_facts: true
@@ -134,7 +139,7 @@
       when: pgbackrest_install | default(false) | bool
 
 - name: vitabaks.autobase.enable_backups | Install and configure WAL-G
-  hosts: postgres_cluster
+  hosts: "postgres_cluster:&autobase_{{ target_shard | default('all') }}"
   become: true
   become_method: sudo
   gather_facts: true
@@ -145,7 +150,7 @@
       when: wal_g_install | default(false) | bool
 
 - name: vitabaks.autobase.enable_backups | Apply archive_command in Patroni DCS
-  hosts: primary
+  hosts: "primary:&autobase_{{ target_shard | default('all') }}"
   become: true
   become_method: sudo
   gather_facts: false

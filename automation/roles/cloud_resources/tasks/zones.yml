@@ -4,16 +4,14 @@
 # Input (set by the cloud provider tasks before this file is imported):
 #   zones_available - ordered list of zones where servers can be created
 #   zones_existing  - dictionary { server name: zone } of already existing servers
+# The cloud role resolves cloud_server_names and cloud_shard_topology before provisioning.
 # Output:
 #   server_zone_placement - list of { 'name': server name, 'zone': zone } in server index order
 #
 # 'server_zones' (or 'zones_available') is the list of preferred zones in priority order; the zones of existing servers
 # come first, and 'server_zones_count' zones are used. Existing servers are never moved. New servers are placed in the zone
-# from 'server_placement' (it takes precedence), otherwise in the selected zone with the fewest servers (ties by zone order).
-
-- name: "Zones | Set variable: zone_server_names"
-  ansible.builtin.set_fact:
-    zone_server_names: "{{ query('ansible.builtin.sequence', 'start=1 count=' ~ server_count ~ ' format=' ~ server_name | lower ~ '%02d') }}"
+# from 'server_placement' (it takes precedence). Otherwise prefer zones with the fewest members of the same shard,
+# then the fewest servers overall, with ties following the zone order.
 
 - name: "Zones | Validate available zones"
   ansible.builtin.assert:
@@ -38,13 +36,13 @@
   ansible.builtin.assert:
     that:
       - server_placement is mapping
-      - server_placement.keys() | list | difference(zone_server_names) | length == 0
+      - server_placement.keys() | list | difference(cloud_server_names) | length == 0
       - server_placement.values() | map('string') | difference(zones_available) | length == 0
     fail_msg: >-
       'server_placement' must be a dictionary of server names and available zones.
-      Unknown servers: {{ server_placement.keys() | list | difference(zone_server_names) if server_placement is mapping else '-' }}.
+      Unknown servers: {{ server_placement.keys() | list | difference(cloud_server_names) if server_placement is mapping else '-' }}.
       Unknown zones: {{ server_placement.values() | map('string') | difference(zones_available) if server_placement is mapping else '-' }}.
-      Servers: {{ zone_server_names }}. Available zones: {{ zones_available }}.
+      Servers: {{ cloud_server_names }}. Available zones: {{ zones_available }}.
     quiet: true
 
 - name: "Zones | Normalize zone preferences"
@@ -77,21 +75,25 @@
   vars:
     placement_json: >-
       {%- set fixed = zone_overrides | combine(zones_existing) -%}
-      {%- set ns = namespace(used=fixed.values() | list, placement=[]) -%}
-      {%- for name in zone_server_names -%}
+      {%- set ns = namespace(used=fixed, placement=[]) -%}
+      {%- for name in cloud_server_names -%}
       {%-   if name in fixed -%}
       {%-     set zone = fixed[name] -%}
       {%-   else -%}
-      {%-     set best = namespace(zone='', count=0) -%}
+      {%-     set shard = cloud_shard_topology.get('by_host', {}).get(name) -%}
+      {%-     set members = cloud_shard_topology.get('members', {}).get(shard, []) -%}
+      {%-     set shard_zones = ns.used | dict2items | selectattr('key', 'in', members) | map(attribute='value') | list -%}
+      {%-     set best = namespace(zone='', score=none) -%}
       {%-     for candidate in zones_selected -%}
-      {%-       set count = ns.used | select('equalto', candidate) | list | length -%}
-      {%-       if best.zone == '' or count < best.count -%}
+      {%-       set score = [shard_zones | select('equalto', candidate) | list | length,
+                             ns.used.values() | select('equalto', candidate) | list | length] -%}
+      {%-       if best.score is none or score < best.score -%}
       {%-         set best.zone = candidate -%}
-      {%-         set best.count = count -%}
+      {%-         set best.score = score -%}
       {%-       endif -%}
       {%-     endfor -%}
       {%-     set zone = best.zone -%}
-      {%-     set ns.used = ns.used + [zone] -%}
+      {%-     set ns.used = ns.used | combine({name: zone}) -%}
       {%-   endif -%}
       {%-   set ns.placement = ns.placement + [{'name': name, 'zone': zone}] -%}
       {%- endfor -%}
@@ -130,7 +132,7 @@
           - "The {{ dcs_type }} cluster would lose quorum if the zone with the most servers fails."
           - "DCS servers: {{ dcs_members | items2dict(key_name='name', value_name='zone') }}."
           - "Use at least 3 zones (server_zones_count, and at least 3 zones in
-            server_zones{{ ' or aws_subnet_ids' if cloud_provider == 'aws' else '' }}), change server_count,
+            server_zones{{ ' or aws_subnet_ids' if cloud_provider == 'aws' else '' }}), adjust the number of servers,
             use 'server_zones_count: 1' for a single-zone cluster, or use a dedicated DCS cluster (dcs_exists: true)."
       when:
         - not dcs_unknown_zones | bool

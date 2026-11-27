@@ -291,7 +291,7 @@
         | default(hostvars[source_primary_host].bind_address, true)
         | default(hostvars[source_primary_host].inventory_hostname, true)
       }}
-    target_primary_host: "{{ (groups.get('primary', []) | first) | default('', true) }}"
+    target_primary_host: "{{ (patroni_shard_primaries | first) | default('', true) }}"
     target_primary_host_addr: >-
       {{
         hostvars[target_primary_host].patroni_bind_address
@@ -314,7 +314,7 @@
     PGPASSFILE: "{{ _postgresql_cli_passfile_path }}"
   when:
     - inventory_hostname in groups['primary']
-    - groups.get('secondary', []) | length > 0
+    - patroni_shard_replicas | length > 0
 
 # Stop, if there are no active replicas
 - name: "Pre-Check error. Print physical replication state"
@@ -322,7 +322,7 @@
     msg: "There are no active replica servers (pg_stat_replication returned 0 entries)."
   when:
     - inventory_hostname in groups['primary']
-    - groups.get('secondary', []) | length > 0
+    - patroni_shard_replicas | length > 0
     - pg_replication_state.stdout | int == 0
 
 - name: "[Pre-Check] Make sure there is no high replication lag (more than {{ max_replication_lag_bytes | default(0) | int | human_readable }})"
@@ -343,7 +343,7 @@
     PGPASSFILE: "{{ _postgresql_cli_passfile_path }}"
   when:
     - inventory_hostname in groups['primary']
-    - groups.get('secondary', []) | length > 0
+    - patroni_shard_replicas | length > 0
     - pg_old_version | string is version('10', '>=')
 
 # Stop, if replication lag is high
@@ -375,7 +375,7 @@
     PGPASSFILE: "{{ _postgresql_cli_passfile_path }}"
   when:
     - inventory_hostname in groups['primary']
-    - groups.get('secondary', []) | length > 0
+    - patroni_shard_replicas | length > 0
     - pg_old_version | string is version('10', '<')
 
 # Stop, if replication lag is high (for 9x)
@@ -512,7 +512,7 @@
     /tmp/testrsync {{ hostvars[item]['bind_address'] }}:/tmp/
   args:
     executable: /bin/bash
-  loop: "{{ groups.get('secondary', []) | list }}"
+  loop: "{{ patroni_shard_replicas | list }}"
   when: inventory_hostname in groups['primary']
 
 - name: "[Pre-Check] Cleanup testrsync file"

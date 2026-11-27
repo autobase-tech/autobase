@@ -14,4 +14,4 @@
     ca_cert_path: "{{ etcd_tls_dir | default('/etc/etcd/tls') }}/{{ etcd_tls_ca_crt | default('ca.crt') }}"
     cert_path: "{{ etcd_tls_dir | default('/etc/etcd/tls') }}/{{ etcd_tls_server_crt | default('server.crt') }}"
     key_path: "{{ etcd_tls_dir | default('/etc/etcd/tls') }}/{{ etcd_tls_server_key | default('server.key') }}"
-  when: dcs_type == "etcd"
+  when: dcs_type == "etcd" and inventory_hostname in groups["etcd_cluster"]

@@ -63,7 +63,7 @@
       ansible.builtin.systemd:
         name: patroni
         state: stopped
-      when: inventory_hostname == groups['master'][0]
+      when: inventory_hostname == patroni_bootstrap_host
 
     - name: Make sure PostgreSQL is stopped
       become: true
@@ -101,7 +101,7 @@
       ansible.builtin.systemd:
         name: patroni
         state: started
-      when: inventory_hostname == groups['master'][0]
+      when: inventory_hostname == patroni_bootstrap_host
 
     - name: "Wait for port {{ patroni_restapi_port | default('8008') }} to become open on the host"
       ansible.builtin.wait_for:
@@ -111,7 +111,7 @@
         timeout: 120
         delay: 10
       ignore_errors: false
-      when: inventory_hostname == groups['master'][0]
+      when: inventory_hostname == patroni_bootstrap_host
 
     - name: Check that the patroni is healthy (the leader with the lock)
       ansible.builtin.uri:
@@ -125,7 +125,7 @@
       delay: 10
       environment:
         no_proxy: "{{ patroni_bind_address | default(bind_address, true) }}"
-      when: inventory_hostname == groups['master'][0] and not ansible_check_mode
+      when: inventory_hostname == patroni_bootstrap_host and not ansible_check_mode
 
     - name: Start patroni service on the Replica
       become: true

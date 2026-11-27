@@ -1,7 +1,9 @@
-{
-{% for wal_g in wal_g_json %}
-  "{{ wal_g.option }}": "{{ wal_g.value }}"{% if not loop.last %},
-{% endif %}
+{% set config = {} %}
+{% for setting in wal_g_json %}
+{%   set value = setting.value | string %}
+{%   if shard_id is defined and setting.option is match('^WALG_.*_PREFIX$') %}
+{%     set value = value.rstrip('/') ~ '/' ~ patroni_scope %}
+{%   endif %}
+{%   set _ = config.update({setting.option: value}) %}
 {% endfor %}
-
-}
+{{ config | to_nice_json }}

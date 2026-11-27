@@ -42,20 +42,21 @@
 
 - name: Check if all 'Latest checkpoint location' values match
   ansible.builtin.set_fact:
-    pg_checkpoint_location_match: "{{ pg_checkpoint_location_replica.stdout == hostvars[groups['primary'][0]]['pg_checkpoint_location_leader']['stdout'] }}"
+    pg_checkpoint_location_match: >-
+      {{ pg_checkpoint_location_replica.stdout == hostvars[patroni_shard_primaries[0]].pg_checkpoint_location_leader.stdout }}
   when:
     - inventory_hostname in groups.get('secondary', [])
 
 - name: "SUCCESS: 'Latest checkpoint location' values match on all cluster nodes"
   ansible.builtin.debug:
     msg: "'Latest checkpoint location' is the same on the leader and its standbys"
-  run_once: true
   when:
+    - inventory_hostname in groups['primary']
     # This condition retrieves the 'pg_checkpoint_location_match' value for each node in the 'secondary' group.
     # The 'select' filter selects all nodes whose 'pg_checkpoint_location_match' is 'False'.
     # If no such nodes exist (i.e., the length of the resulting list is less than 1), it means that the 'pg_checkpoint_location_match' is 'True' for all nodes.
-    - groups.get('secondary', []) | length > 0
-    - groups.get('secondary', []) | map('extract', hostvars, 'pg_checkpoint_location_match') | select('equalto', False) | list | length < 1
+    - patroni_shard_replicas | length > 0
+    - patroni_shard_replicas | map('extract', hostvars, 'pg_checkpoint_location_match') | select('equalto', False) | list | length < 1
 
 # Stop, if 'Latest checkpoint location' doesn't match
 - block:
@@ -72,10 +73,6 @@
       ansible.builtin.fail:
         msg: "'Latest checkpoint location' doesn't match on leader and its standbys. Please try again later"
       run_once: true
-  when:
-    # This condition retrieves the 'pg_checkpoint_location_match' value for each node in the 'secondary' group.
-    # The 'select' filter selects all nodes whose 'pg_checkpoint_location_match' is 'False'.
-    # If there is at least one such node (i.e., the length of the resulting list is greater than 0),
-    # it means that the 'pg_checkpoint_location_match' is not 'True' for all nodes,
-    # and the block of tasks is executed, including cleanup and throwing an error.
-    - groups.get('secondary', []) | map('extract', hostvars, 'pg_checkpoint_location_match') | select('equalto', False) | list | length > 0
+  when: >-
+    groups.get('secondary', []) | select('in', ansible_play_hosts)
+    | map('extract', hostvars, 'pg_checkpoint_location_match') | select('equalto', False) | list | length > 0
