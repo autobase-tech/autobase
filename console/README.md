@@ -122,13 +122,19 @@ Do not commit `.env` or secret files to Git. These settings do not replace the u
 
 ## Updating
 
-The supplied Compose files use `latest` for Autobase images. Before updating, back up the Console database, your configuration, and the encryption key, and review the release notes.
+The supplied Compose files pin the Console and Automation images to the same release. Before updating, back up the Console database, your configuration, and the encryption key, and review the release notes.
+
+Update your checkout to get the new image tags:
+
+```sh
+git pull --ff-only
+```
 
 For the basic setup, pull the current images and recreate the affected services:
 
 ```sh
 docker compose pull
-docker pull autobase/automation:latest
+docker pull autobase/automation:2.12.0
 docker compose up -d
 ```
 
@@ -136,7 +142,7 @@ For the SSL setup:
 
 ```sh
 docker compose -f docker-compose.ssl.yml pull
-docker pull autobase/automation:latest
+docker pull autobase/automation:2.12.0
 docker compose -f docker-compose.ssl.yml up -d
 ```
 
@@ -214,7 +220,7 @@ The UI refresh setting controls browser requests; cluster status updates are col
 | `PG_CONSOLE_ENCRYPTIONKEY`           | `super_secret`                    | Encryption key for stored secrets. Replace before storing credentials and preserve across updates. |
 | `PG_CONSOLE_DOCKER_HOST`             | `unix:///var/run/docker.sock`     | Docker daemon endpoint used to start Automation containers.                                        |
 | `PG_CONSOLE_DOCKER_LOGDIR`           | `/tmp/ansible`                    | Shared directory for Ansible operation logs. Must match the mounted volume.                        |
-| `PG_CONSOLE_DOCKER_IMAGE`            | `autobase/automation:latest`      | Automation container image; the supplied Compose files default to `latest`.                        |
+| `PG_CONSOLE_DOCKER_IMAGE`            | `autobase/automation:2.12.0`      | Automation container image used by the supplied Compose files.                                    |
 | `PG_CONSOLE_LOGWATCHER_RUNEVERY`     | `5s`                              | Interval between operation log checks.                                                             |
 | `PG_CONSOLE_LOGWATCHER_ANALYZEPAST`  | `48h`                             | Age limit for operations considered by the log watcher.                                            |
 | `PG_CONSOLE_CLUSTERWATCHER_RUNEVERY` | `60s`                             | Interval between cluster status collection runs.                                                   |

@@ -21,7 +21,7 @@ services:
       caddy.email: ${EMAIL}
 
   autobase-console-api:
-    image: autobase/console_api:latest
+    image: autobase/console_api:2.12.0
     container_name: autobase-console-api
     healthcheck:
       test:
@@ -47,7 +47,7 @@ services:
       - /tmp/ansible:/tmp/ansible
     environment:
       - PG_CONSOLE_AUTHORIZATION_TOKEN=${PG_CONSOLE_AUTHORIZATION_TOKEN:-auth_token}
-      - PG_CONSOLE_DOCKER_IMAGE=${PG_CONSOLE_DOCKER_IMAGE:-autobase/automation:latest}
+      - PG_CONSOLE_DOCKER_IMAGE=${PG_CONSOLE_DOCKER_IMAGE:-autobase/automation:2.12.0}
       - PG_CONSOLE_ENCRYPTIONKEY=${PG_CONSOLE_ENCRYPTIONKEY:-super_secret}
       - PG_CONSOLE_DB_PASSWORD=${PG_CONSOLE_DB_PASSWORD:-postgres-pass}
       - PG_CONSOLE_LOGGER_LEVEL=${PG_CONSOLE_LOGGER_LEVEL:-INFO}
@@ -57,7 +57,7 @@ services:
       - caddy
 
   autobase-console-ui:
-    image: autobase/console_ui:latest
+    image: autobase/console_ui:2.12.0
     container_name: autobase-console-ui
     healthcheck:
       test: ["CMD", "curl", "http://localhost:80/"]
@@ -81,7 +81,7 @@ services:
       - caddy
 
   autobase-console-db:
-    image: autobase/console_db:latest
+    image: autobase/console_db:2.12.0
     container_name: autobase-console-db
     healthcheck:
       test: pg_isready -U postgres -h 127.0.0.1

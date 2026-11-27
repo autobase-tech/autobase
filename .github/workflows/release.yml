@@ -64,3 +64,41 @@ jobs:
           TAG: ${{ steps.tag.outputs.tag }}
           DOCKER_REGISTRY_USER: ${{ secrets.DOCKER_USERNAME }}
           DOCKER_REGISTRY_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+
+  update-console-version:
+    needs: release
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout default branch
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+
+      - name: Update Console image tags
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          VERSION_PATTERN='[0-9]+\.[0-9]+\.[0-9]+'
+          if [[ ! "${TAG}" =~ ^${VERSION_PATTERN}$ ]]; then
+            exit 0
+          fi
+
+          # A rerun of an older release must not downgrade the default branch.
+          CURRENT_TAG=$(sed -nE "s#^    image: autobase/console_api:(${VERSION_PATTERN})\$#\1#p" console/docker-compose.yml)
+          if ! printf '%s\n' "${CURRENT_TAG}" "${TAG}" | sort -VC; then
+            exit 0
+          fi
+
+          sed -Ei "s#(autobase/(console_api|console_ui|console_db|automation):)(${VERSION_PATTERN}|latest)#\1${TAG}#g" \
+            console/docker-compose.yml console/docker-compose.ssl.yml console/README.md
+
+          git add console/docker-compose.yml console/docker-compose.ssl.yml console/README.md
+          if ! git diff --staged --quiet; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit -m "chore: release ${TAG}"
+            git push origin HEAD
+          fi
